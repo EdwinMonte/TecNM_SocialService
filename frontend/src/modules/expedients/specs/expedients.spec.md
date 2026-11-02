@@ -54,7 +54,7 @@ Este componente se incrusta en el detalle de Servicio Social y Prácticas Profes
 ---
 
 ### 2.3 Vista `/documents/review-queue` (Bandeja de Vinculación)
-- **Contenedor:** `UiBasePage` (`fluid=true`, título: "Bandeja de Revisión Documental").
+- **Contenedor:** `UiBasePage` (`fluid=true`, encabezado ejecutivo "Revisión y Dictamen de Expedientes" con 4 KPIs animados, respaldo operativo local cuando la API no está disponible, previsualización integrada en `UiDialog` y notificaciones `UiToast` sin usar `window.alert`).
 - **Barra de Filtros:**
   - Selector de Trámite: Todos / Servicio Social / Prácticas Profesionales / Expediente General.
   - Selector de Código de Documento (ej. solo `CA`, solo `R1`, solo `CT`).
