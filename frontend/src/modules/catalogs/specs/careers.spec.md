@@ -17,7 +17,7 @@ Basado en `docs/specs/catalogs.spec.md`:
 
 1. **Estructura base:**
    - Contenedor raíz `UiBasePage` con `fluid=true`, título "Catálogo de Carreras" y descripción institucional.
-   - Botón de acción principal en encabezado: "Nueva Carrera" que abre `UiDialog`.
+   - Botón de acción principal en encabezado: "Nueva Carrera" que abre `UiDialog`, acompañado de 4 KPIs compactos animados, cálculo de 70% de créditos para Servicio Social y respaldo local de las 6 carreras oficiales cuando la API no está en ejecución.
 
 2. **Filtros y Búsqueda:**
    - Campo de búsqueda por clave (`code`) o nombre (`name`) con debounce.
