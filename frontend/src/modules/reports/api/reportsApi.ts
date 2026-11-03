@@ -17,7 +17,7 @@ export async function getTrackingData(
 ): Promise<TrackingResponse> {
   const res = await http.get<TrackingItem[] | TrackingResponse>('/reports/tracking', {
     params: {
-      periodId: periodId || undefined,
+      periodId: periodId !== undefined && periodId !== null ? periodId : undefined,
       tramiteType,
       careerId: careerId || undefined,
       search: search || undefined,

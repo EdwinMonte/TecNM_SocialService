@@ -115,8 +115,10 @@ async function loadCatalogs(): Promise<void> {
   ])
   periodOptions.value = periods
   companyOptions.value = companies
-  if (periods.length > 0 && !requestForm.periodId) {
-    requestForm.periodId = periods[0].id
+
+  const activePeriod = periods.find((p) => Boolean((p as any).metadata?.isActive)) ?? periods[0]
+  if (activePeriod && !requestForm.periodId) {
+    requestForm.periodId = activePeriod.id
   }
   if (companies.length > 0 && !acceptanceForm.companyId) {
     acceptanceForm.companyId = companies[0].id

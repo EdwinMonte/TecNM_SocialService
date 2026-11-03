@@ -261,7 +261,7 @@ public sealed class SocialServiceService(
                 "El estudiante ya cuenta con un trámite de Servicio Social activo o liberado.");
         }
 
-        var (_, _, _, _, normalizedModality) = await ValidateReferencesAndApplicationAsync(
+        var (resolvedPeriod, _, _, _, normalizedModality) = await ValidateReferencesAndApplicationAsync(
             request.PeriodId,
             request.ProgramId,
             request.CompanyId,
@@ -277,7 +277,7 @@ public sealed class SocialServiceService(
         var entity = new Core.Entities.SocialService
         {
             StudentId = student.Id,
-            PeriodId = request.PeriodId,
+            PeriodId = resolvedPeriod.Id,
             ProgramId = request.ProgramId,
             CompanyId = request.CompanyId,
             SupervisorId = request.SupervisorId,
@@ -1443,12 +1443,23 @@ public sealed class SocialServiceService(
     {
         var errors = new Dictionary<string, string[]>();
 
-        var period = await dbContext.AcademicPeriods
-            .AsNoTracking()
-            .SingleOrDefaultAsync(p => p.Id == periodId, cancellationToken);
+        AcademicPeriod? period;
+        if (periodId <= 0)
+        {
+            period = await dbContext.AcademicPeriods
+                .AsNoTracking()
+                .SingleOrDefaultAsync(p => p.IsActive, cancellationToken);
+        }
+        else
+        {
+            period = await dbContext.AcademicPeriods
+                .AsNoTracking()
+                .SingleOrDefaultAsync(p => p.Id == periodId, cancellationToken);
+        }
+
         if (period is null)
         {
-            errors["periodId"] = ["El periodo académico especificado no existe."];
+            errors["periodId"] = ["El periodo académico especificado no existe o no hay un periodo activo."];
         }
 
         var program = await dbContext.SocialServicePrograms

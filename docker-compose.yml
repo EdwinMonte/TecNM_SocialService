@@ -43,7 +43,7 @@ services:
     volumes:
       - storage_data:/app/storage
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-5055}:8080"
 
   frontend:
     build:

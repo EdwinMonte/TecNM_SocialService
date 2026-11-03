@@ -53,6 +53,15 @@ async function loadCatalogs(): Promise<void> {
   careerOptions.value = careers
 }
 
+function handleSearch(): void {
+  loadData()
+}
+
+function handleClearSearch(): void {
+  searchQuery.value = ''
+  loadData()
+}
+
 async function loadData(): Promise<void> {
   isLoading.value = true
   errorMessage.value = ''
@@ -167,26 +176,40 @@ onMounted(async () => {
 
         <div class="filters-row">
           <UiField label="Periodo">
-            <select v-model="selectedPeriodId" @change="loadData">
+            <select v-model.number="selectedPeriodId" @change="loadData">
               <option :value="undefined">Periodo Activo</option>
+              <option :value="0">Todos los Periodos</option>
               <option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
             </select>
           </UiField>
 
           <UiField label="Carrera">
-            <select v-model="selectedCareerId" @change="loadData">
-              <option :value="undefined">Todas</option>
+            <select v-model.number="selectedCareerId" @change="loadData">
+              <option :value="undefined">Todas las Carreras</option>
               <option v-for="c in careerOptions" :key="c.id" :value="c.id">{{ c.label }}</option>
             </select>
           </UiField>
 
           <UiField label="Buscar Matrícula / Alumno">
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="Ej. I23050618"
-              @keyup.enter="loadData"
-            />
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Ej. I23050618"
+                @keyup.enter="handleSearch"
+              />
+              <UiButton variant="primary" size="sm" @click="handleSearch">
+                Buscar
+              </UiButton>
+              <UiButton
+                v-if="searchQuery"
+                variant="secondary"
+                size="sm"
+                @click="handleClearSearch"
+              >
+                Limpiar
+              </UiButton>
+            </div>
           </UiField>
         </div>
       </div>

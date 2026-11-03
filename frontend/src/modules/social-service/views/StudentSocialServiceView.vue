@@ -193,7 +193,11 @@ async function loadCatalogsForApplication(): Promise<void> {
   ])
   periodOptions.value = periods
   programOptions.value = programs
-  if (periods.length > 0) openForm.periodId = periods[0].id
+
+  const activePeriod = periods.find((p) => Boolean((p as any).metadata?.isActive)) ?? periods[0]
+  if (activePeriod) {
+    openForm.periodId = activePeriod.id
+  }
   if (programs.length > 0) openForm.programId = programs[0].id
   await handleModalityChange()
 }

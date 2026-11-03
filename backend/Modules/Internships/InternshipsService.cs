@@ -258,10 +258,17 @@ public sealed class InternshipsService(
         student.PhoneNumber = request.PhoneNumber.Trim();
         student.InstitutionalEmail = request.InstitutionalEmail.Trim();
 
+        var targetPeriodId = request.PeriodId;
+        if (targetPeriodId <= 0)
+        {
+            var activeP = await dbContext.AcademicPeriods.AsNoTracking().SingleOrDefaultAsync(p => p.IsActive, cancellationToken);
+            if (activeP != null) targetPeriodId = activeP.Id;
+        }
+
         var entity = new Internship
         {
             StudentId = student.Id,
-            PeriodId = request.PeriodId,
+            PeriodId = targetPeriodId,
             CompanyId = request.CompanyId,
             SupervisorId = request.SupervisorId,
             AgreementId = request.AgreementId,
@@ -1022,11 +1029,19 @@ public sealed class InternshipsService(
     {
         var errors = new Dictionary<string, string[]>();
 
-        var periodExists = await dbContext.AcademicPeriods
-            .AnyAsync(p => p.Id == request.PeriodId, cancellationToken);
-        if (!periodExists)
+        AcademicPeriod? period;
+        if (request.PeriodId <= 0)
         {
-            errors["periodId"] = ["El periodo académico especificado no existe."];
+            period = await dbContext.AcademicPeriods.AsNoTracking().SingleOrDefaultAsync(p => p.IsActive, cancellationToken);
+        }
+        else
+        {
+            period = await dbContext.AcademicPeriods.AsNoTracking().SingleOrDefaultAsync(p => p.Id == request.PeriodId, cancellationToken);
+        }
+
+        if (period is null)
+        {
+            errors["periodId"] = ["El periodo académico especificado no existe o no hay un periodo activo."];
         }
 
         if (request.CurrentSemester is < 1 or > 15)

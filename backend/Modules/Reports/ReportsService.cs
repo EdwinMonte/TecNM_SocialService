@@ -82,7 +82,15 @@ public sealed class ReportsService(TecNMDbContext dbContext)
         CancellationToken cancellationToken = default)
     {
         var normType = ValidateTramiteType(tramiteType);
-        var period = await ResolvePeriodAsync(periodId, cancellationToken);
+        AcademicPeriod? period = null;
+        if (periodId.HasValue && periodId.Value > 0)
+        {
+            period = await ResolvePeriodAsync(periodId.Value, cancellationToken);
+        }
+        else if (!periodId.HasValue)
+        {
+            period = await ResolvePeriodAsync(null, cancellationToken);
+        }
 
         if (normType == "social_service")
         {
@@ -94,8 +102,12 @@ public sealed class ReportsService(TecNMDbContext dbContext)
                 .Include(s => s.Agreement)
                 .Include(s => s.Program)
                 .Include(s => s.Application)
-                .AsNoTracking()
-                .Where(s => s.PeriodId == period.Id);
+                .AsNoTracking();
+
+            if (period != null)
+            {
+                query = query.Where(s => s.PeriodId == period.Id);
+            }
 
             if (!string.IsNullOrWhiteSpace(status))
             {
@@ -203,8 +215,12 @@ public sealed class ReportsService(TecNMDbContext dbContext)
                 .Include(i => i.Supervisor)
                 .Include(i => i.Agreement)
                 .Include(i => i.Evaluation)
-                .AsNoTracking()
-                .Where(i => i.PeriodId == period.Id);
+                .AsNoTracking();
+
+            if (period != null)
+            {
+                query = query.Where(i => i.PeriodId == period.Id);
+            }
 
             if (!string.IsNullOrWhiteSpace(status))
             {

@@ -54,15 +54,16 @@ public class AcademicPeriodsService(TecNMDbContext dbContext)
     {
         var items = await dbContext.AcademicPeriods
             .AsNoTracking()
-            .OrderByDescending(ap => ap.StartDate)
+            .OrderByDescending(ap => ap.IsActive)
+            .ThenByDescending(ap => ap.StartDate)
             .Select(ap => new { ap.Id, ap.Code, ap.Name, ap.IsActive })
             .ToListAsync(cancellationToken);
 
         return items
             .Select(ap => new OptionItem(
                 ap.Id,
-                $"{ap.Code} · {ap.Name}",
-                new Dictionary<string, object?> { ["isActive"] = ap.IsActive }))
+                ap.IsActive ? $"{ap.Code} · {ap.Name} (Activo)" : $"{ap.Code} · {ap.Name}",
+                new Dictionary<string, object?> { ["isActive"] = ap.IsActive, ["code"] = ap.Code }))
             .ToList();
     }
 
