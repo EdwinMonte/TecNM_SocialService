@@ -1,38 +1,126 @@
 BEGIN;
 
--- 1. Catálogo oficial de roles institucionales
+-- ============================================================================
+-- 1. CATÁLOGO OFICIAL DE ROLES INSTITUCIONALES
+-- ============================================================================
 INSERT INTO roles (name, description)
 VALUES
     ('admin', 'Administrador del Sistema'),
     ('student', 'Estudiante / Prestador de SS / Practicante'),
     ('social_service_officer', 'Encargado(a) de Servicio Social'),
     ('internship_coordinator', 'Coordinador(a) de Prácticas Profesionales'),
-    ('department_head', 'Jefe(a) de Departamento Académico')
+    ('department_head', 'Jefe(a) de División de Gestión Tecnológica y Vinculación')
 ON CONFLICT (name) WHERE deleted_at IS NULL DO UPDATE SET
     description = EXCLUDED.description;
 
--- 2. Cuentas demo de desarrollo (contraseña: TecNM-Demo-2026!)
+-- ============================================================================
+-- 2. CUENTAS DEMO POR ROL Y ETAPA DE TRÁMITE
+-- Contraseña universal para todas las cuentas demo: TecNM-Demo-2026!
+-- ============================================================================
 INSERT INTO users (id, username, email, password_hash, first_name, first_surname, second_surname, is_active)
 OVERRIDING SYSTEM VALUE
 VALUES
+    -- Personal Administrativo y Directivo (1 cuenta por cada rol de staff)
     (
         1,
         'admin',
-        'admin@tecnm.local',
+        'admin@monclova.tecnm.mx',
         'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
         'Administrador',
         'Sistema',
-        'Demo',
+        'ITSM',
         true
     ),
     (
+        3,
+        'encargado.ss',
+        'servicio.social@monclova.tecnm.mx',
+        'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
+        'Miguel Alejandro',
+        'Sanson',
+        'Olguin',
+        true
+    ),
+    (
+        4,
+        'coord.practicas',
+        'arturo.martinez@monclova.tecnm.mx',
+        'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
+        'Arturo',
+        'Martínez',
+        'Coordinación',
+        true
+    ),
+    (
+        5,
+        'jefa.vinculacion',
+        'vinculacion@monclova.tecnm.mx',
+        'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
+        'Rocío',
+        'Mendoza',
+        'Riojas',
+        true
+    ),
+
+    -- Cuentas de Estudiantes en distintas etapas del flujo (SS y Prácticas)
+    (
         2,
         'usuario',
-        'usuario@tecnm.local',
+        'L23050363@monclova.tecnm.mx',
         'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
-        'Usuario',
-        'Estudiante',
-        'Demo',
+        'Héctor Gabriel',
+        'Torres',
+        'Arzola',
+        true
+    ),
+    (
+        6,
+        'alumno.ss.local',
+        'L22050114@monclova.tecnm.mx',
+        'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
+        'Ana Carolina',
+        'Garza',
+        'Alvarado',
+        true
+    ),
+    (
+        7,
+        'alumno.ss.activo',
+        'L23050412@monclova.tecnm.mx',
+        'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
+        'Valeria Sofía',
+        'Hernández',
+        'Castillo',
+        true
+    ),
+    (
+        8,
+        'alumno.pp.solicitud',
+        'L22050289@monclova.tecnm.mx',
+        'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
+        'Luis Fernando',
+        'Rodríguez',
+        'Martínez',
+        true
+    ),
+    (
+        9,
+        'alumno.pp.activo',
+        'L22050501@monclova.tecnm.mx',
+        'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
+        'Miguel Ángel',
+        'Sánchez',
+        'Gómez',
+        true
+    ),
+    (
+        10,
+        'alumno.liberado',
+        'L23050618@monclova.tecnm.mx',
+        'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
+        'Daniela Fernanda',
+        'Pérez',
+        'Cavazos',
         true
     )
 ON CONFLICT (username) WHERE deleted_at IS NULL DO UPDATE SET
@@ -46,13 +134,25 @@ ON CONFLICT (username) WHERE deleted_at IS NULL DO UPDATE SET
 -- Sincronizar secuencia de users tras inserción con IDs explícitos
 SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE(MAX(id), 1)) FROM users;
 
--- 3. Asignación de roles a usuarios demo
+-- ============================================================================
+-- 3. ASIGNACIÓN DE ROLES A USUARIOS DEMO
+-- ============================================================================
 INSERT INTO user_roles (user_id, role_id)
 SELECT u.id, r.id
 FROM users u
 CROSS JOIN roles r
 WHERE (u.username = 'admin' AND r.name = 'admin')
-   OR (u.username = 'usuario' AND r.name = 'student')
+   OR (u.username = 'encargado.ss' AND r.name = 'social_service_officer')
+   OR (u.username = 'coord.practicas' AND r.name = 'internship_coordinator')
+   OR (u.username = 'jefa.vinculacion' AND r.name = 'department_head')
+   OR (u.username IN (
+        'usuario',
+        'alumno.ss.local',
+        'alumno.ss.activo',
+        'alumno.pp.solicitud',
+        'alumno.pp.activo',
+        'alumno.liberado'
+      ) AND r.name = 'student')
 ON CONFLICT (user_id, role_id) WHERE deleted_at IS NULL DO NOTHING;
 
 COMMIT;

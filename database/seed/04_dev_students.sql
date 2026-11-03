@@ -2,7 +2,7 @@ BEGIN;
 
 -- ============================================================================
 -- 1. PADRÓN DEMO DE ESTUDIANTES (ITSM - Monclova)
--- Extraídos de SEGUIMIENTO VINCULACIÓN1.xlsx y formatos institucionales
+-- Vinculados a las cuentas de usuario de estudiante y cubriendo las 6 carreras
 -- ============================================================================
 INSERT INTO students (
     id, user_id, career_id, control_number, curp,
@@ -10,13 +10,14 @@ INSERT INTO students (
     has_disability, disability_description,
     institutional_email, personal_email, phone_number,
     current_semester, completed_credits, curriculum_progress_percentage,
-    is_enrolled, has_valid_imss, imss_validated_at
+    is_enrolled, has_valid_imss, imss_validity_file_url, imss_validated_at, imss_validated_by
 )
 OVERRIDING SYSTEM VALUE
 VALUES
+    -- Alumno 1: Cuenta 'usuario' (Elegible sin trámite iniciado — listo para probar apertura desde cero)
     (
         1,
-        2, -- Vinculado a la cuenta demo 'usuario' (rol 'student')
+        2,
         (SELECT id FROM careers WHERE code = 'INF' AND deleted_at IS NULL LIMIT 1),
         'I23050363',
         'TOAH050315HCLRRH01',
@@ -35,11 +36,14 @@ VALUES
         73.85,
         true,
         true,
-        NOW()
+        'students/1/imss_I23050363.pdf',
+        NOW(),
+        3
     ),
+    -- Alumna 2: Cuenta 'alumno.ss.local' (Servicio Social INTERNO en TecNM con CP emitida, lista para generar CA local)
     (
         2,
-        NULL,
+        6,
         (SELECT id FROM careers WHERE code = 'IND' AND deleted_at IS NULL LIMIT 1),
         'I22050114',
         'GAAC040822MCLNRA05',
@@ -58,11 +62,14 @@ VALUES
         87.69,
         true,
         true,
-        NOW()
+        'students/2/imss_I22050114.pdf',
+        NOW(),
+        3
     ),
+    -- Alumno 3: Cuenta 'alumno.pp.solicitud' (Prácticas Profesionales con CP emitida EJ26/PR001, listo para subir CA membretada)
     (
         3,
-        NULL,
+        8,
         (SELECT id FROM careers WHERE code = 'MEC' AND deleted_at IS NULL LIMIT 1),
         'I22050289',
         'ROML031109HCLMRC08',
@@ -80,12 +87,15 @@ VALUES
         205,
         78.85,
         true,
-        false,
-        NULL
+        true,
+        'students/3/imss_I22050289.pdf',
+        NOW(),
+        4
     ),
+    -- Alumna 4: Cuenta 'alumno.ss.activo' (Servicio Social EXTERNO activo en Presidencia Municipal, subiendo reportes R2/R3 y evaluaciones)
     (
         4,
-        NULL,
+        7,
         (SELECT id FROM careers WHERE code = 'GE' AND deleted_at IS NULL LIMIT 1),
         'I23050412',
         'HECV050119MCLHRL02',
@@ -104,11 +114,14 @@ VALUES
         71.54,
         true,
         true,
-        NOW()
+        'students/4/imss_I23050412.pdf',
+        NOW(),
+        3
     ),
+    -- Alumno 5: Cuenta 'alumno.pp.activo' (Prácticas Profesionales activas en Gunderson, listo para prellenar Anexo XVII y subir EV/CT)
     (
         5,
-        NULL,
+        9,
         (SELECT id FROM careers WHERE code = 'ELE' AND deleted_at IS NULL LIMIT 1),
         'I22050501',
         'SAGM040402HCLSRM04',
@@ -127,11 +140,14 @@ VALUES
         90.00,
         true,
         true,
-        NOW()
+        'students/5/imss_I22050501.pdf',
+        NOW(),
+        4
     ),
+    -- Alumna 6: Cuenta 'alumno.liberado' (Servicio Social 100% liberado con Constancia SSC y Acta DGTV)
     (
         6,
-        NULL,
+        10,
         (SELECT id FROM careers WHERE code = 'ER' AND deleted_at IS NULL LIMIT 1),
         'I23050618',
         'PECD050728MCLPRN09',
@@ -145,12 +161,118 @@ VALUES
         'L23050618@monclova.tecnm.mx',
         'daniela.perez@gmail.com',
         '8661549087',
-        6,
-        182,
-        70.00,
+        8,
+        221,
+        85.00,
         true,
+        true,
+        'students/6/imss_I23050618.pdf',
+        NOW(),
+        3
+    ),
+    -- Alumno 7: Solicitud de Servicio Social recién enviada ('requested') para que el Encargado de SS dictamine
+    (
+        7,
+        NULL,
+        (SELECT id FROM careers WHERE code = 'INF' AND deleted_at IS NULL LIMIT 1),
+        'I23050741',
+        'MORA050912HCLMRA03',
+        'Morales',
+        'Ramos',
+        'Alejandro',
+        'M',
+        'morning',
         false,
-        NULL
+        NULL,
+        'L23050741@monclova.tecnm.mx',
+        'alejandro.morales@gmail.com',
+        '8661340921',
+        6,
+        195,
+        75.00,
+        true,
+        true,
+        'students/7/imss_I23050741.pdf',
+        NOW(),
+        3
+    ),
+    -- Alumna 8: Servicio Social con todos sus documentos aprobados en 'completed_pending_review' lista para liberar
+    (
+        8,
+        NULL,
+        (SELECT id FROM careers WHERE code = 'IND' AND deleted_at IS NULL LIMIT 1),
+        'I21050890',
+        'VISM030418MCLVSL07',
+        'Villarreal',
+        'Soto',
+        'Mariana',
+        'F',
+        'night',
+        true,
+        'Discapacidad motriz leve',
+        'L21050890@monclova.tecnm.mx',
+        'mariana.villarreal@gmail.com',
+        '8661884412',
+        9,
+        240,
+        92.31,
+        true,
+        true,
+        'students/8/imss_I21050890.pdf',
+        NOW(),
+        3
+    ),
+    -- Alumno 9: Solicitud de Prácticas recién enviada ('requested') para que el Coord. de Prácticas apruebe y emita CP
+    (
+        9,
+        NULL,
+        (SELECT id FROM careers WHERE code = 'GE' AND deleted_at IS NULL LIMIT 1),
+        'I22050915',
+        'RAVJ040225HCLRVJ06',
+        'Ramos',
+        'Valdez',
+        'Jorge Eduardo',
+        'M',
+        'morning',
+        false,
+        NULL,
+        'L22050915@monclova.tecnm.mx',
+        'jorge.ramos@gmail.com',
+        '8661652290',
+        7,
+        210,
+        80.77,
+        true,
+        true,
+        'students/9/imss_I22050915.pdf',
+        NOW(),
+        4
+    ),
+    -- Alumna 10: Prácticas Profesionales 100% liberadas ('released') con Constancia PPC y Acta DGTV
+    (
+        10,
+        NULL,
+        (SELECT id FROM careers WHERE code = 'MEC' AND deleted_at IS NULL LIMIT 1),
+        'I21050409',
+        'ZALK030630MCLZPK01',
+        'Zapata',
+        'Lozano',
+        'Karla Berenice',
+        'F',
+        'morning',
+        false,
+        NULL,
+        'L21050409@monclova.tecnm.mx',
+        'karla.zapata@gmail.com',
+        '8661409981',
+        9,
+        248,
+        95.38,
+        true,
+        true,
+        'students/10/imss_I21050409.pdf',
+        NOW(),
+        4
     )
 ON CONFLICT (control_number) WHERE deleted_at IS NULL DO UPDATE SET
     user_id = EXCLUDED.user_id,
@@ -171,7 +293,9 @@ ON CONFLICT (control_number) WHERE deleted_at IS NULL DO UPDATE SET
     curriculum_progress_percentage = EXCLUDED.curriculum_progress_percentage,
     is_enrolled = EXCLUDED.is_enrolled,
     has_valid_imss = EXCLUDED.has_valid_imss,
-    imss_validated_at = EXCLUDED.imss_validated_at;
+    imss_validity_file_url = EXCLUDED.imss_validity_file_url,
+    imss_validated_at = EXCLUDED.imss_validated_at,
+    imss_validated_by = EXCLUDED.imss_validated_by;
 
 SELECT setval(pg_get_serial_sequence('students', 'id'), COALESCE(MAX(id), 1)) FROM students;
 
