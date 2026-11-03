@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useAttrs, useId } from 'vue'
+import { computed, ref, useAttrs, useId, useSlots } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 
@@ -10,8 +10,8 @@ const props = withDefaults(
     error?: string
     hint?: string
     as?: 'input' | 'select' | 'textarea'
-    modelValue?: string
-    options?: { value: string; label: string }[]
+    modelValue?: string | number
+    options?: { value: string | number; label: string }[]
   }>(),
   {
     as: 'input',
@@ -20,9 +20,10 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string]
+  'update:modelValue': [value: any]
 }>()
 
+const slots = useSlots()
 const attrs = useAttrs()
 const generatedId = useId()
 const controlId = computed(() => props.id || generatedId)
@@ -53,18 +54,25 @@ defineExpose({ focus })
 <template>
   <div class="field">
     <label :for="controlId">{{ label }}</label>
-    <component
-      :is="as"
-      ref="control"
-      v-bind="attrs"
-      :id="controlId"
-      :value="modelValue"
-      :aria-invalid="error ? 'true' : undefined"
-      :aria-describedby="describedBy"
-      @input="updateValue"
-    >
-      <template v-if="as === 'select'"><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option><slot name="options" /></template>
-    </component>
+    <slot>
+      <component
+        :is="as"
+        ref="control"
+        v-bind="attrs"
+        :id="controlId"
+        :value="modelValue"
+        :aria-invalid="error ? 'true' : undefined"
+        :aria-describedby="describedBy"
+        @input="updateValue"
+      >
+        <template v-if="as === 'select'">
+          <option v-for="option in options" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+          <slot name="options" />
+        </template>
+      </component>
+    </slot>
     <span v-if="hint" :id="hintId" class="hint">{{ hint }}</span>
     <span v-if="error" :id="errorId" class="error">{{ error }}</span>
   </div>

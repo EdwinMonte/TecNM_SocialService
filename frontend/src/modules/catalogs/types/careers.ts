@@ -18,6 +18,21 @@ export interface UpdateStatusRequest {
   isActive: boolean
 }
 
+export interface OptionItem {
+  id: number
+  label: string
+  meta?: Record<string, any>
+}
+
+export interface AcademicPeriod {
+  id: number
+  code: string
+  name: string
+  startDate: string
+  endDate: string
+  isActive: boolean
+}
+
 export interface PagedResponse<T> {
   items: T[]
   page: number

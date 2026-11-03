@@ -1,70 +1,238 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { UiAlert, UiBasePage, UiCard } from '../../../shared/components'
+import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiField } from '../../../shared/components'
+import { getPeriodOptions } from '../../catalogs/api/careersApi'
+import type { OptionItem } from '../../catalogs/types/careers'
 import { get911Report, getSemesterStatistics } from '../api/reportsApi'
 
 const stats = ref<any>(null)
 const rep911 = ref<any>(null)
+const periodOptions = ref<OptionItem[]>([])
+const selectedPeriodId = ref<number | undefined>(undefined)
+const tramiteType = ref<'social_service' | 'internship'>('social_service')
 const isLoading = ref(true)
 const errorMessage = ref('')
 
-async function loadData() {
+const sectorLabels: Record<string, string> = {
+  educational: 'Educativo (Propia Institución TecNM)',
+  public: 'Sector Público',
+  private: 'Sector Privado',
+  social: 'Sector Social',
+}
+
+async function loadData(): Promise<void> {
   isLoading.value = true
   errorMessage.value = ''
   try {
     const [sData, rData] = await Promise.all([
-      getSemesterStatistics(1),
-      get911Report(1),
+      getSemesterStatistics(selectedPeriodId.value, tramiteType.value),
+      get911Report(selectedPeriodId.value, tramiteType.value),
     ])
     stats.value = sData
     rep911.value = rData
   } catch (err: any) {
-    errorMessage.value = err.response?.data?.message || 'Error al cargar estadísticas institucionales'
+    errorMessage.value =
+      err?.response?.data?.message || 'Error al cargar estadísticas institucionales.'
   } finally {
     isLoading.value = false
   }
 }
 
-onMounted(() => {
-  loadData()
+onMounted(async () => {
+  periodOptions.value = await getPeriodOptions().catch(() => [])
+  await loadData()
 })
 </script>
 
 <template>
   <UiBasePage :fluid="true">
     <div style="margin-bottom: 1.5rem;">
-      <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0;">Estadísticas Semestrales & Formato 911</h1>
-      <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">Cifras oficiales para auditoría SEP/TecNM y reportes estadísticos</p>
+      <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0;">
+        Estadístico Semestral y Formato Oficial SEP/TecNM 911.10
+      </h1>
+      <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">
+        Replica en tiempo real las hojas `ESTADÍSTICO`, `PNC` y `911.10` de `SEGUIMIENTO VINCULACIÓN1.xlsx`
+      </p>
     </div>
 
-    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">{{ errorMessage }}</UiAlert>
+    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">
+      {{ errorMessage }}
+    </UiAlert>
 
-    <div v-if="isLoading" style="padding: 2rem; text-align: center;">Cargando estadísticas...</div>
-
-    <div v-else style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
-      <UiCard title="Estadística Semestral por Carrera">
-        <div v-if="stats && stats.careers" style="display: flex; flex-direction: column; gap: 0.5rem;">
-          <div v-for="c in stats.careers" :key="c.careerCode" style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6;">
-            <span>{{ c.careerCode }} - {{ c.careerName }}</span>
-            <span>SS: <strong>{{ c.socialServiceCount }}</strong> | PP: <strong>{{ c.internshipCount }}</strong></span>
-          </div>
+    <UiCard style="margin-bottom: 1.5rem;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem;">
+        <div style="display: flex; gap: 0.5rem;">
+          <UiButton
+            :variant="tramiteType === 'social_service' ? 'primary' : 'secondary'"
+            @click="
+              tramiteType = 'social_service';
+              loadData()
+            "
+          >
+            Estadístico Servicio Social
+          </UiButton>
+          <UiButton
+            :variant="tramiteType === 'internship' ? 'primary' : 'secondary'"
+            @click="
+              tramiteType = 'internship';
+              loadData()
+            "
+          >
+            Estadístico Prácticas Profesionales
+          </UiButton>
         </div>
-        <div v-else style="color: #6c757d; font-size: 0.9rem;">Sin desglose disponible para el periodo</div>
+
+        <UiField label="Periodo Escolar">
+          <select v-model="selectedPeriodId" @change="loadData">
+            <option :value="undefined">Periodo Activo</option>
+            <option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
+          </select>
+        </UiField>
+      </div>
+    </UiCard>
+
+    <div v-if="isLoading" style="padding: 2rem; text-align: center;">
+      Calculando indicadores en tiempo real...
+    </div>
+
+    <div v-else style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <!-- Tabla 1: Hoja ESTADÍSTICO por Carrera y Género -->
+      <UiCard
+        :title="`Hoja ESTADÍSTICO (${tramiteType === 'social_service' ? 'Servicio Social' : 'Prácticas Profesionales'})`"
+      >
+        <div style="overflow-x: auto;">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th>Carrera</th>
+                <th style="text-align: center;">En Condiciones (C.P. = SI)</th>
+                <th style="text-align: center;">Solicitantes H</th>
+                <th style="text-align: center;">Solicitantes M</th>
+                <th style="text-align: center;">Total Solicitantes (C.A. = SI)</th>
+                <th style="text-align: center;">Liberados H</th>
+                <th style="text-align: center;">Liberados M</th>
+                <th style="text-align: center;">Total Liberados</th>
+                <th style="text-align: center;">PNC (Solic. - Lib.)</th>
+                <th style="text-align: center;">% Liberación</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in stats?.byCareer || []" :key="row.careerCode">
+                <td>
+                  <strong>{{ row.careerCode }}</strong> — {{ row.careerName }}
+                </td>
+                <td style="text-align: center;">{{ row.eligibleWithPresentationLetter }}</td>
+                <td style="text-align: center;">{{ row.applicantsMale }}</td>
+                <td style="text-align: center;">{{ row.applicantsFemale }}</td>
+                <td style="text-align: center; font-weight: 700;">{{ row.applicantsTotal }}</td>
+                <td style="text-align: center;">{{ row.releasedMale }}</td>
+                <td style="text-align: center;">{{ row.releasedFemale }}</td>
+                <td style="text-align: center; font-weight: 700; color: #16a34a;">
+                  {{ row.releasedTotal }}
+                </td>
+                <td style="text-align: center; color: #d97706; font-weight: 600;">
+                  {{ row.pncTotal }}
+                </td>
+                <td style="text-align: center;">
+                  <UiBadge :tone="row.releaseRatePercentage >= 80 ? 'success' : 'info'">
+                    {{ row.releaseRatePercentage }}%
+                  </UiBadge>
+                </td>
+              </tr>
+              <tr v-if="stats?.totals" class="totals-row">
+                <td><strong>TOTAL INSTITUCIONAL</strong></td>
+                <td style="text-align: center;">
+                  {{ stats.totals.eligibleWithPresentationLetter }}
+                </td>
+                <td style="text-align: center;">{{ stats.totals.applicantsMale }}</td>
+                <td style="text-align: center;">{{ stats.totals.applicantsFemale }}</td>
+                <td style="text-align: center;">{{ stats.totals.applicantsTotal }}</td>
+                <td style="text-align: center;">{{ stats.totals.releasedMale }}</td>
+                <td style="text-align: center;">{{ stats.totals.releasedFemale }}</td>
+                <td style="text-align: center; color: #16a34a;">
+                  {{ stats.totals.releasedTotal }}
+                </td>
+                <td style="text-align: center; color: #d97706;">{{ stats.totals.pncTotal }}</td>
+                <td style="text-align: center;">{{ stats.totals.releaseRatePercentage }}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </UiCard>
 
-      <UiCard title="Reporte Oficial 911 (SEP / TecNM)">
-        <div v-if="rep911" style="display: flex; flex-direction: column; gap: 0.75rem;">
-          <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Servicio Social (Sección XII)</strong>
-            <span>Total inscritos: <strong>{{ rep911.socialServiceTotal || 0 }}</strong> alumnos</span>
+      <!-- Tabla 2: Formato Oficial SEP / TecNM 911.10 -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem;">
+        <UiCard title="Formato 911.10 — Distribución por Sector">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th>Sector</th>
+                <th style="text-align: center;">Hombres</th>
+                <th style="text-align: center;">Mujeres</th>
+                <th style="text-align: center;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="sec in rep911?.byCompanySector || []" :key="sec.sector">
+                <td>{{ sectorLabels[sec.sector] || sec.sector }}</td>
+                <td style="text-align: center;">{{ sec.male }}</td>
+                <td style="text-align: center;">{{ sec.female }}</td>
+                <td style="text-align: center; font-weight: 700;">{{ sec.total }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </UiCard>
+
+        <UiCard title="Indicadores de Impacto e Inclusión (911.10)">
+          <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem;">
+              <span>Estudiantes con Discapacidad Atendidos:</span>
+              <strong>{{ rep911?.withDisability?.total || 0 }}</strong>
+            </div>
+            <div
+              v-if="tramiteType === 'social_service'"
+              style="display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5rem;"
+            >
+              <span>Trámites con Actividades de Inclusión:</span>
+              <strong>{{ rep911?.withInclusionActivities || 0 }}</strong>
+            </div>
+            <div
+              v-if="tramiteType === 'social_service'"
+              style="display: flex; justify-content: space-between;"
+            >
+              <span>Total de Ciudadanos Beneficiados:</span>
+              <strong style="color: #0284c7; font-size: 1.1rem;">
+                {{ rep911?.totalBeneficiaries || 0 }} personas
+              </strong>
+            </div>
           </div>
-          <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Prácticas Profesionales (Sección XIII)</strong>
-            <span>Total acreditados: <strong>{{ rep911.internshipTotal || 0 }}</strong> alumnos</span>
-          </div>
-        </div>
-      </UiCard>
+        </UiCard>
+      </div>
     </div>
   </UiBasePage>
 </template>
 
+<style scoped>
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.stats-table th,
+.stats-table td {
+  border: 1px solid var(--color-border, #e5e7eb);
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+}
+
+.stats-table th {
+  background: var(--color-surface-subtle, #f8fafc);
+  font-weight: 700;
+}
+
+.totals-row td {
+  background: #f1f5f9;
+  font-weight: 700;
+}
+</style>

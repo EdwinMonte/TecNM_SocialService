@@ -9,6 +9,16 @@
       content="Acceso a la plataforma institucional del Tecnológico Nacional de México"
     />
     <title>Acceso institucional | TecNM</title>
+    <script>
+      try {
+        var savedTheme = localStorage.getItem('tecnm_sspp_theme');
+        if (savedTheme === 'dark' || (!savedTheme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.dataset.theme = 'dark';
+        } else {
+          document.documentElement.dataset.theme = 'light';
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -1,30 +1,60 @@
-export interface Student {
+export type StudentShift = 'morning' | 'afternoon' | 'night'
+
+export interface StudentListItem {
   id: number
-  userId: number
   controlNumber: string
   fullName: string
-  curp: string
   careerId: number
-  careerName?: string
-  careerCode?: string
+  careerCode: string
   currentSemester: number
-  percentageApprovedCredits: number
-  imssNumber?: string
-  imssClinic?: string
-  imssRegistrationDate?: string
-  isVigente: boolean
-  hasSocialService: boolean
-  hasInternship: boolean
-  createdAt: string
-  updatedAt?: string
+  curriculumProgressPercentage: number
+  shift: StudentShift
+  isEnrolled: boolean
+  hasValidImss: boolean
+  hasUserAccount: boolean
 }
+
+export interface StudentDetail {
+  id: number
+  userId: number | null
+  careerId: number
+  careerName: string
+  importBatchId: number | null
+  controlNumber: string
+  curp: string | null
+  firstName: string
+  firstSurname: string
+  secondSurname: string | null
+  gender: 'M' | 'F' | null
+  shift: StudentShift
+  hasDisability: boolean
+  disabilityDescription: string | null
+  institutionalEmail: string | null
+  personalEmail: string | null
+  phoneNumber: string | null
+  currentSemester: number
+  completedCredits: number
+  curriculumProgressPercentage: number
+  isEnrolled: boolean
+  hasValidImss: boolean
+  hasImssFile: boolean
+  imssValidatedAt: string | null
+  imssValidatedByName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type Student = StudentListItem
 
 export interface StudentFilterParams {
   page?: number
   pageSize?: number
   search?: string
   careerId?: number
-  isVigente?: boolean
+  shift?: string
+  isEnrolled?: boolean
+  hasValidImss?: boolean
+  hasDisability?: boolean
   sort?: string
 }
 
@@ -32,34 +62,78 @@ export interface PagedResponse<T> {
   items: T[]
   page: number
   pageSize: number
-  totalCount: number
+  totalItems: number
   totalPages: number
-  hasPreviousPage: boolean
-  hasNextPage: boolean
 }
 
-export interface CreateStudentRequest {
-  controlNumber: string
-  fullName: string
-  curp: string
+export interface StudentRequest {
   careerId: number
+  controlNumber: string
+  curp?: string | null
+  firstName: string
+  firstSurname: string
+  secondSurname?: string | null
+  gender?: 'M' | 'F' | null
+  shift: StudentShift
+  hasDisability?: boolean
+  disabilityDescription?: string | null
+  institutionalEmail?: string | null
+  personalEmail?: string | null
+  phoneNumber?: string | null
   currentSemester: number
-  percentageApprovedCredits: number
-  imssNumber?: string
-  imssClinic?: string
+  completedCredits: number
+  isEnrolled: boolean
 }
 
-export interface UpdateImssRequest {
-  imssNumber: string
-  imssClinic: string
-  imssRegistrationDate?: string
+export type CreateStudentRequest = StudentRequest
+
+export interface StudentContactRequest {
+  personalEmail?: string | null
+  institutionalEmail?: string | null
+  phoneNumber?: string | null
+  currentSemester?: number | null
+  shift?: StudentShift | null
+}
+
+export interface EligibilityReason {
+  code: string
+  message: string
+}
+
+export interface EligibilityResult {
+  eligible: boolean
+  reasons: EligibilityReason[]
+}
+
+export interface StudentEligibility {
+  socialService: EligibilityResult
+  internship: EligibilityResult
+}
+
+export interface CreateStudentAccountResponse {
+  userId: number
+  username: string
+  temporaryPassword: string
+}
+
+export interface StudentImportRowError {
+  row: number
+  controlNumber?: string | null
+  field?: string | null
+  message: string
 }
 
 export interface StudentImportResult {
-  totalRows: number
-  importedCount: number
-  updatedCount: number
-  errorCount: number
-  errors: string[]
+  id: number
+  periodId: number
+  periodCode: string
+  fileName: string
+  totalRecords: number
+  importedRecords: number
+  failedRecords: number
+  status: string
+  notes?: string | null
+  createdAt: string
+  createdByName?: string | null
+  rowErrors: StudentImportRowError[]
 }
-

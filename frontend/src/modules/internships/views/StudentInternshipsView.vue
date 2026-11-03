@@ -1,87 +1,747 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { UiAlert, UiBadge, UiBasePage, UiCard } from '../../../shared/components'
-import { getMyInternship } from '../api/internshipsApi'
-import type { InternshipDetail } from '../types/internships'
+import { computed, onMounted, reactive, ref } from 'vue'
+import {
+  UiAlert,
+  UiBadge,
+  UiBasePage,
+  UiButton,
+  UiCard,
+  UiDialog,
+  UiField,
+} from '../../../shared/components'
+import { openPrintableDocument } from '../../../shared/utils/printDocument'
+import {
+  getCompanyOptions,
+  getPeriodOptions,
+  getSupervisorOptions,
+} from '../../catalogs/api/careersApi'
+import type { OptionItem } from '../../catalogs/types/careers'
+import { getDocumentBlob, getMyDocuments, uploadMyDocument } from '../../expedients/api/expedientsApi'
+import type { ExpedientDocument } from '../../expedients/types/expedients'
+import { getMyStudentProfile, uploadMyImssFile } from '../../students/api/studentsApi'
+import type { StudentDetail } from '../../students/types/students'
+import {
+  getInternshipPrintData,
+  getMyInternship,
+  registerInternshipAcceptance,
+  requestInternship,
+  upsertInternshipEvaluation,
+} from '../api/internshipsApi'
+import type { CreateInternshipPayload, InternshipDetail } from '../types/internships'
 
 const internship = ref<InternshipDetail | null>(null)
-const isLoading = ref(true)
-const errorMessage = ref('')
+const studentProfile = ref<StudentDetail | null>(null)
+const uploadedDocs = ref<ExpedientDocument[]>([])
 
-async function loadData() {
+const isLoading = ref(true)
+const isSubmitting = ref(false)
+const errorMessage = ref('')
+const successMessage = ref('')
+
+// Catálogos para Solicitud (Forms) y Registro de Aceptación (CA)
+const periodOptions = ref<OptionItem[]>([])
+const companyOptions = ref<OptionItem[]>([])
+const supervisorOptions = ref<OptionItem[]>([])
+const imssFileForRequest = ref<File | null>(null)
+
+// Formulario Paso 1: Reemplazo del Microsoft Forms para solicitar Carta de Presentación
+const requestForm = reactive<CreateInternshipPayload>({
+  periodId: 0,
+  currentSemester: 7,
+  shift: 'morning',
+  phoneNumber: '',
+  institutionalEmail: '',
+})
+
+// Modal Paso 2: Registrar Empresa y Oficio de Aceptación (CA)
+const isAcceptanceModalOpen = ref(false)
+const acceptanceForm = reactive({
+  companyId: 0,
+  supervisorId: 0,
+  startDate: '2026-02-20',
+  endDate: '2026-06-20',
+  scheduleDescription: 'Lunes a Viernes de 08:00 a 13:00 hrs',
+  requiredHours: 240,
+  acceptanceLetterDate: new Date().toISOString().slice(0, 10),
+})
+
+// Modal Paso 3: Prellenar e Imprimir Anexo XVII (Productividad Laboral)
+const isEvalModalOpen = ref(false)
+const evalForm = reactive({
+  evaluationStartDate: '2026-02-20',
+  evaluationEndDate: '2026-06-20',
+  defaultScore: 4,
+  evaluatorSignatureDate: new Date().toISOString().slice(0, 10),
+  observations: 'Excelente desempeño y cumplimiento de objetivos durante su estancia profesional.',
+})
+
+const uploadingCode = ref<string | null>(null)
+
+const internshipDocumentSteps = computed(() => [
+  {
+    code: 'CP',
+    title: '1. Carta de Presentación Emitida por Vinculación (CP)',
+    hint: 'Se genera automáticamente una vez aprobada tu solicitud inicial.',
+    printKey: 'presentation_letter' as const,
+  },
+  {
+    code: 'CA',
+    title: '2. Oficio de Aceptación de la Empresa (CA — Hoja Membretada, Firma y Sello)',
+    hint: 'La empresa lo envía a arturo.martinez@monclova.tecnm.mx. Registra aquí los datos de la empresa y sube tu copia en PDF.',
+    openModal: 'acceptance',
+  },
+  {
+    code: 'EV',
+    title: '3. Evaluación al Desempeño de Actividad Complementaria (Anexo XVII — Productividad Laboral)',
+    hint: 'Prellena el formato Anexo XVII para imprimirlo listo, pide firma y sello de tu supervisor y sube el PDF escaneado.',
+    printKey: 'evaluation' as const,
+    openModal: 'evaluation',
+  },
+  {
+    code: 'CT',
+    title: '4. Oficio de Terminación de la Empresa (CT — Hoja Membretada, Firma y Sello)',
+    hint: 'Sube tu Oficio de Terminación emitido por la empresa receptora con firma y sello.',
+  },
+])
+
+function getDocByCode(code: string): ExpedientDocument | undefined {
+  return uploadedDocs.value.find((d) => d.documentCode.toUpperCase() === code.toUpperCase())
+}
+
+async function loadCatalogs(): Promise<void> {
+  const [periods, companies] = await Promise.all([
+    getPeriodOptions().catch(() => []),
+    getCompanyOptions(false).catch(() => []),
+  ])
+  periodOptions.value = periods
+  companyOptions.value = companies
+  if (periods.length > 0 && !requestForm.periodId) {
+    requestForm.periodId = periods[0].id
+  }
+  if (companies.length > 0 && !acceptanceForm.companyId) {
+    acceptanceForm.companyId = companies[0].id
+    await handleCompanyChange()
+  }
+}
+
+async function handleCompanyChange(): Promise<void> {
+  if (!acceptanceForm.companyId) return
+  const sups = await getSupervisorOptions(acceptanceForm.companyId).catch(() => [])
+  supervisorOptions.value = sups
+  if (sups.length > 0) {
+    acceptanceForm.supervisorId = sups[0].id
+  }
+}
+
+async function loadData(): Promise<void> {
   isLoading.value = true
   errorMessage.value = ''
   try {
-    internship.value = await getMyInternship()
-  } catch (err: any) {
-    if (err.response?.status === 404) {
-      errorMessage.value = 'Aún no has registrado una solicitud de Prácticas Profesionales.'
-    } else {
-      errorMessage.value = err.response?.data?.message || 'Error al cargar tus Prácticas Profesionales'
+    const [profile, pp, docs] = await Promise.all([
+      getMyStudentProfile().catch(() => null),
+      getMyInternship().catch(() => null),
+      getMyDocuments({ tramiteType: 'internship' }).catch(() => []),
+    ])
+    studentProfile.value = profile
+    internship.value = pp
+    uploadedDocs.value = docs
+
+    if (profile) {
+      requestForm.currentSemester = profile.currentSemester
+      requestForm.shift = profile.shift
+      requestForm.phoneNumber = profile.phoneNumber || ''
+      requestForm.institutionalEmail =
+        profile.institutionalEmail || `L${profile.controlNumber}@monclova.tecnm.mx`
     }
+
+    await loadCatalogs()
+  } catch (err: any) {
+    errorMessage.value =
+      err?.response?.data?.message || 'Error al cargar tus Prácticas Profesionales.'
   } finally {
     isLoading.value = false
   }
 }
 
+function handleImssFileChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  imssFileForRequest.value = input.files?.[0] ?? null
+}
+
+async function handleSubmitFormsRequest(): Promise<void> {
+  isSubmitting.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    if (imssFileForRequest.value) {
+      await uploadMyImssFile(imssFileForRequest.value)
+    }
+    const created = await requestInternship(requestForm)
+    internship.value = created
+    successMessage.value =
+      'Solicitud de Carta de Presentación enviada a Vinculación exitosamente.'
+    await loadData()
+  } catch (err: any) {
+    errorMessage.value =
+      err?.response?.data?.message ||
+      'Verifica que todos los datos del formulario y tu Constancia de Vigencia IMSS estén completos.'
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function handlePrint(docKey: 'presentation_letter' | 'evaluation' | 'release_certificate'): Promise<void> {
+  if (!internship.value) return
+  errorMessage.value = ''
+  try {
+    const data = await getInternshipPrintData(internship.value.id, docKey)
+    openPrintableDocument(data)
+  } catch (err: any) {
+    errorMessage.value =
+      err?.response?.data?.message || 'El formato aún no está disponible para impresión.'
+  }
+}
+
+async function handleSaveAcceptance(): Promise<void> {
+  if (!internship.value) return
+  isSubmitting.value = true
+  errorMessage.value = ''
+  try {
+    internship.value = await registerInternshipAcceptance(internship.value.id, acceptanceForm)
+    isAcceptanceModalOpen.value = false
+    successMessage.value =
+      'Empresa receptora registrada. Ahora sube el archivo PDF de tu Oficio de Aceptación (CA).'
+    await loadData()
+  } catch (err: any) {
+    errorMessage.value =
+      err?.response?.data?.message || 'Error al registrar los datos de la empresa receptora.'
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function handleSaveAndPrintEvaluation(): Promise<void> {
+  if (!internship.value) return
+  isSubmitting.value = true
+  errorMessage.value = ''
+  try {
+    const s = Number(evalForm.defaultScore)
+    await upsertInternshipEvaluation(internship.value.id, {
+      evaluationStartDate: evalForm.evaluationStartDate,
+      evaluationEndDate: evalForm.evaluationEndDate,
+      criteria: [s, s, s, s, s, s, s],
+      evaluatorSupervisorId: internship.value.supervisor?.id ?? null,
+      evaluatorSignatureDate: evalForm.evaluatorSignatureDate,
+      observations: evalForm.observations,
+    })
+    isEvalModalOpen.value = false
+    successMessage.value = 'Formato Anexo XVII guardado y listo para imprimir.'
+    await handlePrint('evaluation')
+    await loadData()
+  } catch (err: any) {
+    errorMessage.value = err?.response?.data?.message || 'Error al guardar la evaluación Anexo XVII.'
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function handleUploadStepPdf(code: string, event: Event): Promise<void> {
+  if (!internship.value) return
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  uploadingCode.value = code
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    await uploadMyDocument({
+      file,
+      tramiteType: 'internship',
+      tramiteId: internship.value.id,
+      documentCode: code,
+    })
+    successMessage.value = `Documento ${code} (${file.name}) subido exitosamente para validación de Vinculación.`
+    await loadData()
+  } catch (err: any) {
+    errorMessage.value = err?.response?.data?.message || `Error al subir el documento ${code}.`
+  } finally {
+    uploadingCode.value = null
+    input.value = ''
+  }
+}
+
+async function handleViewUploadedPdf(docId: number): Promise<void> {
+  try {
+    const blob = await getDocumentBlob(docId)
+    const url = window.URL.createObjectURL(blob)
+    window.open(url, '_blank')
+  } catch {
+    errorMessage.value = 'El archivo PDF aún no está disponible en almacenamiento.'
+  }
+}
+
 onMounted(() => {
-  loadData()
+  void loadData()
 })
 </script>
 
 <template>
-  <UiBasePage :fluid="false">
+  <UiBasePage :fluid="true">
     <div style="margin-bottom: 1.5rem;">
       <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0;">Mis Prácticas Profesionales</h1>
-      <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">Seguimiento a carta de presentación, vinculación con empresa y liberación</p>
+      <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">
+        Solicitud automatizada de Carta de Presentación, recepción de Oficio de Aceptación y
+        validación documental
+      </p>
     </div>
 
-    <UiAlert v-if="errorMessage" :tone="errorMessage.includes('Aún no') ? 'info' : 'danger'" style="margin-bottom: 1rem;">
+    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">
       {{ errorMessage }}
+    </UiAlert>
+    <UiAlert v-if="successMessage" tone="success" style="margin-bottom: 1rem;">
+      {{ successMessage }}
     </UiAlert>
 
     <div v-if="isLoading" style="padding: 2rem; text-align: center;">Cargando trámite...</div>
 
-    <div v-else-if="internship" style="display: flex; flex-direction: column; gap: 1.5rem;">
-      <UiCard title="Información del Trámite">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: center;">
+    <!-- ==================================================================== -->
+    <!-- PASO 1: SOLICITUD DE CARTA DE PRESENTACIÓN (REEMPLAZO DEL FORMS)     -->
+    <!-- ==================================================================== -->
+    <div v-else-if="!internship" style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <UiCard
+        title="Solicitud de Carta de Presentación de Prácticas Profesionales (Formulario Automatizado + IMSS)"
+      >
+        <p style="margin: 0 0 1rem; font-size: 0.92rem; color: #4b5563;">
+          Confirma tus datos escolares y adjunta tu
+          <strong>Constancia de Vigencia de Derechos del IMSS</strong>. Una vez enviada tu
+          solicitud, el Coordinador de Prácticas Profesionales generará tu
+          <strong>Carta de Presentación (`Oficio No. EJ26/PR...`)</strong>.
+        </p>
+
+        <div class="form-grid">
+          <UiField label="Matrícula / No. de Control">
+            <input :value="studentProfile?.controlNumber || ''" type="text" disabled />
+          </UiField>
+
+          <UiField label="Nombre Completo del Alumno">
+            <input
+              :value="
+                studentProfile
+                  ? `${studentProfile.firstName} ${studentProfile.firstSurname} ${studentProfile.secondSurname || ''}`.trim()
+                  : ''
+              "
+              type="text"
+              disabled
+            />
+          </UiField>
+
+          <UiField label="Carrera">
+            <input :value="studentProfile?.careerName || ''" type="text" disabled />
+          </UiField>
+
+          <UiField label="Periodo Escolar *">
+            <select v-model.number="requestForm.periodId">
+              <option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
+            </select>
+          </UiField>
+
+          <UiField label="Semestre que Cursa (1-15) *">
+            <input v-model.number="requestForm.currentSemester" type="number" min="1" max="15" />
+          </UiField>
+
+          <UiField label="Turno *">
+            <select v-model="requestForm.shift">
+              <option value="morning">Matutino</option>
+              <option value="night">Nocturno</option>
+              <option value="afternoon">Vespertino</option>
+            </select>
+          </UiField>
+
+          <UiField label="Teléfono de Contacto *">
+            <input v-model="requestForm.phoneNumber" type="text" placeholder="Ej. 8661458920" />
+          </UiField>
+
+          <UiField label="Correo Electrónico INSTITUCIONAL *">
+            <input
+              v-model="requestForm.institutionalEmail"
+              type="email"
+              placeholder="L23050363@monclova.tecnm.mx"
+            />
+          </UiField>
+        </div>
+
+        <div class="imss-banner">
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Folio Carta Presentación</strong>
-            <span style="font-weight: 600;">{{ internship.presentationLetterFolio || 'Generándose...' }}</span>
+            <strong>Constancia de Vigencia de Derechos del IMSS (PDF) *</strong>
+            <div style="font-size: 0.85rem; color: #4b5563;">
+              Estado actual:
+              <UiBadge :tone="studentProfile?.hasValidImss ? 'success' : 'warning'">
+                {{
+                  studentProfile?.hasValidImss
+                    ? 'Vigencia IMSS ya cargada en perfil'
+                    : 'Adjunta tu PDF de Vigencia IMSS'
+                }}
+              </UiBadge>
+            </div>
+          </div>
+          <input type="file" accept="application/pdf" @change="handleImssFileChange" />
+        </div>
+
+        <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
+          <UiButton variant="primary" :disabled="isSubmitting" @click="handleSubmitFormsRequest">
+            {{ isSubmitting ? 'Enviando Solicitud...' : 'Solicitar Carta de Presentación' }}
+          </UiButton>
+        </div>
+      </UiCard>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- PASO 2 Y 3: SEGUIMIENTO DE PRÁCTICAS Y CARGA DE DOCUMENTOS           -->
+    <!-- ==================================================================== -->
+    <div v-else style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <UiCard title="Estado de Mis Prácticas Profesionales">
+        <div class="summary-grid">
+          <div>
+            <span class="label">Folio Carta de Presentación (CP)</span>
+            <strong>{{ internship.presentationLetterFolio || 'En emisión por Vinculación' }}</strong>
           </div>
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Empresa Asignada</strong>
-            <span>{{ internship.company?.name || 'Pendiente de Carta de Aceptación' }}</span>
+            <span class="label">Empresa Receptora</span>
+            <strong>{{ internship.company?.name || 'Por registrar con Oficio de Aceptación' }}</strong>
           </div>
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Horas Cumplidas</strong>
-            <span>{{ internship.completedHours }} / {{ internship.requiredHours }} hrs</span>
+            <span class="label">Progreso Documental</span>
+            <strong style="font-size: 1.15rem; color: #16a34a;">
+              {{ internship.documentProgressPercentage }}%
+            </strong>
           </div>
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Progreso Documental</strong>
-            <span style="font-weight: 700; color: #16a34a;">{{ internship.documentProgressPercentage }}%</span>
+            <span class="label">Constancia de Liberación (CC)</span>
+            <strong style="color: #16a34a;">
+              {{ internship.releaseCertificateFolio || 'Al concluir expediente' }}
+            </strong>
           </div>
+        </div>
+
+        <UiAlert tone="info" style="margin-top: 1rem;">
+          <strong>Instrucción para el Oficio de Aceptación:</strong> Una vez entregada tu Carta de
+          Presentación, la empresa debe enviar el <strong>Oficio de Aceptación</strong> en
+          <strong>hoja membretada, con firma y sello</strong> al correo
+          <strong><code>arturo.martinez@monclova.tecnm.mx</code></strong>. Después, sube aquí tus
+          documentos para que Vinculación los valide.
+        </UiAlert>
+
+        <div class="toolbar">
+          <UiButton
+            v-if="internship.presentationLetterFolio"
+            variant="primary"
+            size="sm"
+            @click="handlePrint('presentation_letter')"
+          >
+            Descargar Carta de Presentación ({{ internship.presentationLetterFolio }})
+          </UiButton>
+
+          <UiButton variant="secondary" size="sm" @click="isAcceptanceModalOpen = true">
+            Registrar Empresa Receptora (CA)
+          </UiButton>
+
+          <UiButton variant="secondary" size="sm" @click="isEvalModalOpen = true">
+            Prellenar e Imprimir Evaluación Anexo XVII
+          </UiButton>
+
+          <UiButton
+            v-if="internship.status === 'released'"
+            variant="primary"
+            size="sm"
+            @click="handlePrint('release_certificate')"
+          >
+            Descargar Constancia de Acreditación ({{ internship.releaseCertificateFolio }})
+          </UiButton>
         </div>
       </UiCard>
 
-      <UiCard title="Expediente de Documentos Requeridos">
-        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-          <div
-            v-for="item in internship.checklist"
-            :key="item.documentCode"
-            style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 6px;"
-          >
-            <div>
-              <strong style="display: block;">{{ item.documentCode }} - {{ item.name }}</strong>
-              <small v-if="item.rejectionReason" style="color: #dc2626;">Motivo rechazo: {{ item.rejectionReason }}</small>
+      <!-- Checklist y Carga de Documentos de Prácticas -->
+      <UiCard title="Carga de Documentos de Prácticas Profesionales para Validación">
+        <div class="steps-list">
+          <div v-for="step in internshipDocumentSteps" :key="step.code" class="step-card">
+            <div class="step-info">
+              <div class="step-header">
+                <strong>{{ step.title }}</strong>
+                <UiBadge
+                  v-if="getDocByCode(step.code)"
+                  :tone="
+                    getDocByCode(step.code)?.status === 'approved'
+                      ? 'success'
+                      : getDocByCode(step.code)?.status === 'rejected'
+                        ? 'danger'
+                        : 'warning'
+                  "
+                >
+                  {{
+                    getDocByCode(step.code)?.status === 'approved'
+                      ? 'Validado (SI)'
+                      : getDocByCode(step.code)?.status === 'rejected'
+                        ? 'Observado / Rechazado'
+                        : 'En Revisión por Vinculación'
+                  }}
+                </UiBadge>
+                <UiBadge v-else tone="info">Pendiente</UiBadge>
+              </div>
+              <p class="step-hint">{{ step.hint }}</p>
+              <div
+                v-if="getDocByCode(step.code)?.rejectionReason"
+                style="color: #dc2626; font-size: 0.84rem; margin-top: 0.25rem;"
+              >
+                <strong>Observación de Vinculación:</strong>
+                {{ getDocByCode(step.code)?.rejectionReason }}
+              </div>
             </div>
-            <UiBadge :tone="item.status === 'approved' ? 'success' : item.status === 'rejected' ? 'danger' : 'warning'">
-              {{ item.status === 'approved' ? 'Aprobado' : item.status === 'pending' ? 'En Revisión' : item.status === 'rejected' ? 'Rechazado' : 'Pendiente' }}
-            </UiBadge>
+
+            <div class="step-actions">
+              <UiButton
+                v-if="step.openModal === 'acceptance'"
+                variant="secondary"
+                size="sm"
+                @click="isAcceptanceModalOpen = true"
+              >
+                Datos de Empresa
+              </UiButton>
+              <UiButton
+                v-if="step.openModal === 'evaluation'"
+                variant="secondary"
+                size="sm"
+                @click="isEvalModalOpen = true"
+              >
+                Llenar e Imprimir Anexo XVII
+              </UiButton>
+              <UiButton
+                v-else-if="step.printKey"
+                variant="secondary"
+                size="sm"
+                @click="handlePrint(step.printKey)"
+              >
+                Imprimir Formato
+              </UiButton>
+
+              <UiButton
+                v-if="getDocByCode(step.code)"
+                variant="secondary"
+                size="sm"
+                @click="handleViewUploadedPdf(getDocByCode(step.code)!.id)"
+              >
+                Ver PDF
+              </UiButton>
+
+              <label class="upload-label">
+                <span>
+                  {{
+                    uploadingCode === step.code
+                      ? 'Subiendo...'
+                      : getDocByCode(step.code)
+                        ? 'Reemplazar PDF'
+                        : 'Subir PDF Firmado'
+                  }}
+                </span>
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  style="display: none;"
+                  :disabled="uploadingCode === step.code"
+                  @change="handleUploadStepPdf(step.code, $event)"
+                />
+              </label>
+            </div>
           </div>
         </div>
       </UiCard>
     </div>
+
+    <!-- ==================================================================== -->
+    <!-- MODAL 1: REGISTRAR EMPRESA RECEPTORA Y PERIODO DE ACEPTACIÓN         -->
+    <!-- ==================================================================== -->
+    <UiDialog
+      v-model="isAcceptanceModalOpen"
+      size="lg"
+      title="Registrar Datos del Oficio de Aceptación (Empresa Receptora)"
+    >
+      <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+        <UiField label="Empresa Receptora *">
+          <select v-model.number="acceptanceForm.companyId" @change="handleCompanyChange">
+            <option v-for="c in companyOptions" :key="c.id" :value="c.id">{{ c.label }}</option>
+          </select>
+        </UiField>
+
+        <UiField label="Responsable / Supervisor en la Empresa *">
+          <select v-model.number="acceptanceForm.supervisorId">
+            <option v-for="s in supervisorOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
+          </select>
+        </UiField>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <UiField label="Fecha de Inicio *">
+            <input v-model="acceptanceForm.startDate" type="date" />
+          </UiField>
+          <UiField label="Fecha de Término *">
+            <input v-model="acceptanceForm.endDate" type="date" />
+          </UiField>
+        </div>
+
+        <UiField label="Horario de Prácticas">
+          <input v-model="acceptanceForm.scheduleDescription" type="text" />
+        </UiField>
+      </div>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+          <UiButton variant="secondary" @click="isAcceptanceModalOpen = false">Cancelar</UiButton>
+          <UiButton variant="primary" :disabled="isSubmitting" @click="handleSaveAcceptance">
+            Guardar Datos de Empresa
+          </UiButton>
+        </div>
+      </template>
+    </UiDialog>
+
+    <!-- ==================================================================== -->
+    <!-- MODAL 2: PRELLENAR E IMPRIMIR ANEXO XVII (PRODUCTIVIDAD LABORAL)     -->
+    <!-- ==================================================================== -->
+    <UiDialog
+      v-model="isEvalModalOpen"
+      size="lg"
+      title="Prellenar e Imprimir Anexo XVII — Evaluación de Productividad Laboral"
+    >
+      <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <UiField label="Fecha Inicio Evaluación *">
+            <input v-model="evalForm.evaluationStartDate" type="date" />
+          </UiField>
+          <UiField label="Fecha Fin Evaluación *">
+            <input v-model="evalForm.evaluationEndDate" type="date" />
+          </UiField>
+        </div>
+        <UiField label="Calificación por Criterio para Impresión (0 a 4)">
+          <select v-model.number="evalForm.defaultScore">
+            <option :value="4">4 — Excelente (Promedio 4.00)</option>
+            <option :value="3">3 — Notable (Promedio 3.00)</option>
+            <option :value="2">2 — Bueno (Promedio 2.00)</option>
+            <option :value="1">1 — Suficiente (Promedio 1.00)</option>
+          </select>
+        </UiField>
+        <UiField label="Observaciones">
+          <input v-model="evalForm.observations" type="text" />
+        </UiField>
+      </div>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+          <UiButton variant="secondary" @click="isEvalModalOpen = false">Cancelar</UiButton>
+          <UiButton
+            variant="primary"
+            :disabled="isSubmitting"
+            @click="handleSaveAndPrintEvaluation"
+          >
+            Guardar e Imprimir Anexo XVII
+          </UiButton>
+        </div>
+      </template>
+    </UiDialog>
   </UiBasePage>
 </template>
 
+<style scoped>
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+}
+
+.imss-banner {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px dashed #16a34a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  align-items: center;
+}
+
+.label {
+  display: block;
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-bottom: 0.2rem;
+}
+
+.toolbar {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.step-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+}
+
+.step-info {
+  flex: 1;
+  min-width: 260px;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.step-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.84rem;
+  color: #6b7280;
+}
+
+.step-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.upload-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.8rem;
+  background: #16a34a;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.upload-label:hover {
+  background: #15803d;
+}
+</style>

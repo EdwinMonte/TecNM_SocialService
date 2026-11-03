@@ -1,11 +1,24 @@
 import { ref, watch } from 'vue'
 
-const prefersDark =
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-color-scheme: dark)').matches
+const THEME_STORAGE_KEY = 'tecnm_sspp_theme'
 
-const dark = ref(prefersDark)
+function getInitialTheme(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY)
+    if (saved === 'dark') return true
+    if (saved === 'light') return false
+  } catch {
+    // Silencioso en caso de bloqueo de storage
+  }
+
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
+}
+
+const dark = ref(getInitialTheme())
 
 let lastClickX = 0
 let lastClickY = 0
@@ -20,11 +33,19 @@ if (typeof window !== 'undefined') {
     },
     { passive: true },
   )
+
+  // Aplicar inmediatamente al cargar el script para evitar flashes
+  applyThemeAttribute(dark.value)
 }
 
 function applyThemeAttribute(isDark: boolean): void {
   if (typeof document === 'undefined') return
   document.documentElement.dataset.theme = isDark ? 'dark' : 'light'
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, isDark ? 'dark' : 'light')
+  } catch {
+    // Silencioso
+  }
 }
 
 watch(

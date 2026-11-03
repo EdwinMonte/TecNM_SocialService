@@ -1,117 +1,282 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { UiAlert, UiBasePage, UiButton, UiCard, UiField } from '../../../shared/components'
-import { getMyStudentProfile, updateMyImss } from '../api/studentsApi'
-import type { Student } from '../types/students'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiField } from '../../../shared/components'
+import {
+  getMyEligibility,
+  getMyImssBlob,
+  getMyStudentProfile,
+  updateMyContact,
+  uploadMyImssFile,
+} from '../api/studentsApi'
+import type { StudentDetail, StudentEligibility, StudentShift } from '../types/students'
 
-const profile = ref<Student | null>(null)
+const profile = ref<StudentDetail | null>(null)
+const eligibility = ref<StudentEligibility | null>(null)
 const isLoading = ref(true)
-const isSaving = ref(false)
+const isSavingContact = ref(false)
+const isUploadingImss = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const selectedImssFile = ref<File | null>(null)
 
-const imssNumber = ref('')
-const imssClinic = ref('')
+const contactForm = reactive<{
+  phoneNumber: string
+  institutionalEmail: string
+  personalEmail: string
+  currentSemester: number
+  shift: StudentShift
+}>({
+  phoneNumber: '',
+  institutionalEmail: '',
+  personalEmail: '',
+  currentSemester: 6,
+  shift: 'morning',
+})
 
-async function loadProfile() {
+const fullName = computed(() => {
+  if (!profile.value) return ''
+  return [
+    profile.value.firstName,
+    profile.value.firstSurname,
+    profile.value.secondSurname,
+  ]
+    .filter(Boolean)
+    .join(' ')
+})
+
+async function loadProfile(): Promise<void> {
   isLoading.value = true
   errorMessage.value = ''
   try {
-    const data = await getMyStudentProfile()
+    const [data, elig] = await Promise.all([
+      getMyStudentProfile(),
+      getMyEligibility().catch(() => null),
+    ])
     profile.value = data
-    imssNumber.value = data.imssNumber || ''
-    imssClinic.value = data.imssClinic || ''
+    eligibility.value = elig
+    contactForm.phoneNumber = data.phoneNumber || ''
+    contactForm.institutionalEmail = data.institutionalEmail || ''
+    contactForm.personalEmail = data.personalEmail || ''
+    contactForm.currentSemester = data.currentSemester
+    contactForm.shift = data.shift
   } catch (err: any) {
-    errorMessage.value = err.response?.data?.message || 'No se pudo cargar la información del alumno'
+    errorMessage.value =
+      err?.response?.data?.message || 'No se pudo cargar la información del expediente del alumno.'
   } finally {
     isLoading.value = false
   }
 }
 
-async function handleSaveImss() {
-  isSaving.value = true
+async function handleSaveContact(): Promise<void> {
+  isSavingContact.value = true
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    const updated = await updateMyImss({
-      imssNumber: imssNumber.value,
-      imssClinic: imssClinic.value,
+    const updated = await updateMyContact({
+      phoneNumber: contactForm.phoneNumber.trim() || null,
+      institutionalEmail: contactForm.institutionalEmail.trim() || null,
+      personalEmail: contactForm.personalEmail.trim() || null,
+      currentSemester: contactForm.currentSemester,
+      shift: contactForm.shift,
     })
     profile.value = updated
-    successMessage.value = 'Datos de seguro médico IMSS actualizados exitosamente'
+    successMessage.value = 'Datos de contacto y turno actualizados exitosamente.'
   } catch (err: any) {
-    errorMessage.value = err.response?.data?.message || 'Error al actualizar datos de IMSS'
+    errorMessage.value = err?.response?.data?.message || 'Error al actualizar los datos de contacto.'
   } finally {
-    isSaving.value = false
+    isSavingContact.value = false
+  }
+}
+
+function handleFileChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  selectedImssFile.value = input.files?.[0] ?? null
+}
+
+async function handleUploadImss(): Promise<void> {
+  if (!selectedImssFile.value) return
+  isUploadingImss.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const updated = await uploadMyImssFile(selectedImssFile.value)
+    profile.value = updated
+    selectedImssFile.value = null
+    eligibility.value = await getMyEligibility().catch(() => null)
+    successMessage.value =
+      'Constancia de Vigencia de Derechos del IMSS cargada y validada correctamente.'
+  } catch (err: any) {
+    errorMessage.value =
+      err?.response?.data?.message || 'Error al subir la Constancia de Vigencia del IMSS.'
+  } finally {
+    isUploadingImss.value = false
+  }
+}
+
+async function handleViewMyImss(): Promise<void> {
+  try {
+    const blob = await getMyImssBlob()
+    const url = window.URL.createObjectURL(blob)
+    window.open(url, '_blank')
+  } catch {
+    errorMessage.value = 'Aún no hay un archivo PDF de vigencia IMSS disponible para visualizar.'
   }
 }
 
 onMounted(() => {
-  loadProfile()
+  void loadProfile()
 })
 </script>
 
 <template>
   <UiBasePage :fluid="false">
     <div style="margin-bottom: 1.5rem;">
-      <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0;">Mi Perfil de Estudiante</h1>
-      <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">Expediente personal y datos de seguridad social requeridos para trámites</p>
+      <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0;">Mi Perfil y Vigencia de Derechos IMSS</h1>
+      <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">
+        Expediente escolar, datos de contacto para formatos oficiales y carga de Constancia de Vigencia IMSS
+      </p>
     </div>
 
-    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">{{ errorMessage }}</UiAlert>
-    <UiAlert v-if="successMessage" tone="success" style="margin-bottom: 1rem;">{{ successMessage }}</UiAlert>
+    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">
+      {{ errorMessage }}
+    </UiAlert>
+    <UiAlert v-if="successMessage" tone="success" style="margin-bottom: 1rem;">
+      {{ successMessage }}
+    </UiAlert>
 
     <div v-if="isLoading" style="padding: 2rem; text-align: center;">Cargando expediente...</div>
 
     <div v-else-if="profile" style="display: flex; flex-direction: column; gap: 1.5rem;">
-      <UiCard title="Datos Académicos">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+      <!-- Tarjeta 1: Datos Académicos y Elegibilidad -->
+      <UiCard title="Datos Académicos y Elegibilidad">
+        <div
+          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem;"
+        >
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">No. Control</strong>
-            <span style="font-size: 1.1rem; font-weight: 600;">{{ profile.controlNumber }}</span>
+            <strong style="display: block; font-size: 0.82rem; color: #6c757d;">No. Control</strong>
+            <span style="font-size: 1.05rem; font-weight: 700;">{{ profile.controlNumber }}</span>
           </div>
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Nombre Completo</strong>
-            <span style="font-size: 1.1rem; font-weight: 600;">{{ profile.fullName }}</span>
+            <strong style="display: block; font-size: 0.82rem; color: #6c757d;">Nombre Completo</strong>
+            <span style="font-size: 1.05rem; font-weight: 600;">{{ fullName }}</span>
           </div>
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">CURP</strong>
-            <span>{{ profile.curp }}</span>
+            <strong style="display: block; font-size: 0.82rem; color: #6c757d;">CURP</strong>
+            <span>{{ profile.curp || 'No registrado' }}</span>
           </div>
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Carrera</strong>
-            <span>{{ profile.careerCode }} - {{ profile.careerName }}</span>
+            <strong style="display: block; font-size: 0.82rem; color: #6c757d;">Carrera</strong>
+            <span>{{ profile.careerName }}</span>
           </div>
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Semestre Actual</strong>
-            <span>Semestre {{ profile.currentSemester }}</span>
+            <strong style="display: block; font-size: 0.82rem; color: #6c757d;">Semestre / Créditos</strong>
+            <span>{{ profile.currentSemester }}° Semestre ({{ profile.completedCredits }} créditos)</span>
           </div>
           <div>
-            <strong style="display: block; font-size: 0.85rem; color: #6c757d;">Avance de Créditos</strong>
-            <span style="font-weight: 600; color: #0284c7;">{{ profile.percentageApprovedCredits }}%</span>
+            <strong style="display: block; font-size: 0.82rem; color: #6c757d;">Avance de Créditos</strong>
+            <span style="font-weight: 700; color: #0284c7;">
+              {{ profile.curriculumProgressPercentage }}%
+            </span>
+          </div>
+        </div>
+
+        <div
+          v-if="eligibility"
+          style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; display: flex; flex-wrap: wrap; gap: 1rem;"
+        >
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.88rem; font-weight: 600;">Servicio Social:</span>
+            <UiBadge :tone="eligibility.socialService.eligible ? 'success' : 'warning'">
+              {{ eligibility.socialService.eligible ? 'Elegible' : 'Pendiente requisito' }}
+            </UiBadge>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.88rem; font-weight: 600;">Prácticas Profesionales:</span>
+            <UiBadge :tone="eligibility.internship.eligible ? 'success' : 'warning'">
+              {{ eligibility.internship.eligible ? 'Elegible' : 'Pendiente requisito' }}
+            </UiBadge>
           </div>
         </div>
       </UiCard>
 
-      <UiCard title="Afiliación Médica (IMSS)">
-        <p style="font-size: 0.9rem; color: #4b5563; margin-bottom: 1rem;">
-          El Número de Seguridad Social (NSS) y la clínica asignada son obligatorios para generar cartas de presentación de Servicio Social y Prácticas.
-        </p>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
-          <UiField label="Número de Seguridad Social (NSS)" hint="11 dígitos">
-            <input v-model="imssNumber" type="text" maxlength="11" placeholder="Ej. 12345678901" />
+      <!-- Tarjeta 2: Constancia de Vigencia de Derechos del IMSS -->
+      <UiCard title="Constancia de Vigencia de Derechos del IMSS (PDF)">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
+          <div>
+            <p style="font-size: 0.9rem; color: #4b5563; margin: 0 0 0.5rem;">
+              Adjunta tu Constancia de Vigencia de Derechos del IMSS en formato PDF. Este documento
+              también se puede adjuntar directamente al solicitar tu apertura de Servicio Social o
+              Carta de Presentación de Prácticas.
+            </p>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <UiBadge :tone="profile.hasValidImss ? 'success' : 'warning'">
+                {{ profile.hasValidImss ? 'Vigencia IMSS Validada' : 'Pendiente de Subir / Validar' }}
+              </UiBadge>
+              <span v-if="profile.imssValidatedAt" style="font-size: 0.8rem; color: #6b7280;">
+                Actualizado: {{ new Date(profile.imssValidatedAt).toLocaleDateString() }}
+              </span>
+            </div>
+          </div>
+
+          <UiButton v-if="profile.hasImssFile" variant="secondary" @click="handleViewMyImss">
+            Ver / Descargar Mi Constancia IMSS
+          </UiButton>
+        </div>
+
+        <div
+          style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1rem; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;"
+        >
+          <input type="file" accept="application/pdf" @change="handleFileChange" />
+          <UiButton
+            variant="primary"
+            :disabled="!selectedImssFile || isUploadingImss"
+            @click="handleUploadImss"
+          >
+            {{ isUploadingImss ? 'Subiendo PDF...' : 'Subir Constancia IMSS (PDF)' }}
+          </UiButton>
+        </div>
+      </UiCard>
+
+      <!-- Tarjeta 3: Datos de Contacto y Turno (usados en prellenado de formatos) -->
+      <UiCard title="Datos de Contacto y Turno (Para Prellenado Automático de Formatos)">
+        <div
+          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;"
+        >
+          <UiField label="Teléfono de Contacto" hint="Se usa en Anexo XVIII, XX y Solicitud PP">
+            <input v-model="contactForm.phoneNumber" type="text" placeholder="Ej. 8661458920" />
           </UiField>
-          <UiField label="Clínica / UMF Asignada" hint="Ej. UMF 84 Monclova">
-            <input v-model="imssClinic" type="text" placeholder="Ej. UMF 84" />
+
+          <UiField label="Correo Institucional (@monclova.tecnm.mx)">
+            <input
+              v-model="contactForm.institutionalEmail"
+              type="email"
+              placeholder="L23050363@monclova.tecnm.mx"
+            />
+          </UiField>
+
+          <UiField label="Correo Personal">
+            <input v-model="contactForm.personalEmail" type="email" placeholder="alumno@gmail.com" />
+          </UiField>
+
+          <UiField label="Semestre Actual">
+            <input v-model.number="contactForm.currentSemester" type="number" min="1" max="15" />
+          </UiField>
+
+          <UiField label="Turno">
+            <select v-model="contactForm.shift">
+              <option value="morning">Matutino</option>
+              <option value="afternoon">Vespertino</option>
+              <option value="night">Nocturno</option>
+            </select>
           </UiField>
         </div>
+
         <div style="margin-top: 1rem; display: flex; justify-content: flex-end;">
-          <UiButton variant="primary" :disabled="isSaving" @click="handleSaveImss">
-            {{ isSaving ? 'Guardando...' : 'Guardar Datos IMSS' }}
+          <UiButton variant="primary" :disabled="isSavingContact" @click="handleSaveContact">
+            {{ isSavingContact ? 'Guardando...' : 'Guardar Datos de Contacto' }}
           </UiButton>
         </div>
       </UiCard>
     </div>
   </UiBasePage>
 </template>
-

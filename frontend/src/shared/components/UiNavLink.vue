@@ -18,6 +18,7 @@ const active = computed(() => {
       :href="href"
       :class="{ active }"
       :aria-current="active ? 'location' : undefined"
+      :title="item.label"
       @click="navigate"
     >
       <span v-if="item.icon" class="nav-icon" aria-hidden="true">
@@ -132,9 +133,9 @@ a.active .nav-icon {
 .nav-label {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.35;
+  word-break: normal;
 }
 
 .nav-badge {

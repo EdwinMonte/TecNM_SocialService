@@ -1,5 +1,13 @@
 import { http } from '../../../shared/api/http'
-import type { Career, CareerFilterParams, CareerRequest, PagedResponse, UpdateStatusRequest } from '../types/careers'
+import type {
+  AcademicPeriod,
+  Career,
+  CareerFilterParams,
+  CareerRequest,
+  OptionItem,
+  PagedResponse,
+  UpdateStatusRequest,
+} from '../types/careers'
 
 export async function getCareers(params?: CareerFilterParams): Promise<PagedResponse<Career>> {
   const queryParams: Record<string, string | number | boolean> = {}
@@ -12,6 +20,36 @@ export async function getCareers(params?: CareerFilterParams): Promise<PagedResp
 
   const response = await http.get<PagedResponse<Career>>('/careers', { params: queryParams })
   return response.data
+}
+
+export async function getCareerOptions(): Promise<OptionItem[]> {
+  return (await http.get<OptionItem[]>('/careers/options')).data
+}
+
+export async function getPeriodOptions(): Promise<OptionItem[]> {
+  return (await http.get<OptionItem[]>('/academic-periods/options')).data
+}
+
+export async function getCurrentPeriod(): Promise<AcademicPeriod> {
+  return (await http.get<AcademicPeriod>('/academic-periods/current')).data
+}
+
+export async function getProgramOptions(): Promise<OptionItem[]> {
+  return (await http.get<OptionItem[]>('/social-service-programs/options')).data
+}
+
+export async function getCompanyOptions(isTecnmInternal?: boolean): Promise<OptionItem[]> {
+  const params = isTecnmInternal !== undefined ? { isTecnmInternal } : undefined
+  return (await http.get<OptionItem[]>('/companies/options', { params })).data
+}
+
+export async function getSupervisorOptions(companyId: number): Promise<OptionItem[]> {
+  return (await http.get<OptionItem[]>(`/companies/${companyId}/supervisors/options`)).data
+}
+
+export async function getAgreementOptions(companyId?: number): Promise<OptionItem[]> {
+  const params = companyId ? { companyId } : undefined
+  return (await http.get<OptionItem[]>('/agreements/options', { params })).data
 }
 
 export async function getCareerById(id: number): Promise<Career> {

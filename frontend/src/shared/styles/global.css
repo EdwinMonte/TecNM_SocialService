@@ -330,7 +330,7 @@ small,
 
 .layout {
   display: grid;
-  grid-template-columns: 216px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 272px) minmax(0, 1fr);
   max-width: 1600px;
   margin: auto;
 }
@@ -1106,5 +1106,3 @@ textarea:disabled {
   z-index: 999;
 }
 
-margin:12px 0 0;
-}
