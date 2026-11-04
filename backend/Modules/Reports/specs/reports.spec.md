@@ -1,3 +1,5 @@
+> Aplicar primero [Flujo documental v2](../../../../docs/specs/document-workflow-v2.spec.md). Este archivo conserva contexto previo compatible.
+
 # Reports backend
 
 Contrato compartido: [spec raíz de reportes](../../../../docs/specs/reports.spec.md).

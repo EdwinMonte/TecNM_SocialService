@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
+import { http } from '../../../shared/api/http'
+import { onMounted, reactive, ref } from 'vue'
 import {
   UiAlert,
   UiBadge,
@@ -17,7 +19,7 @@ import {
   getSupervisorOptions,
 } from '../../catalogs/api/careersApi'
 import type { OptionItem } from '../../catalogs/types/careers'
-import { getDocumentBlob, getMyDocuments, uploadMyDocument } from '../../expedients/api/expedientsApi'
+import { getMyDocuments } from '../../expedients/api/expedientsApi'
 import type { ExpedientDocument } from '../../expedients/types/expedients'
 import { getMyStudentProfile, uploadMyImssFile } from '../../students/api/studentsApi'
 import type { StudentDetail } from '../../students/types/students'
@@ -26,9 +28,7 @@ import {
   getSocialServicePrintData,
   requestSocialService,
   submitBimonthlyReport,
-  upsertActivityAssessment,
   upsertCommitment,
-  upsertSocialServiceEvaluation,
 } from '../api/socialServiceApi'
 import type { CreateSocialServicePayload, SocialServiceDetail } from '../types/socialService'
 
@@ -47,6 +47,7 @@ const programOptions = ref<OptionItem[]>([])
 const companyOptions = ref<OptionItem[]>([])
 const supervisorOptions = ref<OptionItem[]>([])
 const imssFileForApplication = ref<File | null>(null)
+const imssDeclaredDate = ref('')
 
 const openForm = reactive<CreateSocialServicePayload>({
   periodId: 0,
@@ -87,104 +88,6 @@ const reportForm = reactive({
   activitiesSummary: '',
   reportedHours: 160,
 })
-
-// Modal Evaluaciones Cualitativas (Anexos XXIII, XXIV, XXV)
-const isEvalModalOpen = ref(false)
-const evalForm = reactive({
-  bimonthlyPeriod: '1' as '1' | '2' | '3',
-  defaultGrade: 'excellent',
-  observations: 'Cumplió satisfactoriamente con las actividades asignadas en el bimestre.',
-})
-
-// Subida de Documentos PDF Firmados y Sellados
-const uploadingCode = ref<string | null>(null)
-
-const requiredDocumentSteps = computed(() => {
-  const isInternal = service.value?.modality === 'internal'
-  return [
-    {
-      code: 'SOL',
-      title: '1. Solicitud de Servicio Social (Anexo XVIII)',
-      hint: 'Generada al solicitar apertura. Imprímela, fírmala y súbela en PDF.',
-      printKey: 'application',
-    },
-    {
-      code: 'CP',
-      title: '2. Carta de Presentación Emitida (CP)',
-      hint: 'Se genera automáticamente cuando Vinculación aprueba tu apertura. Descárgala y entrégala en la dependencia.',
-      printKey: 'presentation_letter',
-    },
-    {
-      code: 'CA',
-      title: isInternal
-        ? '3. Carta de Aceptación Local TecNM (CA — Generación Automática)'
-        : '3. Carta de Aceptación de la Dependencia (CA)',
-      hint: isInternal
-        ? 'Al ser servicio local en el TecNM, descárgala prellenada aquí, recaba firma/sello del jefe de depto. y súbela.'
-        : 'Emitida por la dependencia receptora. Súbela firmada y sellada.',
-      printKey: isInternal ? 'acceptance_letter' : null,
-    },
-    {
-      code: 'CC',
-      title: '4. Carta Compromiso de Servicio Social (Anexo XX)',
-      hint: 'Llena tus datos, imprímela, fírmala y sube el PDF escaneado.',
-      printKey: 'commitment',
-      openModal: 'commitment',
-    },
-    {
-      code: 'R1',
-      title: '5. 1er Reporte Bimestral (Anexo XXII)',
-      hint: 'Llena tus actividades del 1er bimestre para imprimir el formato lleno, recaba firma y sello y súbelo.',
-      printKey: 'report_1',
-      openModal: 'report_1',
-    },
-    {
-      code: 'EV1',
-      title: '6. Evaluación Cualitativa y Autoevaluación 1er Bimestre (Anexos XXIII y XXIV)',
-      hint: 'Genera el formato prellenado, pide firma y sello y sube el PDF escaneado.',
-      printKey: 'evaluation_1',
-      openModal: 'eval_1',
-    },
-    {
-      code: 'R2',
-      title: '7. 2do Reporte Bimestral (Anexo XXII)',
-      hint: 'Llena tus actividades del 2do bimestre, imprímelo para firma/sello y sube el PDF.',
-      printKey: 'report_2',
-      openModal: 'report_2',
-    },
-    {
-      code: 'EV2',
-      title: '8. Evaluación Cualitativa y Autoevaluación 2do Bimestre (Anexos XXIII y XXIV)',
-      hint: 'Genera el formato prellenado, pide firma y sello y sube el PDF escaneado.',
-      printKey: 'evaluation_2',
-      openModal: 'eval_2',
-    },
-    {
-      code: 'R3',
-      title: '9. 3er Reporte Bimestral (Anexo XXII)',
-      hint: 'Llena tus actividades del 3er bimestre, imprímelo para firma/sello y sube el PDF.',
-      printKey: 'report_3',
-      openModal: 'report_3',
-    },
-    {
-      code: 'EV3',
-      title: '10. Evaluación Final y de Actividades (Anexos XXIII, XXIV y XXV)',
-      hint: 'Genera los formatos finales prellenados, recaba firma y sello y sube el PDF.',
-      printKey: 'evaluation_3',
-      openModal: 'eval_3',
-    },
-    {
-      code: 'CT',
-      title: '11. Carta de Terminación de la Dependencia (Anexo XIX / CT)',
-      hint: 'Sube tu Carta de Terminación firmada y sellada por la dependencia receptora.',
-      printKey: null,
-    },
-  ]
-})
-
-function getDocByCode(code: string): ExpedientDocument | undefined {
-  return uploadedDocs.value.find((d) => d.documentCode.toUpperCase() === code.toUpperCase())
-}
 
 async function loadCatalogsForApplication(): Promise<void> {
   const [periods, programs] = await Promise.all([
@@ -282,7 +185,7 @@ async function handleSubmitApplication(): Promise<void> {
   successMessage.value = ''
   try {
     if (imssFileForApplication.value) {
-      await uploadMyImssFile(imssFileForApplication.value)
+      await uploadMyImssFile(imssFileForApplication.value, imssDeclaredDate.value)
     }
     const created = await requestSocialService(openForm)
     service.value = created
@@ -292,7 +195,7 @@ async function handleSubmitApplication(): Promise<void> {
     await loadData()
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.message || 'Verifica todos los campos de la solicitud y tu vigencia IMSS.'
+      err?.response?.data?.detail || err?.message || 'Verifica todos los campos de la solicitud y tu vigencia IMSS.'
   } finally {
     isSubmitting.value = false
   }
@@ -302,6 +205,12 @@ async function handlePrintFormat(documentKey: string): Promise<void> {
   if (!service.value) return
   errorMessage.value = ''
   try {
+    if (documentKey !== 'release_certificate') {
+      const response = await http.get(`/social-services/${service.value.id}/pdf/${documentKey}`, { responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
+      const link = document.createElement('a'); link.href = url; link.download = `${documentKey}.pdf`; link.click(); URL.revokeObjectURL(url)
+      return
+    }
     const printData = await getSocialServicePrintData(service.value.id, documentKey)
     openPrintableDocument(printData)
   } catch (err: any) {
@@ -324,10 +233,6 @@ function handleOpenStepModal(modalKey: string): void {
       existing?.activitiesSummary || service.value.application?.activitiesOutline || ''
     reportForm.reportedHours = existing?.reportedHours || 160
     isReportModalOpen.value = true
-  } else if (modalKey.startsWith('eval_')) {
-    const num = (modalKey.split('_')[1] || '1') as '1' | '2' | '3'
-    evalForm.bimonthlyPeriod = num
-    isEvalModalOpen.value = true
   }
 }
 
@@ -370,79 +275,6 @@ async function handleSaveAndPrintReport(): Promise<void> {
   }
 }
 
-async function handleSaveAndPrintEvaluations(): Promise<void> {
-  if (!service.value) return
-  isSubmitting.value = true
-  errorMessage.value = ''
-  try {
-    const g = evalForm.defaultGrade
-    const criteria7 = [g, g, g, g, g, g, g]
-    await upsertSocialServiceEvaluation(
-      service.value.id,
-      'external_supervisor',
-      evalForm.bimonthlyPeriod,
-      {
-        criteria: criteria7,
-        evaluatorSupervisorId: service.value.supervisor?.id ?? null,
-        observations: evalForm.observations,
-      },
-    )
-    await upsertSocialServiceEvaluation(service.value.id, 'student_self', evalForm.bimonthlyPeriod, {
-      criteria: criteria7,
-      observations: evalForm.observations,
-    })
-    if (evalForm.bimonthlyPeriod === '3') {
-      await upsertActivityAssessment(service.value.id, {
-        questions: [g, g, g, g, g, g, g, g],
-        observations: evalForm.observations,
-      })
-    }
-    isEvalModalOpen.value = false
-    successMessage.value = `Formatos de Evaluación del Bimestre ${evalForm.bimonthlyPeriod} guardados.`
-    await handlePrintFormat(`evaluation_${evalForm.bimonthlyPeriod}`)
-  } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Error al guardar las evaluaciones.'
-  } finally {
-    isSubmitting.value = false
-  }
-}
-
-async function handleUploadStepPdf(code: string, event: Event): Promise<void> {
-  if (!service.value) return
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  uploadingCode.value = code
-  errorMessage.value = ''
-  successMessage.value = ''
-  try {
-    await uploadMyDocument({
-      file,
-      tramiteType: 'social_service',
-      tramiteId: service.value.id,
-      documentCode: code,
-    })
-    successMessage.value = `Documento ${code} (${file.name}) subido exitosamente y enviado a revisión de Vinculación.`
-    await loadData()
-  } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || `Error al subir el documento ${code}.`
-  } finally {
-    uploadingCode.value = null
-    input.value = ''
-  }
-}
-
-async function handleViewUploadedPdf(docId: number): Promise<void> {
-  try {
-    const blob = await getDocumentBlob(docId)
-    const url = window.URL.createObjectURL(blob)
-    window.open(url, '_blank')
-  } catch {
-    errorMessage.value = 'El archivo PDF aún no está disponible en almacenamiento.'
-  }
-}
-
 onMounted(() => {
   void loadData()
 })
@@ -453,7 +285,7 @@ onMounted(() => {
     <div style="margin-bottom: 1.5rem;">
       <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0;">Mi Servicio Social</h1>
       <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">
-        Generación automática de formatos oficiales (Anexos XVIII–XXV), Carta de Aceptación Local y
+        Descarga de formatos oficiales, carta de aceptación de la dependencia y
         seguimiento por documentos firmados y sellados
       </p>
     </div>
@@ -475,7 +307,7 @@ onMounted(() => {
         <p style="margin: 0 0 1rem; color: #4b5563; font-size: 0.92rem;">
           Llena tus datos y adjunta tu <strong>Constancia de Vigencia de Derechos del IMSS</strong>.
           El sistema generará automáticamente tu formato oficial <strong>Anexo XVIII</strong> y
-          enviará tu solicitud al departamento de Vinculación para emitir tu Carta de Presentación.
+          enviará tu solicitud al departamento de Vinculación. Después podrás adjuntar tu Carta de Presentación firmada.
         </p>
 
         <div class="form-grid">
@@ -565,6 +397,7 @@ onMounted(() => {
             </div>
           </div>
           <input type="file" accept="application/pdf" @change="handleImssFileSelect" />
+          <UiField v-if="imssFileForApplication" v-model="imssDeclaredDate" type="date" label="Fecha de expedición de la constancia IMSS" />
         </div>
 
         <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
@@ -602,7 +435,7 @@ onMounted(() => {
           </div>
           <div>
             <span class="label">Folio Carta de Presentación (CP)</span>
-            <strong>{{ service.presentationLetterFolio || 'Pendiente de dictamen' }}</strong>
+            <strong>{{ service.presentationLetterFolio || 'Consultar carga y dictamen en el expediente' }}</strong>
           </div>
           <div>
             <span class="label">Avance por Documentos Validados</span>
@@ -626,14 +459,7 @@ onMounted(() => {
             Descargar Carta de Presentación ({{ service.presentationLetterFolio }})
           </UiButton>
 
-          <UiButton
-            v-if="service.modality === 'internal'"
-            variant="primary"
-            size="sm"
-            @click="handlePrintFormat('acceptance_letter')"
-          >
-            Generar Carta de Aceptación Local TecNM (Plantilla Automática)
-          </UiButton>
+
 
           <UiButton
             v-if="service.status === 'released'"
@@ -647,102 +473,7 @@ onMounted(() => {
       </UiCard>
 
       <!-- Paso a Paso de Documentos y Prellenado de Formatos -->
-      <UiCard
-        title="Flujo de Formatos Prellenados y Subida de Documentos Firmados y Sellados"
-      >
-        <p style="margin: 0 0 1rem; font-size: 0.9rem; color: #4b5563;">
-          El avance se calcula automáticamente conforme subes tus documentos firmados y sellados y
-          Vinculación los valida. Usa los botones <strong>"Llenar e Imprimir Formato"</strong> para
-          que tus reportes y evaluaciones salgan ya con todos tus datos y solo recabes firma y sello.
-        </p>
-
-        <div class="steps-list">
-          <div v-for="step in requiredDocumentSteps" :key="step.code" class="step-card">
-            <div class="step-info">
-              <div class="step-header">
-                <strong>{{ step.title }}</strong>
-                <UiBadge
-                  v-if="getDocByCode(step.code)"
-                  :tone="
-                    getDocByCode(step.code)?.status === 'approved'
-                      ? 'success'
-                      : getDocByCode(step.code)?.status === 'rejected'
-                        ? 'danger'
-                        : 'warning'
-                  "
-                >
-                  {{
-                    getDocByCode(step.code)?.status === 'approved'
-                      ? 'Validado (SI)'
-                      : getDocByCode(step.code)?.status === 'rejected'
-                        ? 'Observado / Rechazado'
-                        : 'En Revisión por Vinculación'
-                  }}
-                </UiBadge>
-                <UiBadge v-else tone="info">Pendiente de Subir</UiBadge>
-              </div>
-              <p class="step-hint">{{ step.hint }}</p>
-              <div
-                v-if="getDocByCode(step.code)?.rejectionReason"
-                style="color: #dc2626; font-size: 0.84rem; margin-top: 0.25rem;"
-              >
-                <strong>Motivo de observación:</strong>
-                {{ getDocByCode(step.code)?.rejectionReason }}
-              </div>
-            </div>
-
-            <div class="step-actions">
-              <!-- Botón para llenar formulario e imprimir formato prellenado -->
-              <UiButton
-                v-if="step.openModal"
-                variant="secondary"
-                size="sm"
-                @click="handleOpenStepModal(step.openModal)"
-              >
-                Llenar e Imprimir Formato
-              </UiButton>
-              <UiButton
-                v-else-if="step.printKey"
-                variant="secondary"
-                size="sm"
-                @click="handlePrintFormat(step.printKey)"
-              >
-                Imprimir Plantilla Llena
-              </UiButton>
-
-              <!-- Botón para ver PDF ya subido -->
-              <UiButton
-                v-if="getDocByCode(step.code)"
-                variant="secondary"
-                size="sm"
-                @click="handleViewUploadedPdf(getDocByCode(step.code)!.id)"
-              >
-                Ver PDF
-              </UiButton>
-
-              <!-- Subir archivo PDF firmado y sellado -->
-              <label class="upload-label">
-                <span>
-                  {{
-                    uploadingCode === step.code
-                      ? 'Subiendo...'
-                      : getDocByCode(step.code)
-                        ? 'Reemplazar PDF'
-                        : 'Subir PDF Firmado'
-                  }}
-                </span>
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  style="display: none;"
-                  :disabled="uploadingCode === step.code"
-                  @change="handleUploadStepPdf(step.code, $event)"
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-      </UiCard>
+      <ExpedientChecklist :requirements="service.documentRequirements" :documents="uploadedDocs.filter(d => d.tramiteId === service!.id)" tramite-type="social_service" :tramite-id="service.id" :can-edit="!['released', 'cancelled', 'non_compliant'].includes(service.status)" @changed="loadData" @edit="handleOpenStepModal($event)" />
     </div>
 
     <!-- ==================================================================== -->
@@ -822,55 +553,7 @@ onMounted(() => {
     <!-- ==================================================================== -->
     <!-- MODAL 3: PRELLENAR EVALUACIONES CUALITATIVAS (ANEXOS XXIII, XXIV, XXV)-->
     <!-- ==================================================================== -->
-    <UiDialog
-      v-model="isEvalModalOpen"
-      size="lg"
-      :title="`Generar Formatos de Evaluación Cualitativa · Bimestre ${evalForm.bimonthlyPeriod}`"
-    >
-      <div style="display: flex; flex-direction: column; gap: 0.85rem;">
-        <p style="margin: 0; font-size: 0.88rem; color: #4b5563;">
-          Se generarán los formatos oficiales prellenados (Anexo XXIII Evaluación de la Dependencia,
-          Anexo XXIV Autoevaluación del Prestador y Anexo XXV al cierre) listos para imprimir y
-          recabar firma y sello.
-        </p>
-        <UiField label="Nivel Cualitativo Predeterminado para Impresión">
-          <select v-model="evalForm.defaultGrade">
-            <option value="excellent">Excelente</option>
-            <option value="notable">Notable</option>
-            <option value="good">Bueno</option>
-            <option value="sufficient">Suficiente</option>
-          </select>
-        </UiField>
-        <UiField label="Observaciones">
-          <input v-model="evalForm.observations" type="text" />
-        </UiField>
-      </div>
-      <template #footer>
-        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap;">
-          <UiButton variant="secondary" @click="isEvalModalOpen = false">Cancelar</UiButton>
-          <UiButton
-            variant="secondary"
-            @click="handlePrintFormat(`self_evaluation_${evalForm.bimonthlyPeriod}`)"
-          >
-            Imprimir Autoevaluación (Anexo XXIV)
-          </UiButton>
-          <UiButton
-            v-if="evalForm.bimonthlyPeriod === '3'"
-            variant="secondary"
-            @click="handlePrintFormat('activity_assessment')"
-          >
-            Imprimir Eval. Actividades (Anexo XXV)
-          </UiButton>
-          <UiButton
-            variant="primary"
-            :disabled="isSubmitting"
-            @click="handleSaveAndPrintEvaluations"
-          >
-            Guardar e Imprimir Evaluación (Anexo XXIII)
-          </UiButton>
-        </div>
-      </template>
-    </UiDialog>
+
   </UiBasePage>
 </template>
 

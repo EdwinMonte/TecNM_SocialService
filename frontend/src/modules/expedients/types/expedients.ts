@@ -1,10 +1,10 @@
-export type ExpedientDocumentStatus = 'pending' | 'approved' | 'rejected'
+export type ExpedientDocumentStatus = 'pending' | 'approved' | 'rejected' | 'superseded'
 
 export interface ExpedientDocument {
   id: number
   studentId: number
-  tramiteType: 'social_service' | 'internship'
-  tramiteId?: number
+  tramiteType: 'social_service' | 'internship' | 'general'
+  tramiteId?: number | null
   documentCode: string
   originalFileName: string
   fileMimeType: string
@@ -13,6 +13,7 @@ export interface ExpedientDocument {
   rejectionReason?: string
   reviewedByName?: string
   reviewedAt?: string
+  documentDate?: string | null
   createdAt: string
 }
 
@@ -25,6 +26,9 @@ export interface ReviewQueueItem extends ExpedientDocument {
 
 export interface ReviewDocumentRequest {
   status: 'approved' | 'rejected'
+  documentDate?: string
   rejectionReason?: string
 }
 
+
+export interface DocumentRequirement { code: string; title: string; pdfKey: string | null; templateKey: string | null; canUpload: boolean; blockedReason: string | null }

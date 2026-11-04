@@ -1,3 +1,4 @@
+using TecNM.Api.Modules.Expedients;
 using Microsoft.EntityFrameworkCore;
 using TecNM.Api.Core.Entities;
 using TecNM.Api.Core.Exceptions;
@@ -145,30 +146,20 @@ public sealed class ReportsService(TecNMDbContext dbContext)
                 docsByTramite.TryGetValue(s.Id, out var approved);
                 approved ??= [];
 
-                var cp = !string.IsNullOrWhiteSpace(s.PresentationLetterFolio) || s.PresentationLetterDate.HasValue || approved.Contains("CP");
-                var ca = s.AcceptanceLetterDate.HasValue || approved.Contains("CA");
-                var sol = s.Application?.IsAcceptedByOffice == true || approved.Contains("SOL");
+                var cp = DocumentProgressCalculator.DocumentDone(s, approved, "CP");
+                var ca = DocumentProgressCalculator.DocumentDone(s, approved, "CA");
+                var sol = DocumentProgressCalculator.DocumentDone(s, approved, "SOL");
                 var cc = approved.Contains("CC");
                 var r1 = approved.Contains("R1");
                 var r2 = approved.Contains("R2");
                 var r3 = approved.Contains("R3");
-                var ev1 = approved.Contains("EV1");
-                var ev2 = approved.Contains("EV2");
-                var ev3 = approved.Contains("EV3");
-                var ct = s.TerminationLetterDate.HasValue || approved.Contains("CT");
-                var cot = s.Status == "released" || !string.IsNullOrWhiteSpace(s.ReleaseCertificateFolio) || approved.Contains("COT");
+                var ev1 = DocumentProgressCalculator.EvaluationDone(approved, s.DocumentWorkflowVersion, 1);
+                var ev2 = DocumentProgressCalculator.EvaluationDone(approved, s.DocumentWorkflowVersion, 2);
+                var ev3 = DocumentProgressCalculator.EvaluationDone(approved, s.DocumentWorkflowVersion, 3);
+                var ct = DocumentProgressCalculator.DocumentDone(s, approved, "CT");
+                var cot = DocumentProgressCalculator.DocumentDone(s, approved, "COT");
 
-                var progress = 0;
-                if (cp) progress += 10;
-                if (ca) progress += 10;
-                if (sol) progress += 10;
-                if (cc) progress += 10;
-                if (r1) progress += 10;
-                if (r2) progress += 10;
-                if (r3) progress += 10;
-                if (ev1 || ev2 || ev3) progress += 10;
-                if (ct) progress += 10;
-                if (cot) progress += 10;
+                var progress = DocumentProgressCalculator.SocialService(s, approved);
 
                 var student = s.Student!;
                 var fullName = string.Join(" ", new[] { student.FirstSurname, student.SecondSurname, student.FirstName }

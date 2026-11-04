@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   UiAlert,
   UiBadge,
@@ -10,7 +10,7 @@ import {
   UiField,
   UiToast,
 } from '../../../shared/components'
-import { getDocumentBlob, getReviewQueue, reviewDocument } from '../api/expedientsApi'
+import { getDocumentBlob, getReviewQueuePage, reviewDocument } from '../api/expedientsApi'
 import type { ExpedientDocumentStatus, ReviewQueueItem } from '../types/expedients'
 
 // Catálogo descriptivo de códigos normativos de documentos
@@ -18,128 +18,35 @@ const documentCatalog: Record<string, { title: string; anexo: string }> = {
   SOL: { title: 'Solicitud de Apertura', anexo: 'Anexo XVIII' },
   CP: { title: 'Carta de Presentación', anexo: 'Oficio Vinculación' },
   CA: { title: 'Carta de Aceptación Oficial', anexo: 'Membrete Empresa' },
-  R1: { title: '1er Reporte Bimestral', anexo: 'Anexo XXIII · Bim. 1' },
-  R2: { title: '2do Reporte Bimestral', anexo: 'Anexo XXIII · Bim. 2' },
-  R3: { title: '3er Reporte Bimestral', anexo: 'Anexo XXIII · Bim. 3' },
-  EV: { title: 'Evaluación Final de Desempeño', anexo: 'Anexo XXIV / XXV' },
+  R1: { title: '1er Reporte Bimestral', anexo: 'Anexo XXII · Bim. 1' },
+  R2: { title: '2do Reporte Bimestral', anexo: 'Anexo XXII · Bim. 2' },
+  R3: { title: '3er Reporte Bimestral', anexo: 'Anexo XXII · Bim. 3' },
+  EV: { title: 'Evaluación Final de Desempeño', anexo: 'Anexo XVII' },
+  IMSS: { title: 'Vigencia de Derechos IMSS', anexo: 'Requisito de admisión' },
+  CC: { title: 'Carta Compromiso', anexo: 'Anexo XX' },
   CT: { title: 'Carta de Terminación y Liberación', anexo: 'Constancia 480 h' },
 }
 
-// Datos locales de respaldo cuando el backend no está encendido en desarrollo
-const fallbackQueue = ref<ReviewQueueItem[]>([
-  {
-    id: 101,
-    studentId: 12,
-    studentControlNumber: '20120812',
-    studentFullName: 'Jorge Ramos Valdez',
-    careerCode: 'IGEM',
-    careerName: 'Ingeniería en Gestión Empresarial',
-    tramiteType: 'internship',
-    tramiteId: 401,
-    documentCode: 'CA',
-    originalFileName: '20120812_CA_TrinityRail_Firmada.pdf',
-    fileMimeType: 'application/pdf',
-    fileSizeBytes: 642800,
-    status: 'pending',
-    createdAt: '2026-11-01T14:20:00Z',
-  },
-  {
-    id: 102,
-    studentId: 14,
-    studentControlNumber: '19120431',
-    studentFullName: 'Mariana Ibarra Soto',
-    careerCode: 'IIND',
-    careerName: 'Ingeniería Industrial',
-    tramiteType: 'social_service',
-    tramiteId: 309,
-    documentCode: 'CT',
-    originalFileName: '19120431_CT_DIF_Monclova_480h.pdf',
-    fileMimeType: 'application/pdf',
-    fileSizeBytes: 814200,
-    status: 'pending',
-    createdAt: '2026-11-01T11:05:00Z',
-  },
-  {
-    id: 103,
-    studentId: 18,
-    studentControlNumber: '21120094',
-    studentFullName: 'Ana Sofía Garza',
-    careerCode: 'IINF',
-    careerName: 'Ingeniería Informática',
-    tramiteType: 'social_service',
-    tramiteId: 315,
-    documentCode: 'R2',
-    originalFileName: '21120094_R2_AnexoXXIII_AHMSA.pdf',
-    fileMimeType: 'application/pdf',
-    fileSizeBytes: 519400,
-    status: 'pending',
-    createdAt: '2026-10-31T17:40:00Z',
-  },
-  {
-    id: 104,
-    studentId: 22,
-    studentControlNumber: '20120409',
-    studentFullName: 'Karla Berenice Zapata',
-    careerCode: 'IEME',
-    careerName: 'Ingeniería Electromecánica',
-    tramiteType: 'internship',
-    tramiteId: 412,
-    documentCode: 'EV',
-    originalFileName: '20120409_EV_InformeFinal_GIMSA.pdf',
-    fileMimeType: 'application/pdf',
-    fileSizeBytes: 1245000,
-    status: 'pending',
-    createdAt: '2026-10-30T13:15:00Z',
-  },
-  {
-    id: 105,
-    studentId: 25,
-    studentControlNumber: '21120519',
-    studentFullName: 'Edgar Daniel Flores',
-    careerCode: 'IELC',
-    careerName: 'Ingeniería Electrónica',
-    tramiteType: 'internship',
-    tramiteId: 419,
-    documentCode: 'SOL',
-    originalFileName: '21120519_SOL_PlanTrabajo_Gunderson.pdf',
-    fileMimeType: 'application/pdf',
-    fileSizeBytes: 428000,
-    status: 'approved',
-    reviewedByName: 'Coord. Prácticas Prof.',
-    reviewedAt: '2026-10-29T10:00:00Z',
-    createdAt: '2026-10-28T09:30:00Z',
-  },
-  {
-    id: 106,
-    studentId: 29,
-    studentControlNumber: '20120199',
-    studentFullName: 'Héctor Manuel Cantú',
-    careerCode: 'IELC',
-    careerName: 'Ingeniería Electrónica',
-    tramiteType: 'social_service',
-    tramiteId: 328,
-    documentCode: 'R1',
-    originalFileName: '20120199_R1_AnexoXXIII_CFE.pdf',
-    fileMimeType: 'application/pdf',
-    fileSizeBytes: 389120,
-    status: 'rejected',
-    rejectionReason: 'Falta sello húmedo de la superintendencia CFE en la hoja de firmas.',
-    reviewedByName: 'Coord. Servicio Social',
-    reviewedAt: '2026-10-27T16:10:00Z',
-    createdAt: '2026-10-26T12:00:00Z',
-  },
-])
-
 const queue = ref<ReviewQueueItem[]>([])
-const isOfflinePreview = ref(false)
+const loadError = ref(false)
 const isLoading = ref(true)
 const toast = ref<InstanceType<typeof UiToast> | null>(null)
 
 // Filtros reactivos
 const searchQuery = ref('')
-const modalityFilter = ref<'all' | 'social_service' | 'internship'>('all')
+const modalityFilter = ref<'all' | 'social_service' | 'internship' | 'general'>('all')
 const statusFilter = ref<'all' | ExpedientDocumentStatus>('all')
 const docCodeFilter = ref<string | null>(null)
+const page = ref(1), totalPages = ref(0), totalItems = ref(0)
+const periodId = ref<number | undefined>()
+let requestSequence = 0
+let filterTimer: ReturnType<typeof setTimeout> | undefined
+watch([searchQuery, modalityFilter, statusFilter, docCodeFilter, periodId], () => {
+  clearTimeout(filterTimer)
+  page.value = 1
+  filterTimer = setTimeout(() => { void loadQueue() }, 250)
+})
+onBeforeUnmount(() => { clearTimeout(filterTimer); requestSequence++ })
 
 // Contadores KPI animados
 const animatedCounts = reactive({
@@ -190,42 +97,30 @@ function updateAnimatedKpis(): void {
 }
 
 async function loadQueue(): Promise<void> {
+  const sequence = ++requestSequence
   isLoading.value = true
   try {
-    const data = await getReviewQueue()
-    isOfflinePreview.value = false
-    queue.value = data
+    const data = await getReviewQueuePage({ page: page.value, pageSize: 20, status: statusFilter.value,
+      tramiteType: modalityFilter.value === 'all' ? undefined : modalityFilter.value,
+      documentCode: docCodeFilter.value || undefined, search: searchQuery.value || undefined, periodId: periodId.value })
+    if (sequence !== requestSequence) return
+    totalPages.value = data.totalPages
+    totalItems.value = data.totalItems
+    loadError.value = false
+    queue.value = data.items
   } catch {
-    isOfflinePreview.value = true
-    queue.value = [...fallbackQueue.value]
+    if (sequence !== requestSequence) return
+    totalItems.value = 0; totalPages.value = 0
+    loadError.value = true
+    queue.value = []
+    toast.value?.show('No fue posible cargar la bandeja. Actualiza para intentar nuevamente.')
   } finally {
-    isLoading.value = false
+    if (sequence === requestSequence) isLoading.value = false
     updateAnimatedKpis()
   }
 }
 
-const filteredQueue = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  return queue.value.filter((item) => {
-    const matchSearch =
-      !q ||
-      item.studentFullName.toLowerCase().includes(q) ||
-      item.studentControlNumber.toLowerCase().includes(q) ||
-      item.documentCode.toLowerCase().includes(q) ||
-      item.originalFileName.toLowerCase().includes(q) ||
-      item.careerCode.toLowerCase().includes(q)
-
-    const matchModality =
-      modalityFilter.value === 'all' || item.tramiteType === modalityFilter.value
-
-    const matchStatus =
-      statusFilter.value === 'all' || item.status === statusFilter.value
-
-    const matchCode = !docCodeFilter.value || item.documentCode === docCodeFilter.value
-
-    return matchSearch && matchModality && matchStatus && matchCode
-  })
-})
+const filteredQueue = computed(() => queue.value)
 
 function formatFileSize(bytes: number): string {
   const kb = Math.round(bytes / 1024)
@@ -246,6 +141,13 @@ const isPdfViewerOpen = ref(false)
 const pdfPreviewItem = ref<ReviewQueueItem | null>(null)
 const pdfBlobUrl = ref<string | null>(null)
 
+function releasePdfUrl(): void {
+  if (pdfBlobUrl.value) window.URL.revokeObjectURL(pdfBlobUrl.value)
+  pdfBlobUrl.value = null
+}
+watch(isPdfViewerOpen, open => { if (!open) releasePdfUrl() })
+onBeforeUnmount(releasePdfUrl)
+
 async function handleViewPdf(doc: ReviewQueueItem): Promise<void> {
   pdfPreviewItem.value = doc
   if (pdfBlobUrl.value) {
@@ -253,13 +155,11 @@ async function handleViewPdf(doc: ReviewQueueItem): Promise<void> {
     pdfBlobUrl.value = null
   }
 
-  if (!isOfflinePreview.value) {
-    try {
-      const blob = await getDocumentBlob(doc.id)
-      pdfBlobUrl.value = window.URL.createObjectURL(blob)
-    } catch {
-      pdfBlobUrl.value = null
-    }
+  try {
+    const blob = await getDocumentBlob(doc.id)
+    pdfBlobUrl.value = window.URL.createObjectURL(blob)
+  } catch {
+    pdfBlobUrl.value = null
   }
 
   isPdfViewerOpen.value = true
@@ -276,17 +176,19 @@ function proceedFromViewerToReview(): void {
 const selectedItem = ref<ReviewQueueItem | null>(null)
 const isDialogOpen = ref(false)
 const rejectionReason = ref('')
+const imssReviewDate = ref('')
 const reviewError = ref('')
 const isSubmitting = ref(false)
 
 const quickObservations = [
   'Falta sello oficial de la dependencia receptora.',
   'Rúbrica del asesor externo incompleta o ausente.',
-  'Periodo de fechas no coincide con el ciclo AD26.',
+  'Periodo de fechas no coincide con el trámite.',
   'Escaneo con baja resolución; texto no legible.',
 ]
 
 function openReview(item: ReviewQueueItem): void {
+  imssReviewDate.value = item.documentDate || ''
   selectedItem.value = item
   rejectionReason.value = item.rejectionReason ?? ''
   reviewError.value = ''
@@ -312,23 +214,20 @@ async function submitReview(status: 'approved' | 'rejected'): Promise<void> {
     return
   }
 
+  if (status === 'approved' && selectedItem.value.documentCode === 'IMSS' && !imssReviewDate.value) {
+    reviewError.value = 'Confirma la fecha de expedición del PDF IMSS.'
+    return
+  }
   isSubmitting.value = true
   try {
-    if (!isOfflinePreview.value) {
-      await reviewDocument(selectedItem.value.id, {
-        status,
-        rejectionReason: status === 'rejected' ? rejectionReason.value.trim() : undefined,
-      })
-      await loadQueue()
-    } else {
-      selectedItem.value.status = status
-      selectedItem.value.rejectionReason =
-        status === 'rejected' ? rejectionReason.value.trim() : undefined
-      selectedItem.value.reviewedAt = new Date().toISOString()
-      updateAnimatedKpis()
-    }
+    await reviewDocument(selectedItem.value.id, {
+      status,
+      rejectionReason: status === 'rejected' ? rejectionReason.value.trim() : undefined,
+      documentDate: selectedItem.value.documentCode === 'IMSS' && status === 'approved' ? imssReviewDate.value : undefined,
+    })
+    await loadQueue()
 
-    const actionWord = status === 'approved' ? 'aprobado y sellado' : 'observado para corrección'
+    const actionWord = status === 'approved' ? 'aprobado' : 'observado para corrección'
     toast.value?.show(
       `Documento ${selectedItem.value.documentCode} de ${selectedItem.value.studentFullName} ${actionWord}.`,
     )
@@ -341,14 +240,9 @@ async function submitReview(status: 'approved' | 'rejected'): Promise<void> {
 }
 
 // Códigos rápidos en panel lateral
-const documentCodeChips = [
-  { code: 'SOL', label: 'Solicitud Apertura', count: 1 },
-  { code: 'CA', label: 'Carta Aceptación', count: 1 },
-  { code: 'R1', label: '1er Reporte Bimestral', count: 1 },
-  { code: 'R2', label: '2do Reporte Bimestral', count: 1 },
-  { code: 'EV', label: 'Evaluación Final', count: 1 },
-  { code: 'CT', label: 'Carta Terminación', count: 1 },
-]
+const documentCodeChips = computed(() => ['SOL','CA','CC','R1','R2','R3','EV','EV_ACT','CT','IMSS'].map(code => ({
+  code, label: documentCatalog[code]?.title || code, count: queue.value.filter(d => d.documentCode === code).length,
+})))
 
 onMounted(() => {
   void loadQueue()
@@ -487,7 +381,7 @@ onMounted(() => {
             <span class="kpi-dot kpi-dot--emerald" aria-hidden="true" />
             Expedientes Validados
           </span>
-          <span class="kpi-meta kpi-meta--emerald">• Sello Digital</span>
+          <span class="kpi-meta kpi-meta--emerald">• Dictamen aprobado</span>
         </div>
 
         <div class="kpi-tile__main">
@@ -616,7 +510,7 @@ onMounted(() => {
                       {{
                         row.tramiteType === 'social_service'
                           ? 'Servicio Social (480h)'
-                          : 'Prácticas Profesionales'
+                          : row.tramiteType === 'general' ? 'General / IMSS' : 'Prácticas Profesionales'
                       }}
                       · {{ getDocMeta(row.documentCode).anexo }}
                     </span>
@@ -698,7 +592,7 @@ onMounted(() => {
         <footer class="tray-footer">
           <span>
             Mostrando <strong>{{ filteredQueue.length }}</strong> de {{ queue.length }} documentos en cola ·
-            {{ isOfflinePreview ? 'Modo operativo local activo' : 'Conectado al repositorio documental' }}
+            {{ loadError ? 'Error al cargar. Actualiza la bandeja para reintentar.' : isLoading ? 'Cargando repositorio documental…' : 'Conectado al repositorio documental' }}
           </span>
           <span class="footer-iso-tag">Verificación SGC TecNM</span>
         </footer>
@@ -761,7 +655,7 @@ onMounted(() => {
               </div>
               <h3 class="criteria-title">Formato completo sin recortes</h3>
               <p class="criteria-desc">
-                Confirmar que el número de control, periodo AD26 y horas acumuladas coincidan con el expediente.
+                Confirmar que el número de control, periodo y horas acumuladas coincidan con el expediente.
               </p>
             </article>
           </div>
@@ -811,55 +705,7 @@ onMounted(() => {
         />
 
         <!-- Hoja de Inspección Técnica cuando no hay servidor de blobs activo -->
-        <div v-else class="pdf-mock-canvas">
-          <div class="pdf-mock-sheet">
-            <div class="pdf-mock-sheet__top">
-              <strong>TECNOLÓGICO NACIONAL DE MÉXICO · CAMPUS MONCLOVA</strong>
-              <span>{{ getDocMeta(pdfPreviewItem.documentCode).anexo }}</span>
-            </div>
-
-            <h3 class="pdf-mock-sheet__title">
-              {{ getDocMeta(pdfPreviewItem.documentCode).title }}
-            </h3>
-
-            <dl class="pdf-mock-grid">
-              <div>
-                <dt>Estudiante</dt>
-                <dd>{{ pdfPreviewItem.studentFullName }}</dd>
-              </div>
-              <div>
-                <dt>No. de Control</dt>
-                <dd>{{ pdfPreviewItem.studentControlNumber }}</dd>
-              </div>
-              <div>
-                <dt>Programa Educativo</dt>
-                <dd>{{ pdfPreviewItem.careerName }}</dd>
-              </div>
-              <div>
-                <dt>Modalidad</dt>
-                <dd>
-                  {{
-                    pdfPreviewItem.tramiteType === 'social_service'
-                      ? 'Servicio Social (480 h)'
-                      : 'Prácticas Profesionales'
-                  }}
-                </dd>
-              </div>
-              <div>
-                <dt>Archivo Digital</dt>
-                <dd>{{ pdfPreviewItem.originalFileName }}</dd>
-              </div>
-              <div>
-                <dt>Tamaño Verificado</dt>
-                <dd>{{ formatFileSize(pdfPreviewItem.fileSizeBytes) }} (PDF/A)</dd>
-              </div>
-            </dl>
-
-            <div class="pdf-mock-stamp">
-              <span>✓ Documento íntegro listo para dictamen de coordinación</span>
-            </div>
-          </div>
-        </div>
+        <UiAlert v-else>No fue posible abrir el PDF. Cierra y vuelve a intentar.</UiAlert>
       </div>
 
       <template #actions>
@@ -915,6 +761,7 @@ onMounted(() => {
           </div>
         </div>
 
+        <UiField v-if="selectedItem?.documentCode === 'IMSS'" v-model="imssReviewDate" type="date" label="Fecha de expedición confirmada en el PDF" />
         <UiField
           v-model="rejectionReason"
           as="textarea"
@@ -940,12 +787,21 @@ onMounted(() => {
           :loading="isSubmitting"
           @click="submitReview('approved')"
         >
-          Aprobar y Sellar SGC
+          Aprobar documento
         </UiButton>
       </template>
     </UiDialog>
 
     <UiToast ref="toast" />
+  <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:1rem">
+      <UiButton variant="secondary" :disabled="page <= 1 || isLoading" @click="page--; loadQueue()">Anterior</UiButton>
+      <span>Página {{ page }} de {{ Math.max(1, totalPages) }} · {{ totalItems }} documentos. Contadores de esta página.</span>
+      <UiButton variant="secondary" :disabled="page >= totalPages || isLoading" @click="page++; loadQueue()">Siguiente</UiButton>
+      <label for="review-tramite-type">Tipo</label>
+      <select id="review-tramite-type" v-model="modalityFilter"><option value="all">Todos</option><option value="general">General / IMSS</option><option value="social_service">Servicio Social</option><option value="internship">Prácticas Profesionales</option></select>
+      <label>Id de periodo <input v-model.number="periodId" type="number" min="1" /></label>
+      <UiButton variant="secondary" :disabled="isLoading" @click="loadQueue">Actualizar bandeja</UiButton>
+    </div>
   </UiBasePage>
 </template>
 

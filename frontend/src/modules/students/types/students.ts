@@ -38,6 +38,10 @@ export interface StudentDetail {
   isEnrolled: boolean
   hasValidImss: boolean
   hasImssFile: boolean
+  imssStatus: string
+  imssDocumentId: number | null
+  imssDocumentDate: string | null
+  imssRejectionReason: string | null
   imssValidatedAt: string | null
   imssValidatedByName: string | null
   createdAt: string

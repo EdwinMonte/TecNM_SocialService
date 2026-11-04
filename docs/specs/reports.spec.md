@@ -1,3 +1,5 @@
+> **Contrato vigente:** [Flujo documental v2](./document-workflow-v2.spec.md). Sus reglas sustituyen los comportamientos anteriores que contradigan IMSS, permisos, firmas, generación y evaluaciones. El resto se conserva.
+
 # Contrato: Reportes e indicadores
 
 > **Estado:** Borrador v0.2 (alineado a las fórmulas de `SEGUIMIENTO VINCULACIÓN1.xlsx`). Convenciones en [api-conventions.spec.md](./api-conventions.spec.md). Solo lectura sobre todas las tablas. Política: `ReportViewer`.

@@ -64,9 +64,10 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
     [Consumes("multipart/form-data")]
     public async Task<ActionResult<StudentDetail>> UploadMyImss(
         IFormFile file,
+        [FromForm] DateOnly? documentDate,
         CancellationToken cancellationToken = default)
     {
-        var detail = await studentsService.UploadMyImssAsync(file, cancellationToken);
+        var detail = await studentsService.UploadMyImssAsync(file, cancellationToken, documentDate);
         return Ok(detail);
     }
 
@@ -149,9 +150,10 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
     public async Task<ActionResult<StudentDetail>> UploadImss(
         long id,
         IFormFile file,
+        [FromForm] DateOnly? documentDate,
         CancellationToken cancellationToken = default)
     {
-        var detail = await studentsService.UploadImssAsync(id, file, cancellationToken);
+        var detail = await studentsService.UploadImssAsync(id, file, cancellationToken, documentDate);
         return Ok(detail);
     }
 
@@ -170,7 +172,7 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
         [FromBody] ValidateImssRequest request,
         CancellationToken cancellationToken = default)
     {
-        var detail = await studentsService.ValidateImssAsync(id, request.IsValid, cancellationToken);
+        var detail = await studentsService.ValidateImssAsync(id, request.IsValid, request.RejectionReason, request.DocumentDate, cancellationToken);
         return Ok(detail);
     }
 }

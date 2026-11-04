@@ -59,7 +59,7 @@ public class SocialServiceCommitmentConfiguration : IEntityTypeConfiguration<Soc
         builder.Property(c => c.CommitmentDate).HasColumnName("commitment_date").IsRequired();
         builder.Property(c => c.City).HasColumnName("city").HasMaxLength(100).IsRequired();
         builder.Property(c => c.IsSignedByStudent).HasColumnName("is_signed_by_student").IsRequired();
-        builder.Property(c => c.SignedAt).HasColumnName("signed_at").IsRequired();
+        builder.Property(c => c.SignedAt).HasColumnName("signed_at");
 
         builder.Property(c => c.CreatedBy).HasColumnName("created_by");
         builder.Property(c => c.UpdatedBy).HasColumnName("updated_by");

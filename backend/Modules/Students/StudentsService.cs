@@ -1,3 +1,4 @@
+using TecNM.Api.Modules.Expedients;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
@@ -16,7 +17,10 @@ public partial class StudentsService(
     TecNMDbContext dbContext,
     ICurrentUser currentUser,
     PasswordHasher<User> passwordHasher,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    DocumentsService documents,
+    ImssEligibilityService imss,
+    TimeProvider clock)
 {
     private static readonly HashSet<string> ValidShifts = ["morning", "afternoon", "night"];
     private static readonly byte[] PdfMagicBytes = [0x25, 0x50, 0x44, 0x46]; // %PDF
@@ -77,7 +81,11 @@ public partial class StudentsService(
 
         if (hasValidImss.HasValue)
         {
-            query = query.Where(s => s.HasValidImss == hasValidImss.Value);
+            var today = ImssEligibilityService.Today(clock);
+            var start = new DateOnly(today.Year, 1, 1);
+            query = query.Where(s => dbContext.ExpedientDocuments.Any(d => d.StudentId == s.Id
+                && d.TramiteType == "general" && d.TramiteId == null && d.DocumentCode == "IMSS"
+                && d.Status == "approved" && d.DocumentDate >= start && d.DocumentDate <= today) == hasValidImss.Value);
         }
 
         if (hasDisability.HasValue)
@@ -106,6 +114,7 @@ public partial class StudentsService(
             .Take(validPageSize)
             .ToListAsync(cancellationToken);
 
+        await ProjectImssAsync(items, cancellationToken);
         return new PagedResponse<StudentListItem>(
             items.Select(ToListItem).ToList(),
             currentPage,
@@ -138,6 +147,7 @@ public partial class StudentsService(
             .Take(20)
             .ToListAsync(cancellationToken);
 
+        await ProjectImssAsync(items, cancellationToken);
         return items
             .Select(s => new OptionItem(
                 s.Id,
@@ -166,13 +176,19 @@ public partial class StudentsService(
             throw new NotFoundException("students.not_found", $"Estudiante con id {id} no encontrado.");
         }
 
-        return ToDetail(student);
+        var latest = await imss.GetLatestAsync(student.Id, cancellationToken);
+        return ToDetail(student) with { HasValidImss = ImssEligibilityService.IsCurrent(latest, ImssEligibilityService.Today(clock)),
+            ImssStatus = latest?.Status ?? "missing", ImssDocumentId = latest?.Id,
+            ImssDocumentDate = latest?.DocumentDate, ImssRejectionReason = latest?.RejectionReason };
     }
 
     public async Task<StudentDetail> GetMyProfileAsync(CancellationToken cancellationToken = default)
     {
         var student = await GetCurrentStudentEntityAsync(asNoTracking: true, cancellationToken);
-        return ToDetail(student);
+        var latest = await imss.GetLatestAsync(student.Id, cancellationToken);
+        return ToDetail(student) with { HasValidImss = ImssEligibilityService.IsCurrent(latest, ImssEligibilityService.Today(clock)),
+            ImssStatus = latest?.Status ?? "missing", ImssDocumentId = latest?.Id,
+            ImssDocumentDate = latest?.DocumentDate, ImssRejectionReason = latest?.RejectionReason };
     }
 
     public async Task<StudentDetail> CreateAsync(StudentRequest request, CancellationToken cancellationToken = default)
@@ -469,7 +485,8 @@ public partial class StudentsService(
     public async Task<StudentDetail> UploadImssAsync(
         long id,
         IFormFile file,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateOnly? documentDate = null)
     {
         var student = await dbContext.Students
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken);
@@ -479,15 +496,16 @@ public partial class StudentsService(
             throw new NotFoundException("students.not_found", $"Estudiante con id {id} no encontrado.");
         }
 
-        return await SaveImssFileAsync(student, file, cancellationToken);
+        return await SaveImssFileAsync(student, file, cancellationToken, documentDate);
     }
 
     public async Task<StudentDetail> UploadMyImssAsync(
         IFormFile file,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateOnly? documentDate = null)
     {
         var student = await GetCurrentStudentEntityAsync(asNoTracking: false, cancellationToken);
-        return await SaveImssFileAsync(student, file, cancellationToken);
+        return await SaveImssFileAsync(student, file, cancellationToken, documentDate);
     }
 
     public async Task<(Stream stream, string contentType, string fileName)> GetImssStreamAsync(
@@ -503,6 +521,12 @@ public partial class StudentsService(
             throw new NotFoundException("students.not_found", $"Estudiante con id {id} no encontrado.");
         }
 
+        var latest = await imss.GetLatestAsync(student.Id, cancellationToken);
+        if (latest is not null)
+        {
+            var (stream, name) = await documents.GetDocumentStreamAsync(latest.Id, cancellationToken);
+            return (stream, "application/pdf", name);
+        }
         return OpenImssStream(student);
     }
 
@@ -510,108 +534,31 @@ public partial class StudentsService(
         CancellationToken cancellationToken = default)
     {
         var student = await GetCurrentStudentEntityAsync(asNoTracking: true, cancellationToken);
+        var latest = await imss.GetLatestAsync(student.Id, cancellationToken);
+        if (latest is not null)
+        {
+            var (stream, name) = await documents.GetDocumentStreamAsync(latest.Id, cancellationToken);
+            return (stream, "application/pdf", name);
+        }
         return OpenImssStream(student);
     }
 
     public async Task<StudentDetail> ValidateImssAsync(
         long id,
         bool isValid,
+        string? rejectionReason,
+        DateOnly? documentDate,
         CancellationToken cancellationToken = default)
     {
-        var student = await dbContext.Students
-            .SingleOrDefaultAsync(s => s.Id == id, cancellationToken);
-
-        if (student is null)
-        {
-            throw new NotFoundException("students.not_found", $"Estudiante con id {id} no encontrado.");
-        }
-
-        if (string.IsNullOrWhiteSpace(student.ImssValidityFileUrl))
-        {
-            throw new BusinessRuleException(
-                "students.imss_file_missing",
-                "El estudiante no ha subido su Constancia de Vigencia de Derechos del IMSS.");
-        }
-
-        student.HasValidImss = isValid;
-        student.ImssValidatedAt = DateTimeOffset.UtcNow;
-        student.ImssValidatedBy = currentUser.Id;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        return await GetByIdAsync(student.Id, cancellationToken);
+        var doc = await imss.GetLatestAsync(id, cancellationToken)
+            ?? throw new BusinessRuleException("students.imss_file_missing", "Carga primero un PDF IMSS en el expediente.");
+        await documents.ReviewDocumentAsync(doc.Id, new ReviewDocumentRequest(isValid ? "approved" : "rejected", rejectionReason, documentDate), cancellationToken);
+        return await GetByIdAsync(id, cancellationToken);
     }
 
-    private async Task<StudentDetail> SaveImssFileAsync(
-        Student student,
-        IFormFile file,
-        CancellationToken cancellationToken)
+    private async Task<StudentDetail> SaveImssFileAsync(Student student, IFormFile file, CancellationToken cancellationToken, DateOnly? documentDate)
     {
-        if (file is null || file.Length == 0)
-        {
-            throw new ValidationException(new Dictionary<string, string[]>
-            {
-                ["file"] = ["El archivo de constancia IMSS está vacío."]
-            });
-        }
-
-        const long maxSizeBytes = 5 * 1024 * 1024;
-        if (file.Length > maxSizeBytes)
-        {
-            throw new AppException(413, "files.too_large", "El archivo supera el límite permitido de 5 MB.", "Archivo demasiado grande");
-        }
-
-        string extension;
-        using (var stream = file.OpenReadStream())
-        {
-            var header = new byte[4];
-            var read = await stream.ReadAsync(header.AsMemory(0, 4), cancellationToken);
-            if (read >= 4 && header.SequenceEqual(PdfMagicBytes))
-            {
-                extension = ".pdf";
-            }
-            else if (read >= 4 && header.SequenceEqual(PngMagicBytes))
-            {
-                extension = ".png";
-            }
-            else if (read >= 3 && header.Take(3).SequenceEqual(JpgMagicBytes))
-            {
-                extension = ".jpg";
-            }
-            else
-            {
-                throw new AppException(415, "files.unsupported_type", "La Constancia de Vigencia IMSS debe ser un archivo PDF, JPG o PNG válido.", "Formato no compatible");
-            }
-        }
-
-        var dirPath = Path.Combine(StorageRootPath, "students", student.Id.ToString(), "imss");
-        Directory.CreateDirectory(dirPath);
-
-        if (!string.IsNullOrWhiteSpace(student.ImssValidityFileUrl))
-        {
-            var oldPath = Path.Combine(StorageRootPath, student.ImssValidityFileUrl.Replace('/', Path.DirectorySeparatorChar));
-            if (File.Exists(oldPath))
-            {
-                try { File.Delete(oldPath); } catch { /* ignore */ }
-            }
-        }
-
-        var fileName = $"imss_{student.ControlNumber}_{Guid.NewGuid():N}{extension}";
-        var relativePath = $"students/{student.Id}/imss/{fileName}";
-        var fullPath = Path.Combine(dirPath, fileName);
-
-        using (var target = new FileStream(fullPath, FileMode.Create, FileAccess.Write))
-        {
-            await file.CopyToAsync(target, cancellationToken);
-        }
-
-        student.ImssValidityFileUrl = relativePath;
-        student.HasValidImss = false;
-        student.ImssValidatedAt = null;
-        student.ImssValidatedBy = null;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
+        await documents.UploadDocumentAsync(student.Id, file, "general", null, "IMSS", cancellationToken, documentDate);
         return await GetByIdAsync(student.Id, cancellationToken);
     }
 
@@ -672,6 +619,14 @@ public partial class StudentsService(
     {
         var ssReasons = new List<EligibilityReason>();
         var ppReasons = new List<EligibilityReason>();
+
+        var latest = await imss.GetLatestAsync(student.Id, cancellationToken);
+        if (!ImssEligibilityService.IsCurrent(latest, ImssEligibilityService.Today(clock)))
+        {
+            var reason = new EligibilityReason("students.imss_approval_required", "Requiere una constancia IMSS del año actual aprobada por Vinculación.");
+            ssReasons.Add(reason);
+            ppReasons.Add(reason);
+        }
 
         if (!student.IsEnrolled)
         {
@@ -847,6 +802,19 @@ public partial class StudentsService(
     public static string FormatFullName(Student s) =>
         string.Join(" ", new[] { s.FirstName, s.FirstSurname, s.SecondSurname }
             .Where(part => !string.IsNullOrWhiteSpace(part)));
+
+    private async Task ProjectImssAsync(IReadOnlyCollection<Student> students, CancellationToken ct)
+    {
+        var ids = students.Select(s => s.Id).ToArray();
+        var today = ImssEligibilityService.Today(clock);
+        var start = new DateOnly(today.Year, 1, 1);
+        var approved = await dbContext.ExpedientDocuments.AsNoTracking().Where(d => ids.Contains(d.StudentId)
+            && d.TramiteType == "general" && d.TramiteId == null && d.DocumentCode == "IMSS"
+            && d.Status == "approved" && d.DocumentDate >= start && d.DocumentDate <= today)
+            .Select(d => d.StudentId).ToListAsync(ct);
+        var valid = approved.ToHashSet();
+        foreach (var student in students) student.HasValidImss = valid.Contains(student.Id);
+    }
 
     private static StudentListItem ToListItem(Student s) =>
         new(

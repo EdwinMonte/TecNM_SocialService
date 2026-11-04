@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
+import { http } from '../../../shared/api/http'
+import { onMounted, reactive, ref } from 'vue'
 import {
   UiAlert,
   UiBadge,
@@ -16,7 +18,7 @@ import {
   getSupervisorOptions,
 } from '../../catalogs/api/careersApi'
 import type { OptionItem } from '../../catalogs/types/careers'
-import { getDocumentBlob, getMyDocuments, uploadMyDocument } from '../../expedients/api/expedientsApi'
+import { getMyDocuments } from '../../expedients/api/expedientsApi'
 import type { ExpedientDocument } from '../../expedients/types/expedients'
 import { getMyStudentProfile, uploadMyImssFile } from '../../students/api/studentsApi'
 import type { StudentDetail } from '../../students/types/students'
@@ -25,7 +27,6 @@ import {
   getMyInternship,
   registerInternshipAcceptance,
   requestInternship,
-  upsertInternshipEvaluation,
 } from '../api/internshipsApi'
 import type { CreateInternshipPayload, InternshipDetail } from '../types/internships'
 
@@ -43,6 +44,7 @@ const periodOptions = ref<OptionItem[]>([])
 const companyOptions = ref<OptionItem[]>([])
 const supervisorOptions = ref<OptionItem[]>([])
 const imssFileForRequest = ref<File | null>(null)
+const imssDeclaredDate = ref('')
 
 // Formulario Paso 1: Reemplazo del Microsoft Forms para solicitar Carta de Presentación
 const requestForm = reactive<CreateInternshipPayload>({
@@ -70,43 +72,7 @@ const isEvalModalOpen = ref(false)
 const evalForm = reactive({
   evaluationStartDate: '2026-02-20',
   evaluationEndDate: '2026-06-20',
-  defaultScore: 4,
-  evaluatorSignatureDate: new Date().toISOString().slice(0, 10),
-  observations: 'Excelente desempeño y cumplimiento de objetivos durante su estancia profesional.',
 })
-
-const uploadingCode = ref<string | null>(null)
-
-const internshipDocumentSteps = computed(() => [
-  {
-    code: 'CP',
-    title: '1. Carta de Presentación Emitida por Vinculación (CP)',
-    hint: 'Se genera automáticamente una vez aprobada tu solicitud inicial.',
-    printKey: 'presentation_letter' as const,
-  },
-  {
-    code: 'CA',
-    title: '2. Oficio de Aceptación de la Empresa (CA — Hoja Membretada, Firma y Sello)',
-    hint: 'La empresa lo envía a arturo.martinez@monclova.tecnm.mx. Registra aquí los datos de la empresa y sube tu copia en PDF.',
-    openModal: 'acceptance',
-  },
-  {
-    code: 'EV',
-    title: '3. Evaluación al Desempeño de Actividad Complementaria (Anexo XVII — Productividad Laboral)',
-    hint: 'Prellena el formato Anexo XVII para imprimirlo listo, pide firma y sello de tu supervisor y sube el PDF escaneado.',
-    printKey: 'evaluation' as const,
-    openModal: 'evaluation',
-  },
-  {
-    code: 'CT',
-    title: '4. Oficio de Terminación de la Empresa (CT — Hoja Membretada, Firma y Sello)',
-    hint: 'Sube tu Oficio de Terminación emitido por la empresa receptora con firma y sello.',
-  },
-])
-
-function getDocByCode(code: string): ExpedientDocument | undefined {
-  return uploadedDocs.value.find((d) => d.documentCode.toUpperCase() === code.toUpperCase())
-}
 
 async function loadCatalogs(): Promise<void> {
   const [periods, companies] = await Promise.all([
@@ -147,6 +113,8 @@ async function loadData(): Promise<void> {
     studentProfile.value = profile
     internship.value = pp
     uploadedDocs.value = docs
+    evalForm.evaluationStartDate = pp?.evaluationFormatStartDate || pp?.startDate || ''
+    evalForm.evaluationEndDate = pp?.evaluationFormatEndDate || pp?.endDate || ''
 
     if (profile) {
       requestForm.currentSemester = profile.currentSemester
@@ -176,7 +144,7 @@ async function handleSubmitFormsRequest(): Promise<void> {
   successMessage.value = ''
   try {
     if (imssFileForRequest.value) {
-      await uploadMyImssFile(imssFileForRequest.value)
+      await uploadMyImssFile(imssFileForRequest.value, imssDeclaredDate.value)
     }
     const created = await requestInternship(requestForm)
     internship.value = created
@@ -185,7 +153,7 @@ async function handleSubmitFormsRequest(): Promise<void> {
     await loadData()
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.message ||
+      err?.response?.data?.detail || err?.message ||
       'Verifica que todos los datos del formulario y tu Constancia de Vigencia IMSS estén completos.'
   } finally {
     isSubmitting.value = false
@@ -196,6 +164,12 @@ async function handlePrint(docKey: 'presentation_letter' | 'evaluation' | 'relea
   if (!internship.value) return
   errorMessage.value = ''
   try {
+    if (docKey === 'evaluation') {
+      const response = await http.get(`/internships/${internship.value.id}/pdf/evaluation`, { responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
+      const link = document.createElement('a'); link.href = url; link.download = 'evaluacion.pdf'; link.click(); URL.revokeObjectURL(url)
+      return
+    }
     const data = await getInternshipPrintData(internship.value.id, docKey)
     openPrintableDocument(data)
   } catch (err: any) {
@@ -212,7 +186,7 @@ async function handleSaveAcceptance(): Promise<void> {
     internship.value = await registerInternshipAcceptance(internship.value.id, acceptanceForm)
     isAcceptanceModalOpen.value = false
     successMessage.value =
-      'Empresa receptora registrada. Ahora sube el archivo PDF de tu Oficio de Aceptación (CA).'
+      'Empresa receptora registrada. Vinculación incorporará el PDF recibido de la empresa al expediente.'
     await loadData()
   } catch (err: any) {
     errorMessage.value =
@@ -227,14 +201,9 @@ async function handleSaveAndPrintEvaluation(): Promise<void> {
   isSubmitting.value = true
   errorMessage.value = ''
   try {
-    const s = Number(evalForm.defaultScore)
-    await upsertInternshipEvaluation(internship.value.id, {
+    await http.put(`/internships/${internship.value.id}/evaluation-format`, {
       evaluationStartDate: evalForm.evaluationStartDate,
       evaluationEndDate: evalForm.evaluationEndDate,
-      criteria: [s, s, s, s, s, s, s],
-      evaluatorSupervisorId: internship.value.supervisor?.id ?? null,
-      evaluatorSignatureDate: evalForm.evaluatorSignatureDate,
-      observations: evalForm.observations,
     })
     isEvalModalOpen.value = false
     successMessage.value = 'Formato Anexo XVII guardado y listo para imprimir.'
@@ -244,42 +213,6 @@ async function handleSaveAndPrintEvaluation(): Promise<void> {
     errorMessage.value = err?.response?.data?.message || 'Error al guardar la evaluación Anexo XVII.'
   } finally {
     isSubmitting.value = false
-  }
-}
-
-async function handleUploadStepPdf(code: string, event: Event): Promise<void> {
-  if (!internship.value) return
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-
-  uploadingCode.value = code
-  errorMessage.value = ''
-  successMessage.value = ''
-  try {
-    await uploadMyDocument({
-      file,
-      tramiteType: 'internship',
-      tramiteId: internship.value.id,
-      documentCode: code,
-    })
-    successMessage.value = `Documento ${code} (${file.name}) subido exitosamente para validación de Vinculación.`
-    await loadData()
-  } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || `Error al subir el documento ${code}.`
-  } finally {
-    uploadingCode.value = null
-    input.value = ''
-  }
-}
-
-async function handleViewUploadedPdf(docId: number): Promise<void> {
-  try {
-    const blob = await getDocumentBlob(docId)
-    const url = window.URL.createObjectURL(blob)
-    window.open(url, '_blank')
-  } catch {
-    errorMessage.value = 'El archivo PDF aún no está disponible en almacenamiento.'
   }
 }
 
@@ -388,6 +321,7 @@ onMounted(() => {
             </div>
           </div>
           <input type="file" accept="application/pdf" @change="handleImssFileChange" />
+          <UiField v-if="imssFileForRequest" v-model="imssDeclaredDate" type="date" label="Fecha de expedición de la constancia IMSS" />
         </div>
 
         <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
@@ -464,99 +398,7 @@ onMounted(() => {
       </UiCard>
 
       <!-- Checklist y Carga de Documentos de Prácticas -->
-      <UiCard title="Carga de Documentos de Prácticas Profesionales para Validación">
-        <div class="steps-list">
-          <div v-for="step in internshipDocumentSteps" :key="step.code" class="step-card">
-            <div class="step-info">
-              <div class="step-header">
-                <strong>{{ step.title }}</strong>
-                <UiBadge
-                  v-if="getDocByCode(step.code)"
-                  :tone="
-                    getDocByCode(step.code)?.status === 'approved'
-                      ? 'success'
-                      : getDocByCode(step.code)?.status === 'rejected'
-                        ? 'danger'
-                        : 'warning'
-                  "
-                >
-                  {{
-                    getDocByCode(step.code)?.status === 'approved'
-                      ? 'Validado (SI)'
-                      : getDocByCode(step.code)?.status === 'rejected'
-                        ? 'Observado / Rechazado'
-                        : 'En Revisión por Vinculación'
-                  }}
-                </UiBadge>
-                <UiBadge v-else tone="info">Pendiente</UiBadge>
-              </div>
-              <p class="step-hint">{{ step.hint }}</p>
-              <div
-                v-if="getDocByCode(step.code)?.rejectionReason"
-                style="color: #dc2626; font-size: 0.84rem; margin-top: 0.25rem;"
-              >
-                <strong>Observación de Vinculación:</strong>
-                {{ getDocByCode(step.code)?.rejectionReason }}
-              </div>
-            </div>
-
-            <div class="step-actions">
-              <UiButton
-                v-if="step.openModal === 'acceptance'"
-                variant="secondary"
-                size="sm"
-                @click="isAcceptanceModalOpen = true"
-              >
-                Datos de Empresa
-              </UiButton>
-              <UiButton
-                v-if="step.openModal === 'evaluation'"
-                variant="secondary"
-                size="sm"
-                @click="isEvalModalOpen = true"
-              >
-                Llenar e Imprimir Anexo XVII
-              </UiButton>
-              <UiButton
-                v-else-if="step.printKey"
-                variant="secondary"
-                size="sm"
-                @click="handlePrint(step.printKey)"
-              >
-                Imprimir Formato
-              </UiButton>
-
-              <UiButton
-                v-if="getDocByCode(step.code)"
-                variant="secondary"
-                size="sm"
-                @click="handleViewUploadedPdf(getDocByCode(step.code)!.id)"
-              >
-                Ver PDF
-              </UiButton>
-
-              <label class="upload-label">
-                <span>
-                  {{
-                    uploadingCode === step.code
-                      ? 'Subiendo...'
-                      : getDocByCode(step.code)
-                        ? 'Reemplazar PDF'
-                        : 'Subir PDF Firmado'
-                  }}
-                </span>
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  style="display: none;"
-                  :disabled="uploadingCode === step.code"
-                  @change="handleUploadStepPdf(step.code, $event)"
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-      </UiCard>
+      <ExpedientChecklist :requirements="internship.documentRequirements" :documents="uploadedDocs.filter(d => d.tramiteId === internship!.id)" tramite-type="internship" :tramite-id="internship.id" :can-edit="!['released', 'cancelled', 'non_compliant'].includes(internship.status)" @changed="loadData" @edit="isEvalModalOpen = true" />
     </div>
 
     <!-- ==================================================================== -->
@@ -620,17 +462,8 @@ onMounted(() => {
             <input v-model="evalForm.evaluationEndDate" type="date" />
           </UiField>
         </div>
-        <UiField label="Calificación por Criterio para Impresión (0 a 4)">
-          <select v-model.number="evalForm.defaultScore">
-            <option :value="4">4 — Excelente (Promedio 4.00)</option>
-            <option :value="3">3 — Notable (Promedio 3.00)</option>
-            <option :value="2">2 — Bueno (Promedio 2.00)</option>
-            <option :value="1">1 — Suficiente (Promedio 1.00)</option>
-          </select>
-        </UiField>
-        <UiField label="Observaciones">
-          <input v-model="evalForm.observations" type="text" />
-        </UiField>
+
+
       </div>
       <template #footer>
         <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">

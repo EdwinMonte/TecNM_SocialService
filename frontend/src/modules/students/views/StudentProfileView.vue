@@ -18,6 +18,7 @@ const isUploadingImss = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 const selectedImssFile = ref<File | null>(null)
+const imssDeclaredDate = ref('')
 
 const contactForm = reactive<{
   phoneNumber: string
@@ -99,15 +100,15 @@ async function handleUploadImss(): Promise<void> {
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    const updated = await uploadMyImssFile(selectedImssFile.value)
+    const updated = await uploadMyImssFile(selectedImssFile.value, imssDeclaredDate.value)
     profile.value = updated
     selectedImssFile.value = null
     eligibility.value = await getMyEligibility().catch(() => null)
     successMessage.value =
-      'Constancia de Vigencia de Derechos del IMSS cargada y validada correctamente.'
+      'Constancia IMSS cargada. Vinculación debe revisarla y aprobarla.'
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.message || 'Error al subir la Constancia de Vigencia del IMSS.'
+      err?.response?.data?.detail || err?.message || 'Error al subir la Constancia de Vigencia del IMSS.'
   } finally {
     isUploadingImss.value = false
   }
@@ -227,14 +228,17 @@ onMounted(() => {
           style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1rem; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;"
         >
           <input type="file" accept="application/pdf" @change="handleFileChange" />
+          <UiField v-model="imssDeclaredDate" type="date" label="Fecha de expedición de la constancia IMSS" />
           <UiButton
             variant="primary"
-            :disabled="!selectedImssFile || isUploadingImss"
+            :disabled="!selectedImssFile || !imssDeclaredDate || isUploadingImss"
             @click="handleUploadImss"
           >
             {{ isUploadingImss ? 'Subiendo PDF...' : 'Subir Constancia IMSS (PDF)' }}
           </UiButton>
         </div>
+        <p v-if="profile.imssDocumentDate">Fecha de expedición registrada: {{ profile.imssDocumentDate }}. Vinculación confirma esta fecha al dictaminar.</p>
+        <UiAlert v-if="profile.imssRejectionReason" tone="danger">{{ profile.imssRejectionReason }}</UiAlert>
       </UiCard>
 
       <!-- Tarjeta 3: Datos de Contacto y Turno (usados en prellenado de formatos) -->

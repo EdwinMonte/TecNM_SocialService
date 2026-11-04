@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
+import { http } from '../../../shared/api/http'
 import { computed, onMounted, ref } from 'vue'
 import {
   UiAlert,
@@ -120,7 +122,7 @@ const columns: { key: keyof SocialServiceRow & string; label: string }[] = [
 
 const statusLabels: Record<string, string> = {
   requested: 'Solicitud Recibida',
-  approved: 'Carta Pres. Emitida',
+  approved: 'Solicitud aprobada',
   accepted: 'Carta Aceptación OK',
   active: 'En Curso (Activo)',
   completed_pending_review: 'Listo para Liberar',
@@ -199,7 +201,7 @@ async function handleApproveApplication(isAccepted: boolean): Promise<void> {
       officeObservations: reviewObservations.value,
     })
     successMessage.value = isAccepted
-      ? 'Solicitud aprobada y Carta de Presentación emitida con folio automático.'
+      ? 'Solicitud aprobada. La Carta de Presentación firmada se carga y revisa en el expediente.'
       : 'Solicitud rechazada con observaciones.'
     await refreshCurrentDetail()
   } catch (err: any) {
@@ -242,6 +244,12 @@ async function handleViewDocPdf(docId: number): Promise<void> {
 async function handlePrint(docKey: string): Promise<void> {
   if (!selectedDetail.value) return
   try {
+    if (docKey !== 'release_certificate' ) {
+      const response = await http.get(`/social-services/${selectedDetail.value.id}/pdf/${docKey}`, { responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
+      const link = document.createElement('a'); link.href = url; link.download = `${docKey}.pdf`; link.click(); URL.revokeObjectURL(url)
+      return
+    }
     const data = await getSocialServicePrintData(selectedDetail.value.id, docKey)
     openPrintableDocument(data)
   } catch (err: any) {
@@ -340,7 +348,7 @@ onMounted(() => {
         Gestión de Servicio Social (Vinculación)
       </h1>
       <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">
-        Dictamen de solicitudes Anexo XVIII, emisión de Cartas de Presentación, validación de
+        Dictamen de solicitudes Anexo XVIII, revisión de Cartas de Presentación firmadas, validación de
         expediente documental y liberación
       </p>
     </div>
@@ -410,7 +418,7 @@ onMounted(() => {
             <select v-model="statusFilter" class="modern-select" @change="loadData">
               <option value="">Todos los estatus</option>
               <option value="requested">Solicitud Recibida (Por Dictaminar)</option>
-              <option value="approved">Carta Presentación Emitida</option>
+              <option value="approved">Solicitud aprobada</option>
               <option value="accepted">Carta Aceptación Validada</option>
               <option value="active">Activo (Subiendo Reportes)</option>
               <option value="completed_pending_review">Listo para Liberar</option>
@@ -491,6 +499,7 @@ onMounted(() => {
       "
     >
       <div v-if="selectedDetail" style="display: flex; flex-direction: column; gap: 1rem;">
+        <ExpedientChecklist :requirements="selectedDetail.documentRequirements" :documents="studentDocs" tramite-type="social_service" :tramite-id="selectedDetail.id" :student-id="selectedDetail.student.id" :can-edit="false" @changed="refreshCurrentDetail" />
         <div
           style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; background: #f8fafc; padding: 0.85rem; border-radius: 8px;"
         >
@@ -528,14 +537,6 @@ onMounted(() => {
             Imprimir Carta Presentación (CP)
           </UiButton>
           <UiButton
-            v-if="selectedDetail.modality === 'internal'"
-            variant="secondary"
-            size="sm"
-            @click="handlePrint('acceptance_letter')"
-          >
-            Imprimir Carta Aceptación Local (CA)
-          </UiButton>
-          <UiButton
             v-if="selectedDetail.status === 'released'"
             variant="secondary"
             size="sm"
@@ -552,8 +553,8 @@ onMounted(() => {
         >
           <strong>Dictamen de Apertura (Anexo XVIII)</strong>
           <p style="margin: 0.25rem 0 0.6rem; font-size: 0.85rem;">
-            Al aprobar la solicitud, el sistema genera automáticamente la Carta de Presentación con
-            su folio consecutivo (`SS_CP...`).
+            Aprueba primero la Solicitud firmada y la vigencia IMSS. La Carta de Presentación
+            firmada se carga como PDF y recibe su propio dictamen documental.
           </p>
           <UiField label="Observaciones de Vinculación">
             <input v-model="reviewObservations" type="text" />
@@ -565,7 +566,7 @@ onMounted(() => {
               :disabled="isActionRunning"
               @click="handleApproveApplication(true)"
             >
-              Aprobar Solicitud y Generar Carta de Presentación
+              Aprobar Solicitud
             </UiButton>
             <UiButton
               variant="secondary"

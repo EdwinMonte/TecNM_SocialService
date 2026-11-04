@@ -1,3 +1,5 @@
+> **Contrato vigente:** [Flujo documental v2](./document-workflow-v2.spec.md). Sus reglas sustituyen los comportamientos anteriores que contradigan IMSS, permisos, firmas, generación y evaluaciones. El resto se conserva.
+
 # Contrato: Servicio Social
 
 > **Estado:** Borrador v0.2 (alineado al flujo documental real y `SEGUIMIENTO VINCULACIÓN1.xlsx`). Convenciones en [api-conventions.spec.md](./api-conventions.spec.md). Tablas: `social_services`, `social_service_applications`, `social_service_commitments`, `social_service_bi_monthly_reports`, `social_service_evaluations`, `social_service_activity_assessments`. Escribe en `tramite_status_logs`, `non_conformances`, `document_series`.

@@ -1,3 +1,4 @@
+using TecNM.Api.Modules.Expedients;
 using TecNM.Api.Modules.SocialService;
 
 namespace TecNM.Api.Modules.Internships;
@@ -105,7 +106,13 @@ public sealed record InternshipDetailResponse(
     IReadOnlyList<TramiteChecklistItem> Checklist,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt
-);
+)
+{
+    public DateOnly? EvaluationFormatStartDate { get; init; }
+    public DateOnly? EvaluationFormatEndDate { get; init; }
+    public int DocumentWorkflowVersion { get; init; }
+    public IReadOnlyList<DocumentRequirement> DocumentRequirements { get; init; } = [];
+}
 
 public sealed record CreateInternshipRequest(
     long? StudentId,
@@ -165,3 +172,5 @@ public sealed record ReleaseInternshipRequest(
     DateOnly? ReleaseDate
 );
 
+
+public sealed record EvaluationFormatRequest(DateOnly EvaluationStartDate, DateOnly EvaluationEndDate);

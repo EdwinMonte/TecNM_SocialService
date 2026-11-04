@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
+import { http } from '../../../shared/api/http'
 import { computed, onMounted, ref } from 'vue'
 import {
   UiAlert,
@@ -233,6 +235,12 @@ async function handleViewDocPdf(docId: number): Promise<void> {
 async function handlePrint(docKey: 'presentation_letter' | 'evaluation' | 'release_certificate'): Promise<void> {
   if (!selectedDetail.value) return
   try {
+    if (docKey !== 'release_certificate' && docKey !== 'presentation_letter') {
+      const response = await http.get(`/internships/${selectedDetail.value.id}/pdf/${docKey}`, { responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
+      const link = document.createElement('a'); link.href = url; link.download = `${docKey}.pdf`; link.click(); URL.revokeObjectURL(url)
+      return
+    }
     const data = await getInternshipPrintData(selectedDetail.value.id, docKey)
     openPrintableDocument(data)
   } catch (err: any) {
@@ -448,6 +456,7 @@ onMounted(() => {
       "
     >
       <div v-if="selectedDetail" style="display: flex; flex-direction: column; gap: 1rem;">
+        <ExpedientChecklist :requirements="selectedDetail.documentRequirements" :documents="studentDocs" tramite-type="internship" :tramite-id="selectedDetail.id" :student-id="selectedDetail.student.id" :can-edit="false" @changed="refreshCurrentDetail" />
         <div
           style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; background: #f8fafc; padding: 0.85rem; border-radius: 8px;"
         >

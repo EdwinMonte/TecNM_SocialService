@@ -21,12 +21,14 @@ export async function uploadMyDocument(payload: {
   tramiteType: 'social_service' | 'internship' | 'general'
   tramiteId?: number | null
   documentCode: string
+  documentDate?: string
 }): Promise<ExpedientDocument> {
   const formData = new FormData()
   formData.append('File', payload.file)
   formData.append('TramiteType', payload.tramiteType)
   if (payload.tramiteId) formData.append('TramiteId', String(payload.tramiteId))
   formData.append('DocumentCode', payload.documentCode)
+  if (payload.documentDate) formData.append('DocumentDate', payload.documentDate)
 
   return (
     await http.post<ExpedientDocument>('/students/me/documents', formData, {
@@ -77,4 +79,8 @@ export async function reviewDocument(
 
 export async function deleteDocument(documentId: number): Promise<void> {
   await http.delete(`/documents/${documentId}`)
+}
+
+export async function getReviewQueuePage(params: { page: number; pageSize: number; status: string; tramiteType?: string; documentCode?: string; search?: string; periodId?: number }) {
+  return (await http.get<{ items: ReviewQueueItem[]; totalItems: number; totalPages: number }>('/documents/review-queue', { params })).data
 }

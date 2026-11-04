@@ -1,3 +1,4 @@
+using TecNM.Api.Modules.Expedients;
 using Microsoft.EntityFrameworkCore;
 using TecNM.Api.Core.Entities;
 using TecNM.Api.Core.Exceptions;
@@ -12,7 +13,8 @@ namespace TecNM.Api.Modules.Internships;
 public sealed class InternshipsService(
     TecNMDbContext dbContext,
     ICurrentUser currentUser,
-    DocumentSeriesService documentSeriesService)
+    DocumentSeriesService documentSeriesService,
+    ImssEligibilityService imss)
 {
     private static readonly HashSet<string> TerminalStatuses =
     [
@@ -197,6 +199,7 @@ public sealed class InternshipsService(
         CreateInternshipRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         long targetStudentId;
         if (IsInternshipStaff())
         {
@@ -226,18 +229,7 @@ public sealed class InternshipsService(
                 "El estudiante no se encuentra inscrito o en condiciones de realizar Prácticas Profesionales.");
         }
 
-        if (!student.HasValidImss && string.IsNullOrWhiteSpace(student.ImssValidityFileUrl))
-        {
-            var hasImssDoc = await dbContext.ExpedientDocuments
-                .AnyAsync(d => d.StudentId == student.Id && d.DocumentCode == "IMSS" && d.Status != "superseded", cancellationToken);
-
-            if (!hasImssDoc && !IsInternshipStaff())
-            {
-                throw new BusinessRuleException(
-                    "internships.student_not_eligible",
-                    "Debe adjuntar primero su Constancia de Vigencia de Derechos del IMSS en PDF para solicitar la Carta de Presentación.");
-            }
-        }
+        var admissionImssId = await imss.RequireApprovedAsync(student.Id, cancellationToken);
 
         var hasActiveOrReleased = await dbContext.Internships
             .AnyAsync(i => i.StudentId == targetStudentId && i.Status != "cancelled" && i.Status != "non_compliant", cancellationToken);
@@ -267,6 +259,7 @@ public sealed class InternshipsService(
 
         var entity = new Internship
         {
+            AdmissionImssDocumentId = admissionImssId,
             StudentId = student.Id,
             PeriodId = targetPeriodId,
             CompanyId = request.CompanyId,
@@ -288,6 +281,7 @@ public sealed class InternshipsService(
         AddStatusLog(entity.Id, null, "requested", "Solicitud de Carta de Presentación de Prácticas Profesionales");
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        await operation.CommitAsync(cancellationToken);
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -339,10 +333,13 @@ public sealed class InternshipsService(
         ApproveInternshipRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.Internships
             .SingleOrDefaultAsync(i => i.Id == id, cancellationToken)
             ?? throw new NotFoundException("internships.not_found", $"Trámite de Prácticas Profesionales #{id} no encontrado.");
 
+        if (entity.Status == "requested")
+            entity.AdmissionImssDocumentId = await imss.RequireApprovedAsync(entity.StudentId, cancellationToken);
         if (entity.Status != "requested")
         {
             throw new ConflictException(
@@ -368,6 +365,7 @@ public sealed class InternshipsService(
         AddStatusLog(entity.Id, previous, "approved", $"Solicitud aprobada y Carta de Presentación emitida ({entity.PresentationLetterFolio})");
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        await operation.CommitAsync(cancellationToken);
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -376,6 +374,7 @@ public sealed class InternshipsService(
         InternshipPresentationLetterRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.Internships
             .SingleOrDefaultAsync(i => i.Id == id, cancellationToken)
             ?? throw new NotFoundException("internships.not_found", $"Trámite de Prácticas Profesionales #{id} no encontrado.");
@@ -394,6 +393,7 @@ public sealed class InternshipsService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await operation.CommitAsync(cancellationToken);
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -503,9 +503,9 @@ public sealed class InternshipsService(
             errors["evaluationEndDate"] = ["La fecha final de evaluación debe ser mayor o igual a la fecha inicial."];
         }
 
-        var criteria = request.Criteria is { Count: 7 }
-            ? request.Criteria.ToArray()
-            : [4, 4, 4, 4, 4, 4, 4];
+        if (request.Criteria is not { Count: 7 })
+            throw new ValidationException(new Dictionary<string, string[]> { ["criteria"] = ["Captura explícitamente los siete criterios de evaluación."] });
+        var criteria = request.Criteria.ToArray();
 
         if (criteria.Any(c => c is < 0 or > 4))
         {
@@ -641,6 +641,7 @@ public sealed class InternshipsService(
         ReleaseInternshipRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.Internships
             .SingleOrDefaultAsync(i => i.Id == id, cancellationToken)
             ?? throw new NotFoundException("internships.not_found", $"Trámite de Prácticas Profesionales #{id} no encontrado.");
@@ -679,6 +680,7 @@ public sealed class InternshipsService(
         AddStatusLog(entity.Id, previous, "released", $"Constancia de Acreditación de Prácticas emitida con folio {folio}");
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await operation.CommitAsync(cancellationToken);
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -686,6 +688,7 @@ public sealed class InternshipsService(
         long id,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.Internships
             .SingleOrDefaultAsync(i => i.Id == id, cancellationToken)
             ?? throw new NotFoundException("internships.not_found", $"Trámite de Prácticas Profesionales #{id} no encontrado.");
@@ -710,6 +713,7 @@ public sealed class InternshipsService(
         entity.SchoolServicesActFolio = folio;
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await operation.CommitAsync(cancellationToken);
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -839,6 +843,32 @@ public sealed class InternshipsService(
                         .Where(s => !string.IsNullOrWhiteSpace(s))),
                 l.CreatedAt))
             .ToList();
+    }
+
+    public async Task<Dictionary<string, object?>> GetEvaluationFormatDataAsync(long id, CancellationToken ct)
+    {
+        var entity = await dbContext.Internships.Include(i => i.Student).AsNoTracking().SingleOrDefaultAsync(i => i.Id == id, ct)
+            ?? throw new NotFoundException("internships.not_found", "Trámite no encontrado.");
+        EnsureCanViewTramite(entity);
+        var data = await GetPrintDataAsync(id, "evaluation", ct);
+        data["evaluationStartDate"] = entity.EvaluationFormatStartDate ?? entity.StartDate;
+        data["evaluationEndDate"] = entity.EvaluationFormatEndDate ?? entity.EndDate;
+        return data;
+    }
+
+    public async Task SaveEvaluationFormatAsync(long id, EvaluationFormatRequest request, CancellationToken ct)
+    {
+        var entity = await dbContext.Internships.Include(i => i.Student).SingleOrDefaultAsync(i => i.Id == id, ct)
+            ?? throw new NotFoundException("internships.not_found", "Trámite no encontrado.");
+        EnsureCanModifyTramite(entity, allowStudentOnlyWhenRequested: false);
+        if (TerminalStatuses.Contains(entity.Status)) throw new ConflictException("internships.invalid_transition", "El trámite está cerrado.");
+        if (request.EvaluationEndDate < request.EvaluationStartDate || request.EvaluationStartDate == default)
+            throw new ValidationException(new Dictionary<string, string[]> { ["evaluationEndDate"] = ["Revisa las fechas de evaluación."] });
+        if (await HasApprovedDocumentAsync(entity.StudentId, id, "EV", ct))
+            throw new ConflictException("documents.already_approved", "La evaluación ya fue aprobada.");
+        entity.EvaluationFormatStartDate = request.EvaluationStartDate;
+        entity.EvaluationFormatEndDate = request.EvaluationEndDate;
+        await dbContext.SaveChangesAsync(ct);
     }
 
     public async Task<Dictionary<string, object?>> GetPrintDataAsync(
@@ -1424,7 +1454,8 @@ public sealed class InternshipsService(
             allowedActions,
             checklist,
             i.CreatedAt,
-            i.UpdatedAt);
+            i.UpdatedAt)
+        { EvaluationFormatStartDate = i.EvaluationFormatStartDate, EvaluationFormatEndDate = i.EvaluationFormatEndDate, DocumentWorkflowVersion = i.DocumentWorkflowVersion, DocumentRequirements = DocumentDefinitions.For("internship", i.DocumentWorkflowVersion, currentUser).Select(d => d with { CanUpload = d.CanUpload && !TerminalStatuses.Contains(i.Status) }).ToList() };
     }
 
     private IReadOnlyList<string> BuildAllowedActions(Internship i)

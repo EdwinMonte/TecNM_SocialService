@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +14,13 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
         Exception exception,
         CancellationToken cancellationToken)
     {
+        if (exception is DbUpdateException { InnerException: PostgresException pg }) exception = pg;
         var traceId = Activity.Current?.Id ?? httpContext.TraceIdentifier;
 
         var (statusCode, title, code, detail, errors) = exception switch
         {
+            DbUpdateConcurrencyException => (409, "Conflicto de actualización", "documents.concurrent_update", "Otro usuario modificó este registro. Actualiza e intenta nuevamente.", (IDictionary<string, string[]>?)null),
+            PostgresException pgEx when pgEx.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected => (409, "Conflicto concurrente", "documents.concurrent_update", "La operación coincidió con otra actualización. Actualiza e intenta nuevamente.", null),
             AppException appEx => (
                 appEx.StatusCode,
                 appEx.Title,

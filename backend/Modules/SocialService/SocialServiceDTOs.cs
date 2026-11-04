@@ -1,3 +1,4 @@
+using TecNM.Api.Modules.Expedients;
 using TecNM.Api.Core.Http;
 
 namespace TecNM.Api.Modules.SocialService;
@@ -85,7 +86,7 @@ public sealed record SocialServiceCommitmentResponse(
     DateOnly CommitmentDate,
     string City,
     bool IsSignedByStudent,
-    DateTimeOffset SignedAt
+    DateTimeOffset? SignedAt
 );
 
 public sealed record BiMonthlyReportResponse(
@@ -177,7 +178,11 @@ public sealed record SocialServiceDetailResponse(
     IReadOnlyList<TramiteChecklistItem> Checklist,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt
-);
+)
+{
+    public int DocumentWorkflowVersion { get; init; }
+    public IReadOnlyList<DocumentRequirement> DocumentRequirements { get; init; } = [];
+}
 
 public sealed record SocialServiceApplicationInput(
     string StudentAddress,

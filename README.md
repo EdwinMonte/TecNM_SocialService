@@ -4,6 +4,8 @@ Plataforma institucional web para la gestión integral, digitalización, seguimi
 
 ---
 
+Pruebas del flujo documental actualizado: [guía de entorno local](docs/LOCAL_DOCUMENT_TESTING.md). Carta de Presentación SS usa temporalmente carga de PDF firmado y revisión de Vinculación.
+
 ## 🎯 Propósito del Proyecto
 
 El proyecto **TecNM SSPP** moderniza y sustituye los flujos operativos manuales, dispersos en hojas de cálculo y expedientes físicos, centralizando la interacción entre estudiantes, dependencias receptoras y el Departamento de Gestión Tecnológica y Vinculación.

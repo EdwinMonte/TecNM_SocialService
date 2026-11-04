@@ -1,3 +1,5 @@
+> Aplicar primero [Flujo documental v2](../../../../docs/specs/document-workflow-v2.spec.md). Este archivo conserva contexto previo compatible.
+
 # Internships backend
 
 Contrato compartido: [spec raíz de prácticas profesionales](../../../../docs/specs/internships.spec.md).

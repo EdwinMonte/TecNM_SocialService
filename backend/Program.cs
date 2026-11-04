@@ -1,3 +1,5 @@
+using PdfSharp.Fonts;
+using TecNM.Api.Modules.Expedients.Pdf;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -101,6 +103,11 @@ builder.Services.AddScoped<SupervisorsService>();
 builder.Services.AddScoped<AgreementsService>();
 builder.Services.AddScoped<StudentsService>();
 builder.Services.AddScoped<StudentImportsService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<ImssEligibilityService>();
+builder.Services.AddSingleton<OfficialPdfService>();
+GlobalFontSettings.FontResolver ??= new OfficialFontResolver(configuration["Documents:FontsRootPath"]
+    ?? Path.Combine(builder.Environment.ContentRootPath, "Resources", "Documents", "fonts"));
 builder.Services.AddScoped<DocumentsService>();
 builder.Services.AddScoped<SocialServiceService>();
 builder.Services.AddScoped<InternshipsService>();

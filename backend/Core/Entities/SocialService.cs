@@ -2,6 +2,9 @@ namespace TecNM.Api.Core.Entities;
 
 public class SocialService : AuditableEntity
 {
+    public uint Version { get; set; }
+    public int DocumentWorkflowVersion { get; set; } = 2;
+    public long? AdmissionImssDocumentId { get; set; }
     public long StudentId { get; set; }
     public long PeriodId { get; set; }
     public long ProgramId { get; set; }

@@ -1,3 +1,4 @@
+using PdfSharp.Pdf.IO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using TecNM.Api.Core.Exceptions;
@@ -73,6 +74,20 @@ public sealed class LocalFileStorage(IConfiguration configuration) : IFileStorag
             }
         }
 
+        await using (var pdfStream = file.OpenReadStream())
+        {
+            try
+            {
+                using var pdf = PdfReader.Open(pdfStream, PdfDocumentOpenMode.Import);
+                if (pdf.PageCount == 0 || pdf.SecuritySettings.IsEncrypted)
+                    throw new AppException(415, "files.unsupported_type", "Adjunta un PDF sin contraseña y con páginas.");
+            }
+            catch (Exception ex) when (ex is PdfReaderException or ArgumentException or InvalidOperationException or EndOfStreamException)
+            {
+                throw new AppException(415, "files.unsupported_type", "El PDF está dañado o requiere contraseña.");
+            }
+        }
+
         var normalizedRelativeDir = relativeDirectory
             .Replace('\\', '/')
             .Trim('/');
@@ -117,7 +132,7 @@ public sealed class LocalFileStorage(IConfiguration configuration) : IFileStorag
         var fullPath = Path.GetFullPath(Path.Combine(RootPath, normalizedRelative));
         var rootFullPath = Path.GetFullPath(RootPath);
 
-        if (!fullPath.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
+        if (!fullPath.StartsWith(rootFullPath.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
         {
             throw new NotFoundException("documents.file_missing", "El archivo físico del documento no fue encontrado en el servidor.");
         }
@@ -143,7 +158,7 @@ public sealed class LocalFileStorage(IConfiguration configuration) : IFileStorag
             var fullPath = Path.GetFullPath(Path.Combine(RootPath, normalizedRelative));
             var rootFullPath = Path.GetFullPath(RootPath);
 
-            if (fullPath.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
+            if (fullPath.StartsWith(rootFullPath.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
             {
                 File.Delete(fullPath);
             }

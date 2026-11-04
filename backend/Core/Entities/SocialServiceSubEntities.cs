@@ -30,8 +30,8 @@ public class SocialServiceCommitment : AuditableEntity
     public string DependencyAddress { get; set; } = string.Empty;
     public DateOnly CommitmentDate { get; set; }
     public string City { get; set; } = "Monclova";
-    public bool IsSignedByStudent { get; set; } = true;
-    public DateTimeOffset SignedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsSignedByStudent { get; set; }
+    public DateTimeOffset? SignedAt { get; set; }
 
     public SocialService? SocialService { get; set; }
 }

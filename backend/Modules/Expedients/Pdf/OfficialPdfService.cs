@@ -1,0 +1,186 @@
+using PdfSharp.Pdf;
+using System.Text;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text.Json;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf.IO;
+using TecNM.Api.Core.Exceptions;
+
+namespace TecNM.Api.Modules.Expedients.Pdf;
+
+public sealed class OfficialPdfService(IWebHostEnvironment environment, IConfiguration configuration)
+{
+    private string Root => configuration["Documents:RootPath"] ?? Path.Combine(environment.ContentRootPath, "Resources", "Documents");
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    public (byte[] Bytes, string FileName) Template(string key)
+    {
+        var (definition, bytes) = Load(key);
+        return (bytes, key + ".pdf");
+    }
+
+    public string RequireInstitutionalTemplate(string key)
+    {
+        var (definition, _) = Load(key);
+        if (!definition.Institutional || definition.Stamps is null
+            || !definition.Stamps.Any(s => s.File.Replace('\\', '/').StartsWith("stamps/"))
+            || !definition.Stamps.Any(s => s.File.Replace('\\', '/').StartsWith("signatures/"))) throw Unavailable();
+        return key + ":" + definition.Version;
+    }
+
+    public byte[] Generate(string key, IReadOnlyDictionary<string, object?> data)
+    {
+        var (definition, bytes) = Load(key);
+        if (definition.Fields.Length == 0) throw new ConflictException("documents.template_unavailable", "El formato aún no tiene un mapa de prellenado verificado.");
+        using var source = new MemoryStream(bytes);
+        using var pdf = PdfReader.Open(source, PdfDocumentOpenMode.Modify);
+        foreach (var group in definition.Fields.GroupBy(f => f.Page))
+        {
+            using var graphics = XGraphics.FromPdfPage(pdf.Pages[group.Key], XGraphicsPdfPageOptions.Append);
+            foreach (var field in group)
+            {
+                data.TryGetValue(field.Key, out var raw);
+                var value = raw switch
+                {
+                    DateOnly date => date.ToString(field.Format ?? "dd/MM/yyyy", CultureInfo.GetCultureInfo("es-MX")),
+                    DateTimeOffset date => date.ToString("dd/MM/yyyy"),
+                    null => "",
+                    _ => Convert.ToString(raw, CultureInfo.GetCultureInfo("es-MX")) ?? ""
+                };
+                if (field.MatchValue is not null)
+                {
+                    if (!definition.Fields.Where(f => f.Key == field.Key && f.MatchValue != null).Any(f => string.Equals(f.MatchValue, value, StringComparison.OrdinalIgnoreCase)))
+                        throw new BusinessRuleException("documents.data_missing", $"El campo {field.Key} no tiene una casilla oficial configurada.");
+                    if (!string.Equals(value, field.MatchValue, StringComparison.OrdinalIgnoreCase)) continue;
+                    value = "X";
+                }
+                if (field.Optional && string.IsNullOrWhiteSpace(value)) continue;
+                if (value.Length == 0)
+                    throw new BusinessRuleException("documents.data_missing", "Completa los datos del formato.", new Dictionary<string, string[]> { [field.Key] = ["Dato requerido para el formato."] });
+                XFont font;
+                string[] lines;
+                var size = field.FontSize;
+                while (true)
+                {
+                    font = new XFont(definition.Font, size);
+                    lines = Wrap(value, graphics, font, field.Width);
+                    if (lines.All(l => graphics.MeasureString(l, font).Width <= field.Width) && lines.Length * size * 1.2 <= field.Height) break;
+                    if (size <= field.MinFontSize) throw new BusinessRuleException("documents.text_overflow", "El texto no cabe en el formato oficial.", new Dictionary<string, string[]> { [field.Key] = ["Reduce el texto para conservar la legibilidad del formato."] });
+                    size = Math.Max(field.MinFontSize, size - 0.5);
+                }
+                for (var i = 0; i < lines.Length; i++)
+                    graphics.DrawString(lines[i], font, XBrushes.Black, new XPoint(field.X, field.Y + size + i * size * 1.2));
+            }
+        }
+        foreach (var stamp in definition.Stamps ?? []) ApplyStamp(pdf, definition, stamp, data);
+        using var output = new MemoryStream();
+        pdf.Save(output, false);
+        return output.ToArray();
+    }
+
+    private void ApplyStamp(PdfDocument pdf, TemplateDefinition definition, Stamp stamp, IReadOnlyDictionary<string, object?> data)
+    {
+        if (!definition.Institutional || stamp.Page < 0 || stamp.Page >= pdf.PageCount || stamp.Opacity is < 0 or > 1
+            || stamp.Width <= 0 || stamp.Height <= 0 || stamp.X < 0 || stamp.Y < 0)
+            throw Unavailable();
+        var page = pdf.Pages[stamp.Page];
+        if (stamp.X + stamp.Width > page.Width.Point || stamp.Y + stamp.Height > page.Height.Point) throw Unavailable();
+        if (!data.TryGetValue("authorities", out var authorities) || authorities is null
+            || !JsonSerializer.SerializeToElement(authorities).TryGetProperty(stamp.AuthorityRoleKey, out _))
+            throw new ConflictException("documents.template_unavailable", "Falta la autoridad institucional activa para esta estampa.");
+        var path = Path.GetFullPath(Path.Combine(Root, stamp.File));
+        var relative = Path.GetRelativePath(Root, path);
+        if (Path.IsPathRooted(relative) || relative.StartsWith("..") || !File.Exists(path)) throw Unavailable();
+        var bytes = File.ReadAllBytes(path);
+        if (bytes.Length < 8 || !bytes.AsSpan(0, 8).SequenceEqual(new byte[] {137,80,78,71,13,10,26,10})
+            || !Convert.ToHexString(SHA256.HashData(bytes)).Equals(stamp.Sha256, StringComparison.OrdinalIgnoreCase)) throw Unavailable();
+        using var source = new MemoryStream(bytes);
+        using var image = XImage.FromStream(source);
+        var scale = Math.Min(stamp.Width / image.PointWidth, stamp.Height / image.PointHeight);
+        var width = image.PointWidth * scale;
+        var height = image.PointHeight * scale;
+        using (var graphics = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Append))
+            graphics.DrawImage(image, stamp.X + (stamp.Width - width) / 2, stamp.Y + (stamp.Height - height) / 2, width, height);
+        var states = page.Resources.Elements.GetDictionary("/ExtGState");
+        if (states is null) { states = new PdfDictionary(pdf); page.Resources.Elements["/ExtGState"] = states; }
+        var name = "StampAlpha" + states.Elements.Count;
+        var state = new PdfDictionary(pdf);
+        state.Elements["/ca"] = new PdfReal(stamp.Opacity);
+        state.Elements["/CA"] = new PdfReal(stamp.Opacity);
+        states.Elements["/" + name] = state;
+        var content = page.Contents.Elements.GetDictionary(page.Contents.Elements.Count - 1)!;
+        content.Stream.Value = [.. Encoding.ASCII.GetBytes($"q /{name} gs\n"), .. content.Stream.Value, .. "\nQ"u8.ToArray()];
+    }
+
+    private (TemplateDefinition Definition, byte[] Bytes) Load(string key)
+    {
+        var manifest = Path.Combine(Root, "manifest.json");
+        if (!File.Exists(manifest)) throw Unavailable();
+        Dictionary<string, TemplateDefinition>? definitions;
+        try { definitions = JsonSerializer.Deserialize<Dictionary<string, TemplateDefinition>>(File.ReadAllText(manifest), JsonOptions); }
+        catch (JsonException) { throw Unavailable(); }
+        if (definitions is null || !definitions.TryGetValue(key, out var definition) || definition is null
+            || string.IsNullOrWhiteSpace(definition.File) || string.IsNullOrWhiteSpace(definition.Version)
+            || string.IsNullOrWhiteSpace(definition.Font) || definition.Fields is null) throw Unavailable();
+        var path = Path.GetFullPath(Path.Combine(Root, definition.File));
+        var relative = Path.GetRelativePath(Root, path);
+        if (Path.IsPathRooted(relative) || relative.StartsWith("..") || !File.Exists(path)) throw Unavailable();
+        var bytes = File.ReadAllBytes(path);
+        if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(definition.Sha256, StringComparison.OrdinalIgnoreCase)) throw Unavailable();
+        try
+        {
+            using var source = new MemoryStream(bytes);
+            using var pdf = PdfReader.Open(source, PdfDocumentOpenMode.Import);
+            ValidateLayout(definition, pdf);
+        }
+        catch (Exception ex) when (ex is PdfReaderException or ArgumentException or InvalidOperationException or EndOfStreamException)
+        { throw Unavailable(); }
+        return (definition, bytes);
+    }
+
+    private static void ValidateLayout(TemplateDefinition definition, PdfDocument pdf)
+    {
+        if (pdf.PageCount == 0 || definition.Pages != pdf.PageCount
+            || definition.PageSizes is null || definition.PageSizes.Length != pdf.PageCount) throw Unavailable();
+        for (var i = 0; i < pdf.PageCount; i++)
+        {
+            var size = definition.PageSizes[i];
+            if (size is null || !double.IsFinite(size.Width) || !double.IsFinite(size.Height)
+                || Math.Abs(size.Width - pdf.Pages[i].Width.Point) > 0.01
+                || Math.Abs(size.Height - pdf.Pages[i].Height.Point) > 0.01) throw Unavailable();
+        }
+        foreach (var field in definition.Fields)
+        {
+            if (field is null || string.IsNullOrWhiteSpace(field.Key) || field.Page < 0 || field.Page >= pdf.PageCount
+                || !new[] { field.X, field.Y, field.Width, field.Height, field.FontSize, field.MinFontSize }.All(double.IsFinite)
+                || field.X < 0 || field.Y < 0 || field.Width <= 0 || field.Height <= 0
+                || field.MinFontSize <= 0 || field.FontSize < field.MinFontSize) throw Unavailable();
+            var page = pdf.Pages[field.Page];
+            if (field.X + field.Width > page.Width.Point || field.Y + field.Height > page.Height.Point) throw Unavailable();
+        }
+    }
+
+    private static string[] Wrap(string value, XGraphics graphics, XFont font, double width)
+    {
+        var lines = new List<string>();
+        foreach (var paragraph in value.Replace("\r", "").Split('\n'))
+        {
+            var line = "";
+            foreach (var word in paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var candidate = line.Length == 0 ? word : line + " " + word;
+                if (line.Length > 0 && graphics.MeasureString(candidate, font).Width > width) { lines.Add(line); line = word; }
+                else line = candidate;
+            }
+            lines.Add(line);
+        }
+        return lines.ToArray();
+    }
+
+    private static ConflictException Unavailable() => new("documents.template_unavailable", "La plantilla oficial aún no está disponible o no superó su verificación.");
+    public sealed record Field(string Key, double X, double Y, double Width, double Height, double FontSize = 9, double MinFontSize = 7, int Page = 0, string? Format = null, string? MatchValue = null, bool Optional = false);
+    public sealed record Stamp(string File, string Sha256, string AuthorityRoleKey, double X, double Y, double Width, double Height, double Opacity = 1, int Page = 0);
+    public sealed record PageSize(double Width, double Height);
+    public sealed record TemplateDefinition(string File, string Sha256, string Version, string Font, Field[] Fields, bool Institutional = false, Stamp[]? Stamps = null, int Pages = 0, PageSize[]? PageSizes = null);
+}

@@ -2,6 +2,11 @@ namespace TecNM.Api.Core.Entities;
 
 public class ExpedientDocument : AuditableEntity
 {
+    public uint Version { get; set; }
+    public DateOnly? DocumentDate { get; set; }
+    public string Origin { get; set; } = "uploaded";
+    public string? ContentSha256 { get; set; }
+    public string? TemplateVersion { get; set; }
     public long StudentId { get; set; }
     public string TramiteType { get; set; } = string.Empty;
     public long? TramiteId { get; set; }

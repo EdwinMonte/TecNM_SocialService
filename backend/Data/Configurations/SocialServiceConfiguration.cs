@@ -10,10 +10,16 @@ public class SocialServiceConfiguration : IEntityTypeConfiguration<SocialService
     {
         builder.ToTable("social_services");
 
+        builder.Property(s => s.Version).HasColumnName("xmin").IsRowVersion();
+        builder.Property(s => s.DocumentWorkflowVersion).HasColumnName("document_workflow_version").HasDefaultValue(1);
+        builder.Property(s => s.AdmissionImssDocumentId).HasColumnName("admission_imss_document_id");
+        builder.HasOne<ExpedientDocument>().WithMany().HasForeignKey(s => s.AdmissionImssDocumentId).OnDelete(DeleteBehavior.Restrict);
+
         builder.HasKey(s => s.Id);
         builder.Property(s => s.Id).HasColumnName("id");
 
         builder.Property(s => s.StudentId).HasColumnName("student_id").IsRequired();
+        builder.HasIndex(s => s.StudentId).IsUnique().HasFilter("deleted_at IS NULL AND status NOT IN ('cancelled','non_compliant')").HasDatabaseName("uq_social_services__student_open");
         builder.Property(s => s.PeriodId).HasColumnName("period_id").IsRequired();
         builder.Property(s => s.ProgramId).HasColumnName("program_id").IsRequired();
         builder.Property(s => s.AgreementId).HasColumnName("agreement_id");

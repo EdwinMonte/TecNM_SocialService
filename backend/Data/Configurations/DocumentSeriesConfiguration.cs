@@ -10,6 +10,7 @@ public sealed class DocumentSeriesConfiguration : AuditableEntityConfiguration<D
     {
         base.Configure(builder);
 
+        builder.Property(s => s.Version).HasColumnName("xmin").IsRowVersion();
         builder.ToTable("document_series");
         builder.HasKey(s => s.Id).HasName("pk_document_series");
         builder.Property(s => s.DocumentType).HasColumnName("document_type").HasMaxLength(64).IsRequired();

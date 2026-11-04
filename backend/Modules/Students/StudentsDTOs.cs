@@ -40,7 +40,13 @@ public sealed record StudentDetail(
     DateTimeOffset? ImssValidatedAt,
     string? ImssValidatedByName,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public string ImssStatus { get; init; } = "missing";
+    public long? ImssDocumentId { get; init; }
+    public DateOnly? ImssDocumentDate { get; init; }
+    public string? ImssRejectionReason { get; init; }
+}
 
 public sealed record StudentRequest(
     long CareerId,
@@ -67,7 +73,7 @@ public sealed record StudentContactRequest(
     int? CurrentSemester = null,
     string? Shift = null);
 
-public sealed record ValidateImssRequest(bool IsValid);
+public sealed record ValidateImssRequest(bool IsValid, string? RejectionReason = null, DateOnly? DocumentDate = null);
 
 public sealed record CreateStudentAccountResponse(
     long UserId,

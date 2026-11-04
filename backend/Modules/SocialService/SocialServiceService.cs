@@ -1,3 +1,7 @@
+using System.Security.Cryptography;
+using TecNM.Api.Core.Storage;
+using TecNM.Api.Modules.Expedients.Pdf;
+using TecNM.Api.Modules.Expedients;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using TecNM.Api.Core.Entities;
@@ -12,7 +16,11 @@ namespace TecNM.Api.Modules.SocialService;
 public sealed class SocialServiceService(
     TecNMDbContext dbContext,
     ICurrentUser currentUser,
-    DocumentSeriesService documentSeriesService)
+    DocumentSeriesService documentSeriesService,
+    ImssEligibilityService imss,
+    DocumentsService documents,
+    OfficialPdfService pdf,
+    IFileStorage storage)
 {
     private static readonly HashSet<string> TerminalStatuses =
     [
@@ -251,6 +259,8 @@ public sealed class SocialServiceService(
                 "El estudiante no se encuentra inscrito o en condiciones de realizar el Servicio Social.");
         }
 
+        var admissionImssId = await imss.RequireApprovedAsync(student.Id, cancellationToken);
+
         var hasActiveOrReleased = await dbContext.SocialServices
             .AnyAsync(s => s.StudentId == targetStudentId && s.Status != "cancelled" && s.Status != "non_compliant", cancellationToken);
 
@@ -276,6 +286,7 @@ public sealed class SocialServiceService(
 
         var entity = new Core.Entities.SocialService
         {
+            AdmissionImssDocumentId = admissionImssId,
             StudentId = student.Id,
             PeriodId = resolvedPeriod.Id,
             ProgramId = request.ProgramId,
@@ -392,11 +403,16 @@ public sealed class SocialServiceService(
         ReviewApplicationRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.SocialServices
             .Include(s => s.Application)
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken)
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
 
+        if (request.IsAccepted && entity.Status == "requested")
+            entity.AdmissionImssDocumentId = await imss.RequireApprovedAsync(entity.StudentId, cancellationToken);
+        if (entity.Status == "approved" && request.IsAccepted)
+            return await GetByIdAsync(entity.Id, cancellationToken);
         if (entity.Status != "requested")
         {
             throw new ConflictException(
@@ -425,21 +441,15 @@ public sealed class SocialServiceService(
 
         if (request.IsAccepted)
         {
+            if (entity.DocumentWorkflowVersion >= 2 && !await HasApprovedDocumentAsync(entity.StudentId, entity.Id, "SOL", cancellationToken))
+                throw new BusinessRuleException("social_services.documents_missing", "Aprueba primero el PDF firmado de la Solicitud.");
             var previousStatus = entity.Status;
             entity.Status = "approved";
-            entity.PresentationLetterDate ??= DateOnly.FromDateTime(DateTime.UtcNow);
-
-            if (string.IsNullOrWhiteSpace(entity.PresentationLetterFolio))
-            {
-                entity.PresentationLetterFolio = await documentSeriesService.GenerateNextFolioAsync(
-                    "social_service_presentation_letter",
-                    cancellationToken);
-            }
-
-            AddStatusLog(entity.Id, previousStatus, "approved", "Solicitud Anexo XVIII aprobada y Carta de Presentación emitida");
+            AddStatusLog(entity.Id, previousStatus, "approved", "Solicitud Anexo XVIII aprobada; Carta de Presentación mediante PDF firmado y dictamen documental");
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await operation.CommitAsync(cancellationToken);
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -448,6 +458,7 @@ public sealed class SocialServiceService(
         PresentationLetterRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.SocialServices
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken)
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
@@ -457,6 +468,10 @@ public sealed class SocialServiceService(
             throw new ConflictException("social_services.invalid_transition", "El trámite se encuentra en un estado terminal.");
         }
 
+        if (await HasApprovedDocumentAsync(entity.StudentId, entity.Id, "CP", cancellationToken))
+            return await GetByIdAsync(entity.Id, cancellationToken);
+        if (entity.Status != "approved") throw new ConflictException("social_services.invalid_transition", "Aprueba primero la solicitud.");
+        pdf.RequireInstitutionalTemplate("ss-presentation-letter");
         entity.PresentationLetterDate = request.PresentationLetterDate;
         if (string.IsNullOrWhiteSpace(entity.PresentationLetterFolio))
         {
@@ -465,8 +480,37 @@ public sealed class SocialServiceService(
                 cancellationToken);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var issuedPath = await PreparePresentationLetterAsync(entity, cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await operation.CommitAsync(cancellationToken);
+        }
+        catch { storage.TryDelete(issuedPath); throw; }
         return await GetByIdAsync(entity.Id, cancellationToken);
+    }
+
+    private async Task<string> PreparePresentationLetterAsync(Core.Entities.SocialService entity, CancellationToken ct)
+    {
+        var version = pdf.RequireInstitutionalTemplate("ss-presentation-letter");
+        var data = await GetPrintDataAsync(entity.Id, "presentation_letter", ct);
+        data["folio"] = entity.PresentationLetterFolio;
+        data["presentationLetterFolio"] = entity.PresentationLetterFolio;
+        data["issueDate"] = entity.PresentationLetterDate;
+        data["presentationLetterDate"] = entity.PresentationLetterDate;
+        var bytes = pdf.Generate("ss-presentation-letter", data);
+        await using var stream = new MemoryStream(bytes);
+        var file = new FormFile(stream, 0, bytes.Length, "file", "CartaPresentacion.pdf");
+        var path = await storage.SavePdfAsync(file, $"{entity.StudentId}/social_service", cancellationToken: ct);
+        dbContext.ExpedientDocuments.Add(new ExpedientDocument
+        {
+            StudentId = entity.StudentId, TramiteType = "social_service", TramiteId = entity.Id,
+            DocumentCode = "CP", Origin = "system", Status = "approved", StoragePath = path,
+            OriginalFileName = "CartaPresentacion.pdf", FileSizeBytes = bytes.Length,
+            ContentSha256 = Convert.ToHexString(SHA256.HashData(bytes)), TemplateVersion = version,
+            ReviewedBy = currentUser.Id, ReviewedAt = DateTimeOffset.UtcNow
+        });
+        return path;
     }
 
     public async Task<SocialServiceDetailResponse> RegisterAcceptanceAsync(
@@ -514,6 +558,8 @@ public sealed class SocialServiceService(
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
 
         EnsureCanModifyTramite(entity, allowStudentOnlyWhenRequested: false);
+        if (await HasApprovedDocumentAsync(entity.StudentId, entity.Id, "CC", cancellationToken))
+            throw new ConflictException("documents.already_approved", "El documento fue aprobado y sus datos no pueden modificarse.");
 
         var errors = new Dictionary<string, string[]>();
         if (string.IsNullOrWhiteSpace(request.StudentAddress))
@@ -553,8 +599,8 @@ public sealed class SocialServiceService(
                 DependencyAddress = request.DependencyAddress.Trim(),
                 CommitmentDate = request.CommitmentDate,
                 City = city,
-                IsSignedByStudent = true,
-                SignedAt = DateTimeOffset.UtcNow
+                IsSignedByStudent = false,
+                SignedAt = null
             };
             dbContext.SocialServiceCommitments.Add(entity.Commitment);
         }
@@ -565,7 +611,7 @@ public sealed class SocialServiceService(
             entity.Commitment.DependencyAddress = request.DependencyAddress.Trim();
             entity.Commitment.CommitmentDate = request.CommitmentDate;
             entity.Commitment.City = city;
-            entity.Commitment.SignedAt = DateTimeOffset.UtcNow;
+            // Saving draft data does not validate an autograph signature.
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -624,6 +670,8 @@ public sealed class SocialServiceService(
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
 
         EnsureCanModifyTramite(entity, allowStudentOnlyWhenRequested: false);
+        if (await HasApprovedDocumentAsync(entity.StudentId, entity.Id, "R" + reportNumber, cancellationToken))
+            throw new ConflictException("documents.already_approved", "El documento fue aprobado y sus datos no pueden modificarse.");
 
         var errors = new Dictionary<string, string[]>();
         if (request.PeriodEndDate < request.PeriodStartDate)
@@ -701,23 +749,11 @@ public sealed class SocialServiceService(
             .SingleOrDefaultAsync(r => r.Id == reportId && r.SocialServiceId == id, cancellationToken)
             ?? throw new NotFoundException("social_services.report_not_found", "Reporte bimestral no encontrado.");
 
-        var normStatus = request.Status?.Trim().ToLowerInvariant() ?? string.Empty;
-        if (normStatus is not ("approved" or "rejected"))
-        {
-            throw new ValidationException(new Dictionary<string, string[]>
-            {
-                ["status"] = ["El estado debe ser 'approved' o 'rejected'."]
-            });
-        }
-
-        report.Status = normStatus;
-        report.OfficeObservations = string.IsNullOrWhiteSpace(request.OfficeObservations)
-            ? null
-            : request.OfficeObservations.Trim();
-        report.ApprovedBy = currentUser.Id;
-        report.ApprovedAt = DateTimeOffset.UtcNow;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var doc = await dbContext.ExpedientDocuments.AsNoTracking().SingleOrDefaultAsync(d =>
+            d.TramiteType == "social_service" && d.TramiteId == id && d.DocumentCode == "R" + report.ReportNumber
+            && d.Status != "superseded", cancellationToken)
+            ?? throw new BusinessRuleException("social_services.documents_missing", "Carga primero el PDF firmado del reporte.");
+        await documents.ReviewDocumentAsync(doc.Id, new ReviewDocumentRequest(request.Status, request.OfficeObservations), cancellationToken);
 
         var updated = await dbContext.SocialServiceBiMonthlyReports
             .Include(r => r.Approver)
@@ -748,9 +784,9 @@ public sealed class SocialServiceService(
             errors["bimonthlyPeriod"] = ["El periodo bimestral debe ser '1', '2', '3' o 'final'."];
         }
 
-        var criteria = request.Criteria is { Count: 7 }
-            ? request.Criteria.Select(c => c.Trim().ToLowerInvariant()).ToArray()
-            : ["excellent", "excellent", "excellent", "excellent", "excellent", "excellent", "excellent"];
+        if (request.Criteria is not { Count: 7 })
+            throw new ValidationException(new Dictionary<string, string[]> { ["criteria"] = ["Captura explícitamente los siete criterios de evaluación."] });
+        var criteria = request.Criteria.ToArray();
 
         if (criteria.Any(c => !ValidQualitativeGrades.Contains(c)))
         {
@@ -912,7 +948,7 @@ public sealed class SocialServiceService(
 
         // Regla: Progreso guiado por documentos (sin bloqueo por horas)
         var approvedCodes = await GetApprovedDocumentCodesAsync(entity.StudentId, entity.Id, cancellationToken);
-        var requiredDocs = new[] { "R1", "R2", "R3", "CT" };
+        var requiredDocs = entity.DocumentWorkflowVersion >= 2 ? DocumentDefinitions.RequiredForSocialService(2) : new[] { "R1", "R2", "R3", "CT" };
         var missing = requiredDocs.Where(code => !approvedCodes.Contains(code)).ToList();
 
         if (missing.Count > 0)
@@ -936,6 +972,7 @@ public sealed class SocialServiceService(
         ReleaseSocialServiceRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.SocialServices
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken)
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
@@ -948,7 +985,7 @@ public sealed class SocialServiceService(
         }
 
         var approvedCodes = await GetApprovedDocumentCodesAsync(entity.StudentId, entity.Id, cancellationToken);
-        var requiredDocs = new[] { "CA", "CC", "R1", "R2", "R3", "CT" };
+        var requiredDocs = DocumentDefinitions.RequiredForSocialService(entity.DocumentWorkflowVersion);
         var missing = requiredDocs.Where(code => !approvedCodes.Contains(code)).ToList();
 
         if (missing.Count > 0)
@@ -986,6 +1023,7 @@ public sealed class SocialServiceService(
         AddStatusLog(entity.Id, previous, "released", $"Constancia de Terminación emitida con folio {folio}");
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await operation.CommitAsync(cancellationToken);
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -993,6 +1031,7 @@ public sealed class SocialServiceService(
         long id,
         CancellationToken cancellationToken = default)
     {
+        await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.SocialServices
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken)
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
@@ -1017,6 +1056,7 @@ public sealed class SocialServiceService(
         entity.SchoolServicesActFolio = folio;
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await operation.CommitAsync(cancellationToken);
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -1677,31 +1717,7 @@ public sealed class SocialServiceService(
             .Select(d => d.DocumentCode)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var score = 0;
-
-        // 10 columnas de PRINCIPAL CONSULTA en SEGUIMIENTO VINCULACIÓN1.xlsx (10% cada una)
-        if (!string.IsNullOrWhiteSpace(s.PresentationLetterFolio) || s.PresentationLetterDate.HasValue || approved.Contains("CP"))
-            score += 10;
-        if (s.AcceptanceLetterDate.HasValue || approved.Contains("CA"))
-            score += 10;
-        if (s.Application?.IsAcceptedByOffice == true || approved.Contains("SOL"))
-            score += 10;
-        if (approved.Contains("CC"))
-            score += 10;
-        if (approved.Contains("R1"))
-            score += 10;
-        if (approved.Contains("R2"))
-            score += 10;
-        if (approved.Contains("R3"))
-            score += 10;
-        if (approved.Contains("EV1") || approved.Contains("EV2") || approved.Contains("EV3"))
-            score += 10;
-        if (s.TerminationLetterDate.HasValue || approved.Contains("CT"))
-            score += 10;
-        if (s.Status == "released" || !string.IsNullOrWhiteSpace(s.ReleaseCertificateFolio) || approved.Contains("COT"))
-            score += 10;
-
-        return score;
+        return DocumentProgressCalculator.SocialService(s, approved);
     }
 
     private static SocialServiceListItemResponse ToListItemResponse(
@@ -1770,9 +1786,9 @@ public sealed class SocialServiceService(
             new("document_SOL", "Anexo XVIII — Solicitud de Servicio Social",
                 s.Application?.IsAcceptedByOffice == true || approvedCodes.Contains("SOL"),
                 s.Application?.IsAcceptedByOffice == true ? "Aprobada (SI)" : DocStatusDetail("SOL")),
-            new("presentation_letter", "Carta de Presentación generada (CP)",
-                !string.IsNullOrWhiteSpace(s.PresentationLetterFolio) || s.PresentationLetterDate.HasValue || approvedCodes.Contains("CP"),
-                s.PresentationLetterFolio ?? "Se genera al aprobar solicitud"),
+            new("presentation_letter", "Carta de Presentación firmada (CP)",
+                DocumentProgressCalculator.DocumentDone(s, approvedCodes, "CP"),
+                s.PresentationLetterFolio ?? DocStatusDetail("CP")),
             new("document_CA", "Carta de Aceptación firmada y sellada",
                 s.AcceptanceLetterDate.HasValue || approvedCodes.Contains("CA"),
                 DocStatusDetail("CA")),
@@ -1918,7 +1934,8 @@ public sealed class SocialServiceService(
             allowedActions,
             checklist,
             s.CreatedAt,
-            s.UpdatedAt);
+            s.UpdatedAt)
+        { DocumentWorkflowVersion = s.DocumentWorkflowVersion, DocumentRequirements = DocumentDefinitions.For("social_service", s.DocumentWorkflowVersion, currentUser).Select(d => d with { CanUpload = d.CanUpload && !TerminalStatuses.Contains(s.Status) }).ToList() };
     }
 
     private IReadOnlyList<string> BuildAllowedActions(Core.Entities.SocialService s)

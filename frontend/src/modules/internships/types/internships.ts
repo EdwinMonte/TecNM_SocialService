@@ -1,3 +1,4 @@
+import type { DocumentRequirement } from '../../expedients/types/expedients'
 import type { TramiteChecklistItem } from '../../social-service/types/socialService'
 
 export interface InternshipListItem {
@@ -33,6 +34,10 @@ export interface InternshipEvaluation {
 }
 
 export interface InternshipDetail {
+  evaluationFormatStartDate: string | null
+  evaluationFormatEndDate: string | null
+  documentWorkflowVersion: number
+  documentRequirements: DocumentRequirement[]
   id: number
   student: {
     id: number

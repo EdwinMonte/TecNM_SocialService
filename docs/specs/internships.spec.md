@@ -1,3 +1,5 @@
+> **Contrato vigente:** [Flujo documental v2](./document-workflow-v2.spec.md). Sus reglas sustituyen los comportamientos anteriores que contradigan IMSS, permisos, firmas, generación y evaluaciones. El resto se conserva.
+
 # Contrato: Prácticas Profesionales
 
 > **Estado:** Borrador v0.2 (alineado al Forms oficial y `SEGUIMIENTO VINCULACIÓN1.xlsx`). Convenciones en [api-conventions.spec.md](./api-conventions.spec.md). Tablas: `internships`, `internship_evaluations`. Escribe en `tramite_status_logs`, `non_conformances`, `document_series`.

@@ -766,3 +766,6 @@ erDiagram
     - Se sustituyen los cálculos manuales del Excel de Vinculación (`PNC = Solicitantes - Liberados`) por una bitácora transaccional append-only y una entidad formal de incidencias de calidad bajo la norma ISO 9001:2015 del TecNM.
 18. **[2026-10-12] Inmutabilidad Histórica del Semestre (`semester_enrolled`) y Cierre con Servicios Escolares:**
     - Se desvincula el cálculo histórico del semestre cursado del atributo mutable `students.current_semester`. Cada trámite preserva `semester_enrolled`. Adicionalmente, se agregan `original_termination_letter_received` y `school_services_act_sent` para modelar con precisión el hito de turnado a Control Escolar y archivo físico de cartas membretadas.
+
+## Expediente v2
+Migración incremental: `../migrations/20261103_document_workflow_v2.sql`. Requiere PostgreSQL 15+ (NULLS NOT DISTINCT). Revisar respaldos y aplicar antes de iniciar la API actualizada. No ejecutar el esquema de diseño sobre una base existente. Las referencias IMSS históricas importadas quedan pendientes de confirmar fecha.

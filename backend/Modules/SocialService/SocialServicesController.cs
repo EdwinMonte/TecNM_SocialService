@@ -158,7 +158,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPut("{id:long}/evaluations/{evaluatorType}/{bimonthlyPeriod}")]
-    [Authorize(Roles = "admin,social_service_officer,student")]
+    [Authorize(Roles = "admin,social_service_officer")]
     public async Task<ActionResult<SocialServiceEvaluationResponse>> UpsertEvaluation(
         long id,
         string evaluatorType,
@@ -171,7 +171,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPut("{id:long}/activity-assessment")]
-    [Authorize(Roles = "admin,social_service_officer,student")]
+    [Authorize(Roles = "admin,social_service_officer")]
     public async Task<ActionResult<ActivityAssessmentResponse>> UpsertActivityAssessment(
         long id,
         [FromBody] ActivityAssessmentRequest request,

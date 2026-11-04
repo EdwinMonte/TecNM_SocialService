@@ -2,6 +2,7 @@ namespace TecNM.Api.Core.Entities;
 
 public sealed class DocumentSeries : AuditableEntity
 {
+    public uint Version { get; set; }
     public required string DocumentType { get; set; }
     public required string Prefix { get; set; }
     public int CurrentYear { get; set; }

@@ -1,3 +1,5 @@
+> Aplicar primero [Flujo documental v2](../../../../../docs/specs/document-workflow-v2.spec.md). Sin datos ficticios ante fallos; estados y acciones los decide la API.
+
 # Especificación Frontend: Módulo de Servicio Social (SS)
 
 > **Contrato Backend:** [`docs/specs/social-service.spec.md`](../../../../../docs/specs/social-service.spec.md)  

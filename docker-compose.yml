@@ -40,8 +40,10 @@ services:
       Jwt__LifetimeHours: "8"
       Cors__AllowedOrigin: ${Cors__AllowedOrigin:-http://localhost:3000}
       Storage__RootPath: "/app/storage"
+      Documents__FontsRootPath: "/app/document-fonts"
     volumes:
       - storage_data:/app/storage
+      - "${DOCUMENT_FONTS_PATH:-./backend/Resources/Documents/fonts}:/app/document-fonts:ro"
     ports:
       - "${BACKEND_PORT:-5055}:8080"
 

@@ -123,7 +123,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPut("{id:long}/evaluation")]
-    [Authorize(Roles = "admin,internship_coordinator,student")]
+    [Authorize(Roles = "admin,internship_coordinator")]
     public async Task<ActionResult<InternshipEvaluationResponse>> UpsertEvaluation(
         long id,
         [FromBody] InternshipEvaluationRequest request,
@@ -196,6 +196,14 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     {
         var updated = await service.MarkNonComplianceAsync(id, request, cancellationToken);
         return Ok(updated);
+    }
+
+    [HttpPut("{id:long}/evaluation-format")]
+    [Authorize(Roles = "admin,internship_coordinator,student")]
+    public async Task<IActionResult> SaveEvaluationFormat(long id, EvaluationFormatRequest request, CancellationToken ct)
+    {
+        await service.SaveEvaluationFormatAsync(id, request, ct);
+        return NoContent();
     }
 
     [HttpGet("{id:long}/history")]

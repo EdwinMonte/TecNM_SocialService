@@ -63,7 +63,8 @@ public sealed class DocumentsController(DocumentsService service) : ControllerBa
             request.TramiteType,
             request.TramiteId,
             request.DocumentCode,
-            cancellationToken);
+            cancellationToken,
+            request.DocumentDate);
 
         return StatusCode(StatusCodes.Status201Created, created);
     }
@@ -80,7 +81,8 @@ public sealed class DocumentsController(DocumentsService service) : ControllerBa
             request.TramiteType,
             request.TramiteId,
             request.DocumentCode,
-            cancellationToken);
+            cancellationToken,
+            request.DocumentDate);
 
         return StatusCode(StatusCodes.Status201Created, created);
     }

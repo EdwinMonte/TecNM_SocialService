@@ -77,6 +77,9 @@ const isEditing = ref(false)
 const editingId = ref<number | null>(null)
 const isSubmittingStudent = ref(false)
 const selectedDetail = ref<StudentDetail | null>(null)
+const imssDocumentDate = ref('')
+const imssDeclaredDate = ref('')
+const imssRejectionReason = ref('')
 const staffImssFile = ref<File | null>(null)
 
 const studentForm = reactive<StudentRequest>({
@@ -242,6 +245,7 @@ function openCreateModal(): void {
   editingId.value = null
   selectedDetail.value = null
   staffImssFile.value = null
+  imssDeclaredDate.value = ''; imssDocumentDate.value = ''; imssRejectionReason.value = ''
   Object.assign(studentForm, {
     careerId: careerOptions.value[0]?.id ?? 1,
     controlNumber: '',
@@ -271,6 +275,7 @@ async function openEditModal(row: StudentListItem): Promise<void> {
     editingId.value = detail.id
     selectedDetail.value = detail
     staffImssFile.value = null
+    imssDeclaredDate.value = ''; imssDocumentDate.value = detail.imssDocumentDate || ''; imssRejectionReason.value = ''
     Object.assign(studentForm, {
       careerId: detail.careerId,
       controlNumber: detail.controlNumber,
@@ -300,6 +305,7 @@ async function handleSaveStudent(): Promise<void> {
   errorMessage.value = ''
   successMessage.value = ''
   try {
+    if (staffImssFile.value && !imssDeclaredDate.value) throw new Error('Indica la fecha de expedición de la constancia IMSS.')
     const payload: StudentRequest = {
       ...studentForm,
       controlNumber: studentForm.controlNumber.trim().toUpperCase(),
@@ -316,20 +322,20 @@ async function handleSaveStudent(): Promise<void> {
     if (isEditing.value && editingId.value) {
       await updateStudent(editingId.value, payload)
       if (staffImssFile.value) {
-        await uploadStudentImssFile(editingId.value, staffImssFile.value)
+        await uploadStudentImssFile(editingId.value, staffImssFile.value, imssDeclaredDate.value)
       }
       successMessage.value = `Expediente de ${payload.controlNumber} actualizado correctamente.`
     } else {
       const created = await createStudent(payload)
       if (staffImssFile.value) {
-        await uploadStudentImssFile(created.id, staffImssFile.value)
+        await uploadStudentImssFile(created.id, staffImssFile.value, imssDeclaredDate.value)
       }
       successMessage.value = `Alumno ${payload.controlNumber} agregado al padrón exitosamente.`
     }
     isStudentModalOpen.value = false
     await loadData()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Error al guardar los datos del alumno.'
+    errorMessage.value = err?.response?.data?.detail || err?.message || 'Error al guardar los datos del alumno.'
   } finally {
     isSubmittingStudent.value = false
   }
@@ -337,10 +343,18 @@ async function handleSaveStudent(): Promise<void> {
 
 async function handleToggleImssValidation(id: number, isValid: boolean): Promise<void> {
   try {
-    selectedDetail.value = await validateStudentImss(id, isValid)
+    if (isValid && !imssDocumentDate.value) {
+      errorMessage.value = 'Confirma la fecha de expedición que aparece en el PDF.'
+      return
+    }
+    if (!isValid && !imssRejectionReason.value.trim()) {
+      errorMessage.value = 'Indica el motivo de rechazo.'
+      return
+    }
+    selectedDetail.value = await validateStudentImss(id, isValid, imssDocumentDate.value || undefined, imssRejectionReason.value || undefined)
     successMessage.value = isValid
       ? 'Vigencia de Derechos IMSS marcada como válida.'
-      : 'Vigencia de Derechos IMSS marcada como pendiente.'
+      : 'Constancia IMSS rechazada con observaciones.'
     await loadData()
   } catch (err: any) {
     errorMessage.value = err?.response?.data?.message || 'No se pudo actualizar la validación de IMSS.'
@@ -738,10 +752,14 @@ onMounted(async () => {
           </span>
         </div>
         <p class="imss-box-desc">
-          Puedes adjuntar o validar directamente la constancia médica emitida por el IMSS.
+          Revisa el PDF y confirma su fecha de expedición antes de aprobarlo.
         </p>
         <input type="file" accept="application/pdf" class="file-input" @change="handleStaffImssFileChange" />
+        <UiField v-if="staffImssFile" v-model="imssDeclaredDate" type="date" label="Fecha de expedición declarada para el nuevo PDF IMSS" />
 
+        <label>Fecha de expedición confirmada en el PDF <input v-model="imssDocumentDate" type="date" /></label>
+        <label>Observaciones de rechazo <textarea v-model="imssRejectionReason" maxlength="1000" /></label>
+        <p v-if="selectedDetail?.imssRejectionReason">{{ selectedDetail.imssRejectionReason }}</p>
         <div
           v-if="isEditing && selectedDetail"
           class="imss-actions-row"
@@ -759,7 +777,7 @@ onMounted(async () => {
             size="sm"
             @click="handleToggleImssValidation(selectedDetail.id, !selectedDetail.hasValidImss)"
           >
-            {{ selectedDetail.hasValidImss ? 'Marcar IMSS como Pendiente' : 'Validar Vigencia IMSS' }}
+            {{ selectedDetail.hasValidImss ? 'Rechazar IMSS' : 'Validar Vigencia IMSS' }}
           </UiButton>
         </div>
       </div>

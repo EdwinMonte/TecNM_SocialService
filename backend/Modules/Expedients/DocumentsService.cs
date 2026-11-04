@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using TecNM.Api.Core.Entities;
@@ -12,7 +13,8 @@ namespace TecNM.Api.Modules.Expedients;
 public sealed class DocumentsService(
     TecNMDbContext dbContext,
     ICurrentUser currentUser,
-    IFileStorage fileStorage)
+    IFileStorage fileStorage,
+    TimeProvider clock)
 {
     private const long MaxDocumentSizeBytes = 5 * 1024 * 1024; // 5 MB
 
@@ -35,7 +37,7 @@ public sealed class DocumentsService(
     {
         ["social_service"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "SOL", "CP", "CA", "CC", "R1", "R2", "R3", "EV1", "EV2", "EV3", "CT", "COT"
+            "SOL", "CP", "CA", "CC", "R1", "R2", "R3", "EV1", "EV2", "EV3", "CT", "COT", "EV_SUP1", "EV_SUP2", "EV_SUP3", "EV_SELF1", "EV_SELF2", "EV_SELF3", "EV_ACT"
         },
         ["internship"] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -108,10 +110,11 @@ public sealed class DocumentsService(
         string tramiteType,
         long? tramiteId,
         string documentCode,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateOnly? documentDate = null)
     {
         var studentId = await ResolveCurrentStudentIdAsync(cancellationToken);
-        return await UploadDocumentAsync(studentId, file, tramiteType, tramiteId, documentCode, cancellationToken);
+        return await UploadDocumentAsync(studentId, file, tramiteType, tramiteId, documentCode, cancellationToken, documentDate);
     }
 
     public async Task<ExpedientDocumentResponse> UploadDocumentAsync(
@@ -120,17 +123,24 @@ public sealed class DocumentsService(
         string tramiteType,
         long? tramiteId,
         string documentCode,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateOnly? documentDate = null)
     {
         await EnsureCanAccessStudentAsync(studentId, cancellationToken);
 
         var normalizedTramite = ValidateUploadParameters(file, tramiteType, tramiteId, documentCode, out var normalizedCode);
+        if (normalizedTramite == "general" && normalizedCode == "IMSS" && documentDate > ImssEligibilityService.Today(clock))
+            throw new ValidationException(new Dictionary<string, string[]> { ["documentDate"] = ["La fecha de expedición no puede ser futura."] });
 
         if (normalizedTramite != "general")
         {
             await EnsureTramiteBelongsToStudentAsync(normalizedTramite, tramiteId!.Value, studentId, cancellationToken);
         }
 
+        await EnsureCanChangeEvidenceAsync(normalizedTramite, tramiteId, normalizedCode, cancellationToken);
+        await using var hashStream = file!.OpenReadStream();
+        var hash = Convert.ToHexString(await SHA256.HashDataAsync(hashStream, cancellationToken));
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var existingDocs = await dbContext.ExpedientDocuments
             .Where(d => d.StudentId == studentId
                         && d.TramiteType == normalizedTramite
@@ -139,7 +149,9 @@ public sealed class DocumentsService(
                         && d.Status != "superseded")
             .ToListAsync(cancellationToken);
 
-        if (existingDocs.Any(d => d.Status == "approved"))
+        var identical = existingDocs.FirstOrDefault(d => d.ContentSha256 == hash);
+        if (identical is not null) return ToResponse(identical);
+        if (existingDocs.Any(d => d.Status == "approved") && !(normalizedTramite == "general" && normalizedCode == "IMSS"))
         {
             throw new ConflictException(
                 "documents.already_approved",
@@ -160,6 +172,9 @@ public sealed class DocumentsService(
             prev.Status = "superseded";
         }
 
+        try { await dbContext.SaveChangesAsync(cancellationToken); }
+        catch { fileStorage.TryDelete(storagePath); throw; }
+
         var safeOriginalName = Path.GetFileName(file!.FileName);
         if (string.IsNullOrWhiteSpace(safeOriginalName))
         {
@@ -172,6 +187,8 @@ public sealed class DocumentsService(
 
         var entity = new ExpedientDocument
         {
+            DocumentDate = documentDate,
+            ContentSha256 = hash,
             StudentId = studentId,
             TramiteType = normalizedTramite,
             TramiteId = tramiteId,
@@ -184,8 +201,21 @@ public sealed class DocumentsService(
         };
 
         dbContext.ExpedientDocuments.Add(entity);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (normalizedTramite == "general" && normalizedCode == "IMSS")
+            {
+                var student = await dbContext.Students.SingleAsync(t => t.Id == studentId, cancellationToken);
+                student.ImssValidityFileUrl = storagePath;
+                student.HasValidImss = false;
+                student.ImssValidatedAt = null;
+                student.ImssValidatedBy = null;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch { fileStorage.TryDelete(storagePath); throw; }
         return ToResponse(entity);
     }
 
@@ -213,6 +243,7 @@ public sealed class DocumentsService(
         ReviewDocumentRequest request,
         CancellationToken cancellationToken = default)
     {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var doc = await dbContext.ExpedientDocuments
             .Include(d => d.Student)
             .SingleOrDefaultAsync(d => d.Id == id, cancellationToken)
@@ -220,6 +251,7 @@ public sealed class DocumentsService(
 
         EnsureCanReviewTramiteType(doc.TramiteType);
 
+        if (doc.Status == request.Status && doc.RejectionReason == (request.Status == "rejected" ? request.RejectionReason?.Trim() : null)) return ToResponse(doc);
         if (doc.Status != "pending")
         {
             throw new ConflictException(
@@ -256,13 +288,28 @@ public sealed class DocumentsService(
             throw new ValidationException(errors);
         }
 
+        if (doc.TramiteType == "general" && doc.DocumentCode == "IMSS" && normalizedStatus == "approved")
+        {
+            ImssEligibilityService.ValidateApprovalDate(request.DocumentDate, clock);
+            doc.DocumentDate = request.DocumentDate;
+        }
         doc.Status = normalizedStatus;
         doc.RejectionReason = normalizedStatus == "rejected" ? trimmedReason : null;
         doc.ReviewedBy = currentUser.Id;
         doc.ReviewedAt = DateTimeOffset.UtcNow;
 
         await SyncMilestoneOnReviewAsync(doc, cancellationToken);
+        if (doc.TramiteType == "social_service" && doc.DocumentCode == "CC")
+        {
+            var commitment = await dbContext.SocialServiceCommitments.SingleOrDefaultAsync(c => c.SocialServiceId == doc.TramiteId, cancellationToken);
+            if (commitment is not null)
+            {
+                commitment.IsSignedByStudent = doc.Status == "approved";
+                commitment.SignedAt = doc.Status == "approved" ? doc.ReviewedAt : null;
+            }
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var updated = await dbContext.ExpedientDocuments
             .Include(d => d.Reviewer)
@@ -279,6 +326,7 @@ public sealed class DocumentsService(
             ?? throw new NotFoundException("documents.not_found", $"Documento con id {id} no encontrado.");
 
         await EnsureCanAccessStudentAsync(doc.StudentId, cancellationToken);
+        await EnsureCanChangeEvidenceAsync(doc.TramiteType, doc.TramiteId, doc.DocumentCode, cancellationToken);
 
         if (doc.Status != "pending")
         {
@@ -348,18 +396,8 @@ public sealed class DocumentsService(
 
         if (periodId.HasValue)
         {
-            var ssIds = await dbContext.Database
-                .SqlQueryRaw<long>(
-                    "SELECT id AS \"Value\" FROM social_services WHERE period_id = {0} AND deleted_at IS NULL",
-                    periodId.Value)
-                .ToListAsync(cancellationToken);
-
-            var intIds = await dbContext.Database
-                .SqlQueryRaw<long>(
-                    "SELECT id AS \"Value\" FROM internships WHERE period_id = {0} AND deleted_at IS NULL",
-                    periodId.Value)
-                .ToListAsync(cancellationToken);
-
+            var ssIds = dbContext.SocialServices.Where(t => t.PeriodId == periodId.Value).Select(t => t.Id);
+            var intIds = dbContext.Internships.Where(t => t.PeriodId == periodId.Value).Select(t => t.Id);
             query = query.Where(d =>
                 (d.TramiteType == "social_service" && d.TramiteId.HasValue && ssIds.Contains(d.TramiteId.Value)) ||
                 (d.TramiteType == "internship" && d.TramiteId.HasValue && intIds.Contains(d.TramiteId.Value)));
@@ -399,6 +437,20 @@ public sealed class DocumentsService(
             normalizedSize,
             totalItems,
             totalPages);
+    }
+
+    private async Task EnsureCanChangeEvidenceAsync(string type, long? tramiteId, string code, CancellationToken ct)
+    {
+        if (type == "general") return;
+        var query = type == "social_service"
+            ? dbContext.SocialServices.Where(t => t.Id == tramiteId).Select(t => new { t.DocumentWorkflowVersion, t.Status })
+            : dbContext.Internships.Where(t => t.Id == tramiteId).Select(t => new { t.DocumentWorkflowVersion, t.Status });
+        var tramite = await query.SingleOrDefaultAsync(ct)
+            ?? throw new NotFoundException("documents.not_found", "El trámite solicitado no existe.");
+        if (tramite.Status is "released" or "cancelled" or "non_compliant")
+            throw new ConflictException("documents.tramite_closed", "El trámite está cerrado y no admite cambios de evidencias.");
+        if (!DocumentDefinitions.CanUpload(type, code, tramite.DocumentWorkflowVersion, currentUser))
+            throw new AppException(403, "documents.upload_forbidden", "No puedes modificar este documento.");
     }
 
     private async Task<long> ResolveCurrentStudentIdAsync(CancellationToken cancellationToken)
@@ -534,25 +586,9 @@ public sealed class DocumentsService(
         long studentId,
         CancellationToken cancellationToken)
     {
-        bool exists;
-        if (tramiteType == "social_service")
-        {
-            exists = await dbContext.Database
-                .SqlQueryRaw<int>(
-                    "SELECT 1 AS \"Value\" FROM social_services WHERE id = {0} AND student_id = {1} AND deleted_at IS NULL",
-                    tramiteId,
-                    studentId)
-                .AnyAsync(cancellationToken);
-        }
-        else
-        {
-            exists = await dbContext.Database
-                .SqlQueryRaw<int>(
-                    "SELECT 1 AS \"Value\" FROM internships WHERE id = {0} AND student_id = {1} AND deleted_at IS NULL",
-                    tramiteId,
-                    studentId)
-                .AnyAsync(cancellationToken);
-        }
+        var exists = tramiteType == "social_service"
+            ? await dbContext.SocialServices.AnyAsync(t => t.Id == tramiteId && t.StudentId == studentId, cancellationToken)
+            : await dbContext.Internships.AnyAsync(t => t.Id == tramiteId && t.StudentId == studentId, cancellationToken);
 
         if (!exists)
         {
@@ -569,7 +605,8 @@ public sealed class DocumentsService(
             if (doc.Status == "approved")
             {
                 doc.Student.HasValidImss = true;
-                doc.Student.ImssValidatedAt = DateTime.UtcNow;
+                doc.Student.ImssValidatedAt = clock.GetUtcNow();
+                doc.Student.ImssValidatedBy = currentUser.Id;
             }
             else if (doc.Status == "rejected")
             {
@@ -580,61 +617,36 @@ public sealed class DocumentsService(
             return;
         }
 
-        if (doc.Status != "approved" || !doc.TramiteId.HasValue)
-        {
-            return;
-        }
-
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
+        if (!doc.TramiteId.HasValue) return;
+        var today = ImssEligibilityService.Today(clock);
         if (doc.TramiteType == "social_service")
         {
-            if (doc.DocumentCode == "CA")
+            if (doc.DocumentCode is "R1" or "R2" or "R3")
             {
-                await dbContext.Database.ExecuteSqlRawAsync(
-                    "UPDATE social_services SET acceptance_letter_date = COALESCE(acceptance_letter_date, {0}), updated_at = CURRENT_TIMESTAMP WHERE id = {1} AND deleted_at IS NULL",
-                    [today, doc.TramiteId.Value],
-                    cancellationToken);
-            }
-            else if (doc.DocumentCode == "CT")
-            {
-                await dbContext.Database.ExecuteSqlRawAsync(
-                    "UPDATE social_services SET termination_letter_date = COALESCE(termination_letter_date, {0}), updated_at = CURRENT_TIMESTAMP WHERE id = {1} AND deleted_at IS NULL",
-                    [today, doc.TramiteId.Value],
-                    cancellationToken);
-            }
-            else if (doc.DocumentCode is "R1" or "R2" or "R3")
-            {
-                var reportNumber = int.Parse(doc.DocumentCode[1..]);
-                var report = await dbContext.SocialServiceBiMonthlyReports
-                    .SingleOrDefaultAsync(
-                        r => r.SocialServiceId == doc.TramiteId.Value && r.ReportNumber == reportNumber,
-                        cancellationToken);
-
+                var number = int.Parse(doc.DocumentCode[1..]);
+                var report = await dbContext.SocialServiceBiMonthlyReports.SingleOrDefaultAsync(
+                    r => r.SocialServiceId == doc.TramiteId && r.ReportNumber == number, cancellationToken);
                 if (report is not null)
                 {
-                    report.Status = "approved";
+                    report.Status = doc.Status;
+                    report.OfficeObservations = doc.RejectionReason;
                     report.ApprovedBy = currentUser.Id;
-                    report.ApprovedAt = DateTimeOffset.UtcNow;
+                    report.ApprovedAt = doc.ReviewedAt;
                 }
             }
+            if (doc.Status == "approved" && doc.DocumentCode is "CP" or "CA" or "CT")
+            {
+                var tramite = await dbContext.SocialServices.SingleAsync(t => t.Id == doc.TramiteId, cancellationToken);
+                if (doc.DocumentCode == "CP") tramite.PresentationLetterDate ??= today;
+                else if (doc.DocumentCode == "CA") tramite.AcceptanceLetterDate ??= today;
+                else tramite.TerminationLetterDate ??= today;
+            }
         }
-        else if (doc.TramiteType == "internship")
+        else if (doc.TramiteType == "internship" && doc.Status == "approved" && doc.DocumentCode is "CA" or "CT")
         {
-            if (doc.DocumentCode == "CA")
-            {
-                await dbContext.Database.ExecuteSqlRawAsync(
-                    "UPDATE internships SET acceptance_letter_date = COALESCE(acceptance_letter_date, {0}), updated_at = CURRENT_TIMESTAMP WHERE id = {1} AND deleted_at IS NULL",
-                    [today, doc.TramiteId.Value],
-                    cancellationToken);
-            }
-            else if (doc.DocumentCode == "CT")
-            {
-                await dbContext.Database.ExecuteSqlRawAsync(
-                    "UPDATE internships SET termination_letter_date = COALESCE(termination_letter_date, {0}), updated_at = CURRENT_TIMESTAMP WHERE id = {1} AND deleted_at IS NULL",
-                    [today, doc.TramiteId.Value],
-                    cancellationToken);
-            }
+            var tramite = await dbContext.Internships.SingleAsync(t => t.Id == doc.TramiteId, cancellationToken);
+            if (doc.DocumentCode == "CA") tramite.AcceptanceLetterDate ??= today;
+            else tramite.TerminationLetterDate ??= today;
         }
     }
 
@@ -662,7 +674,7 @@ public sealed class DocumentsService(
             d.RejectionReason,
             reviewerName,
             d.ReviewedAt,
-            d.CreatedAt);
+            d.CreatedAt, d.DocumentDate, d.Origin, d.TemplateVersion);
     }
 
     private static ReviewQueueDocumentResponse ToReviewQueueResponse(ExpedientDocument d)
@@ -691,6 +703,6 @@ public sealed class DocumentsService(
             baseResp.RejectionReason,
             baseResp.ReviewedByName,
             baseResp.ReviewedAt,
-            baseResp.CreatedAt);
+            baseResp.CreatedAt, d.DocumentDate);
     }
 }

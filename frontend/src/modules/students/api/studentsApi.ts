@@ -31,9 +31,11 @@ export async function updateMyContact(data: StudentContactRequest): Promise<Stud
   return (await http.put<StudentDetail>('/students/me/contact', data)).data
 }
 
-export async function uploadMyImssFile(file: File): Promise<StudentDetail> {
+export async function uploadMyImssFile(file: File, documentDate: string): Promise<StudentDetail> {
+  if (!documentDate) throw new Error('Indica la fecha de expedición de la constancia IMSS.')
   const formData = new FormData()
   formData.append('file', file)
+  formData.append('documentDate', documentDate)
   return (
     await http.put<StudentDetail>('/students/me/imss', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -62,9 +64,11 @@ export async function createStudentAccount(id: number): Promise<CreateStudentAcc
   return (await http.post<CreateStudentAccountResponse>(`/students/${id}/account`)).data
 }
 
-export async function uploadStudentImssFile(id: number, file: File): Promise<StudentDetail> {
+export async function uploadStudentImssFile(id: number, file: File, documentDate: string): Promise<StudentDetail> {
+  if (!documentDate) throw new Error('Indica la fecha de expedición de la constancia IMSS.')
   const formData = new FormData()
   formData.append('file', file)
+  formData.append('documentDate', documentDate)
   return (
     await http.put<StudentDetail>(`/students/${id}/imss`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -77,8 +81,8 @@ export async function getStudentImssBlob(id: number): Promise<Blob> {
   return response.data
 }
 
-export async function validateStudentImss(id: number, isValid: boolean): Promise<StudentDetail> {
-  return (await http.post<StudentDetail>(`/students/${id}/imss/validation`, { isValid })).data
+export async function validateStudentImss(id: number, isValid: boolean, documentDate?: string, rejectionReason?: string): Promise<StudentDetail> {
+  return (await http.post<StudentDetail>(`/students/${id}/imss/validation`, { isValid, documentDate, rejectionReason })).data
 }
 
 export async function downloadImportTemplate(): Promise<Blob> {

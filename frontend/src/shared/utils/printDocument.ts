@@ -18,6 +18,9 @@ function escapeHtml(value: unknown): string {
 export function openPrintableDocument(data: Record<string, any>): void {
   const title = data.anexo || 'Formato Oficial TecNM — Servicio Social y Prácticas Profesionales'
   const docType = String(data.documentType || '')
+  if (docType !== 'release_certificate' && !(docType === 'presentation_letter' && 'creditsAwarded' in data)) {
+    throw new Error('Este formato requiere descarga desde su plantilla PDF oficial.')
+  }
   const authorities = data.authorities || {}
   const outreachHead = authorities.outreach_division_head || {
     title: 'M.I.',
@@ -69,148 +72,6 @@ export function openPrintableDocument(data: Record<string, any>): void {
           <div class="sig-line"></div>
           <strong>SELLO DE LA INSTITUCIÓN</strong><br/>
           <span>Instituto Tecnológico Superior de Monclova</span>
-        </div>
-      </div>
-    `
-  } else if (docType === 'acceptance_letter') {
-    bodyHtml = `
-      <div style="text-align:right; margin-bottom:18px;">
-        <strong>ASUNTO:</strong> Carta de Aceptación de Servicio Social (Modalidad Interna TecNM)<br/>
-        <strong>FECHA:</strong> Monclova, Coahuila a ${escapeHtml(data.issueDate || new Date().toISOString().slice(0, 10))}
-      </div>
-      <div style="margin-bottom:18px;">
-        <strong>${escapeHtml(outreachHead.title)} ${escapeHtml(outreachHead.fullName)}</strong><br/>
-        <strong>${escapeHtml(outreachHead.position)}</strong><br/>
-        <strong>INSTITUTO TECNOLÓGICO SUPERIOR DE MONCLOVA</strong><br/>
-        <strong>PRESENTE.-</strong>
-      </div>
-      <p style="text-align:justify; line-height:1.6;">
-        En atención a la Carta de Presentación con folio <strong>${escapeHtml(data.presentationLetterFolio || 'S/F')}</strong>,
-        le informo que el(la) alumno(a) <strong>${escapeHtml(data.studentFullName)}</strong>, con número de control
-        <strong>${escapeHtml(data.studentControlNumber)}</strong> de la carrera de <strong>${escapeHtml(data.careerName)}</strong>,
-        ha sido <strong>ACEPTADO(A)</strong> para realizar su <strong>SERVICIO SOCIAL</strong> en el área interna de
-        <strong>${escapeHtml(data.supervisorDepartment || data.companyName)}</strong> dentro del programa
-        <strong>${escapeHtml(data.programName)}</strong>.
-      </p>
-      <p style="text-align:justify; line-height:1.6;">
-        El(la) prestador(a) cubrirá un total de <strong>480 horas</strong> en el periodo del
-        <strong>${escapeHtml(data.startDate)}</strong> al <strong>${escapeHtml(data.endDate)}</strong>, realizando las siguientes actividades:
-        <em>${escapeHtml(data.activitiesOutline)}</em>.
-      </p>
-      <div class="signatures-grid" style="margin-top:65px;">
-        <div class="sig-box">
-          <div class="sig-line"></div>
-          <strong>${escapeHtml(data.supervisorFullName)}</strong><br/>
-          <span>${escapeHtml(data.supervisorPosition)}</span>
-        </div>
-        <div class="sig-box">
-          <div class="sig-line"></div>
-          <strong>SELLO DEL DEPARTAMENTO INTERNO</strong><br/>
-          <span>TecNM Campus Monclova</span>
-        </div>
-      </div>
-    `
-  } else if (docType === 'commitment') {
-    bodyHtml = `
-      <p style="text-align:justify; line-height:1.6;">
-        Con el fin de dar cumplimiento a lo establecido en la Ley Reglamentaria del Artículo 5° Constitucional relativo al ejercicio de profesiones,
-        el(la) suscrito(a) <strong>${escapeHtml(data.studentFullName)}</strong>, con número de control <strong>${escapeHtml(data.studentControlNumber)}</strong>,
-        domicilio en <strong>${escapeHtml(data.studentAddress)}</strong> y teléfono <strong>${escapeHtml(data.studentPhone)}</strong>,
-        estudiante de la carrera de <strong>${escapeHtml(data.careerName)}</strong>:
-      </p>
-      <p style="text-align:justify; line-height:1.6;">
-        Me comprometo a realizar mi Servicio Social en la dependencia: <strong>${escapeHtml(data.companyName)}</strong>,
-        con domicilio en <strong>${escapeHtml(data.dependencyAddress || data.companyAddress)}</strong>,
-        cubriendo <strong>480 horas</strong> en el periodo del <strong>${escapeHtml(data.startDate)}</strong> al <strong>${escapeHtml(data.endDate)}</strong>,
-        acatando los reglamentos institucionales y conduciéndome con ética, responsabilidad y respeto.
-      </p>
-      <p><strong>Lugar y Fecha:</strong> ${escapeHtml(data.city || 'Monclova')}, Coahuila a ${escapeHtml(data.commitmentDate || data.startDate)}</p>
-      <div class="signatures-grid" style="margin-top:65px;">
-        <div class="sig-box">
-          <div class="sig-line"></div>
-          <strong>${escapeHtml(data.studentFullName)}</strong><br/>
-          <span>FIRMA DE CONFORMIDAD DEL PRESTADOR DE SERVICIO SOCIAL</span>
-        </div>
-      </div>
-    `
-  } else if (docType.startsWith('report_')) {
-    bodyHtml = `
-      <table class="info-table">
-        <tr><th>Nombre del Prestador:</th><td>${escapeHtml(data.studentFullName)}</td><th>No. Control:</th><td>${escapeHtml(data.studentControlNumber)}</td></tr>
-        <tr><th>Carrera:</th><td>${escapeHtml(data.careerName)}</td><th>Reporte Bimestral No.:</th><td><strong>${escapeHtml(data.reportNumber)}</strong></td></tr>
-        <tr><th>Dependencia:</th><td>${escapeHtml(data.companyName)}</td><th>Programa:</th><td>${escapeHtml(data.programName)}</td></tr>
-        <tr><th>Periodo Reportado:</th><td>Del ${escapeHtml(data.periodStartDate)} al ${escapeHtml(data.periodEndDate)}</td><th>Horas del Bimestre / Acumuladas:</th><td><strong>${escapeHtml(data.reportedHours)} hrs</strong> (Acumuladas: <strong>${escapeHtml(data.reportAccumulatedHours)} hrs</strong>)</td></tr>
-      </table>
-      <h4 style="margin:18px 0 8px;">RESUMEN DE ACTIVIDADES REALIZADAS EN EL BIMESTRE:</h4>
-      <div style="border:1px solid #1e293b; padding:14px; min-height:110px; border-radius:4px;">
-        ${escapeHtml(data.activitiesSummary)}
-      </div>
-      <div class="signatures-grid" style="margin-top:60px;">
-        <div class="sig-box">
-          <div class="sig-line"></div>
-          <strong>${escapeHtml(data.studentFullName)}</strong><br/>
-          <span>Firma del Estudiante</span>
-        </div>
-        <div class="sig-box">
-          <div class="sig-line"></div>
-          <strong>${escapeHtml(data.supervisorFullName)}</strong><br/>
-          <span>${escapeHtml(data.supervisorPosition)} (Firma y Sello Dependencia)</span>
-        </div>
-        <div class="sig-box">
-          <div class="sig-line"></div>
-          <strong>${escapeHtml(ssHead.title)} ${escapeHtml(ssHead.fullName)}</strong><br/>
-          <span>Vo. Bo. Oficina de Servicio Social</span>
-        </div>
-      </div>
-    `
-  } else if (Array.isArray(data.criteria) || Array.isArray(data.questions)) {
-    const rows = (data.criteria || data.questions || []) as Array<{
-      index: number
-      label: string
-      grade?: string
-      score?: number
-    }>
-    const rowsHtml = rows
-      .map(
-        (r) => `
-        <tr>
-          <td style="text-align:center; width:40px;">${r.index}</td>
-          <td>${escapeHtml(r.label)}</td>
-          <td style="text-align:center; font-weight:700; width:140px;">
-            ${r.score !== undefined ? `${r.score} / 4` : escapeHtml(GRADE_LABELS[String(r.grade)] || r.grade || 'EXCELENTE')}
-          </td>
-        </tr>`,
-      )
-      .join('')
-
-    bodyHtml = `
-      <table class="info-table">
-        <tr><th>Nombre del Alumno:</th><td>${escapeHtml(data.studentFullName)}</td><th>No. Control:</th><td>${escapeHtml(data.studentControlNumber)}</td></tr>
-        <tr><th>Carrera:</th><td>${escapeHtml(data.careerName)}</td><th>Periodo / Bimestre:</th><td>${escapeHtml(data.bimonthlyPeriod || data.periodCode || 'Final')}</td></tr>
-        <tr><th>Dependencia / Empresa:</th><td>${escapeHtml(data.companyName)}</td><th>Responsable Evaluador:</th><td>${escapeHtml(data.supervisorFullName)}</td></tr>
-      </table>
-      <table class="info-table" style="margin-top:14px;">
-        <thead>
-          <tr><th>No.</th><th>Criterio de Evaluación Normativo</th><th>Nivel de Desempeño</th></tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-      ${
-        data.numericalAverage !== undefined
-          ? `<p style="margin-top:10px;"><strong>Promedio Numérico:</strong> ${escapeHtml(data.numericalAverage)} &nbsp;|&nbsp; <strong>Nivel Alcanzado:</strong> ${escapeHtml(GRADE_LABELS[String(data.performanceLevel)] || data.performanceLevel)}</p>`
-          : ''
-      }
-      <p style="margin-top:10px;"><strong>Observaciones:</strong> ${escapeHtml(data.observations || 'Sin observaciones adicionales.')}</p>
-      <div class="signatures-grid" style="margin-top:55px;">
-        <div class="sig-box">
-          <div class="sig-line"></div>
-          <strong>${escapeHtml(data.supervisorFullName || data.studentFullName)}</strong><br/>
-          <span>Nombre, Firma y Sello</span>
-        </div>
-        <div class="sig-box">
-          <div class="sig-line"></div>
-          <strong>${escapeHtml(data.studentFullName)}</strong><br/>
-          <span>Firma del Estudiante</span>
         </div>
       </div>
     `

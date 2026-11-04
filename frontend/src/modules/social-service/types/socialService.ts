@@ -1,3 +1,4 @@
+import type { DocumentRequirement } from '../../expedients/types/expedients'
 export interface SocialServiceListItem {
   id: number
   studentId: number
@@ -84,6 +85,8 @@ export interface ActivityAssessment {
 }
 
 export interface SocialServiceDetail {
+  documentWorkflowVersion: number
+  documentRequirements: DocumentRequirement[]
   id: number
   student: {
     id: number

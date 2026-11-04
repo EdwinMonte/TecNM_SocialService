@@ -1,3 +1,5 @@
+> Aplicar primero [Flujo documental v2](../../../../../docs/specs/document-workflow-v2.spec.md). Sin datos ficticios ante fallos; estados y acciones los decide la API.
+
 # Especificación Frontend: Módulo Expediente Documental & Archivos
 
 > **Contrato Backend:** [`docs/specs/documents.spec.md`](../../../../../docs/specs/documents.spec.md)  

@@ -15,7 +15,10 @@ public sealed record ExpedientDocumentResponse(
     string? RejectionReason,
     string? ReviewedByName,
     DateTimeOffset? ReviewedAt,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    DateOnly? DocumentDate = null,
+    string Origin = "uploaded",
+    string? TemplateVersion = null
 );
 
 public sealed record ReviewQueueDocumentResponse(
@@ -35,7 +38,8 @@ public sealed record ReviewQueueDocumentResponse(
     string? RejectionReason,
     string? ReviewedByName,
     DateTimeOffset? ReviewedAt,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    DateOnly? DocumentDate = null
 );
 
 public sealed class UploadDocumentFormRequest
@@ -44,9 +48,11 @@ public sealed class UploadDocumentFormRequest
     public string TramiteType { get; set; } = string.Empty;
     public long? TramiteId { get; set; }
     public string DocumentCode { get; set; } = string.Empty;
+    public DateOnly? DocumentDate { get; set; }
 }
 
 public sealed record ReviewDocumentRequest(
     string Status,
-    string? RejectionReason
+    string? RejectionReason,
+    DateOnly? DocumentDate = null
 );

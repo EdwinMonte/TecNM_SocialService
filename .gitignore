@@ -62,3 +62,7 @@ Thumbs.db
 # Documentación & Fuentes Locales (No subir a GitHub)
 # ==========================================
 docs/sources/
+
+# Local PDF verification renders
+tmp/pdf-qa/
+local-data/

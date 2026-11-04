@@ -9,6 +9,15 @@ public class ExpedientDocumentConfiguration : IEntityTypeConfiguration<Expedient
     public void Configure(EntityTypeBuilder<ExpedientDocument> builder)
     {
         builder.ToTable("expedient_documents");
+        builder.Property(d => d.Version).HasColumnName("xmin").IsRowVersion();
+        builder.Property(d => d.DocumentDate).HasColumnName("document_date");
+        builder.Property(d => d.Origin).HasColumnName("origin").HasMaxLength(16).HasDefaultValue("uploaded");
+        builder.Property(d => d.ContentSha256).HasColumnName("content_sha256").HasMaxLength(64);
+        builder.Property(d => d.TemplateVersion).HasColumnName("template_version").HasMaxLength(100);
+        builder.HasIndex(d => new { d.StudentId, d.TramiteType, d.TramiteId, d.DocumentCode })
+            .IsUnique().AreNullsDistinct(false)
+            .HasFilter("deleted_at IS NULL AND status <> 'superseded'")
+            .HasDatabaseName("uq_expedient_documents__current");
 
         builder.HasKey(d => d.Id);
         builder.Property(d => d.Id).HasColumnName("id");

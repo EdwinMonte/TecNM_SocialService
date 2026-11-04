@@ -10,10 +10,18 @@ public class InternshipConfiguration : IEntityTypeConfiguration<Internship>
     {
         builder.ToTable("internships");
 
+        builder.Property(i => i.Version).HasColumnName("xmin").IsRowVersion();
+        builder.Property(i => i.DocumentWorkflowVersion).HasColumnName("document_workflow_version").HasDefaultValue(1);
+        builder.Property(i => i.AdmissionImssDocumentId).HasColumnName("admission_imss_document_id");
+        builder.HasOne<ExpedientDocument>().WithMany().HasForeignKey(i => i.AdmissionImssDocumentId).OnDelete(DeleteBehavior.Restrict);
+        builder.Property(i => i.EvaluationFormatStartDate).HasColumnName("evaluation_format_start_date");
+        builder.Property(i => i.EvaluationFormatEndDate).HasColumnName("evaluation_format_end_date");
+
         builder.HasKey(i => i.Id);
         builder.Property(i => i.Id).HasColumnName("id");
 
         builder.Property(i => i.StudentId).HasColumnName("student_id").IsRequired();
+        builder.HasIndex(i => i.StudentId).IsUnique().HasFilter("deleted_at IS NULL AND status NOT IN ('cancelled','non_compliant')").HasDatabaseName("uq_internships__student_open");
         builder.Property(i => i.PeriodId).HasColumnName("period_id").IsRequired();
         builder.Property(i => i.CompanyId).HasColumnName("company_id");
         builder.Property(i => i.SupervisorId).HasColumnName("supervisor_id");
