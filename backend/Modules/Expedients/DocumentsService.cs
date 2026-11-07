@@ -57,9 +57,9 @@ public sealed class DocumentsService(
         bool includeSuperseded,
         CancellationToken cancellationToken = default)
     {
-        await EnsureCanAccessStudentAsync(studentId, cancellationToken);
+        await currentUser.RequireStudentAsync(dbContext, studentId, cancellationToken, true);
 
-        var query = dbContext.ExpedientDocuments
+        var query = currentUser.VisibleDocuments(dbContext, dbContext.ExpedientDocuments)
             .Include(d => d.Reviewer)
             .AsNoTracking()
             .Where(d => d.StudentId == studentId);
@@ -126,9 +126,10 @@ public sealed class DocumentsService(
         CancellationToken cancellationToken = default,
         DateOnly? documentDate = null)
     {
-        await EnsureCanAccessStudentAsync(studentId, cancellationToken);
+        await currentUser.RequireStudentAsync(dbContext, studentId, cancellationToken, true);
 
         var normalizedTramite = ValidateUploadParameters(file, tramiteType, tramiteId, documentCode, out var normalizedCode);
+        await EnsureEvidenceOwnerAsync(studentId, normalizedTramite, normalizedCode, cancellationToken);
         if (normalizedTramite == "general" && normalizedCode == "IMSS" && documentDate > ImssEligibilityService.Today(clock))
             throw new ValidationException(new Dictionary<string, string[]> { ["documentDate"] = ["La fecha de expedición no puede ser futura."] });
 
@@ -223,7 +224,7 @@ public sealed class DocumentsService(
         long id,
         CancellationToken cancellationToken = default)
     {
-        var doc = await dbContext.ExpedientDocuments
+        var doc = await currentUser.VisibleDocuments(dbContext, dbContext.ExpedientDocuments)
             .Include(d => d.Student)
             .AsNoTracking()
             .SingleOrDefaultAsync(d => d.Id == id, cancellationToken)
@@ -244,7 +245,7 @@ public sealed class DocumentsService(
         CancellationToken cancellationToken = default)
     {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var doc = await dbContext.ExpedientDocuments
+        var doc = await currentUser.VisibleDocuments(dbContext, dbContext.ExpedientDocuments)
             .Include(d => d.Student)
             .SingleOrDefaultAsync(d => d.Id == id, cancellationToken)
             ?? throw new NotFoundException("documents.not_found", $"Documento con id {id} no encontrado.");
@@ -321,11 +322,12 @@ public sealed class DocumentsService(
 
     public async Task DeleteDocumentAsync(long id, CancellationToken cancellationToken = default)
     {
-        var doc = await dbContext.ExpedientDocuments
+        var doc = await currentUser.VisibleDocuments(dbContext, dbContext.ExpedientDocuments)
             .SingleOrDefaultAsync(d => d.Id == id, cancellationToken)
             ?? throw new NotFoundException("documents.not_found", $"Documento con id {id} no encontrado.");
 
         await EnsureCanAccessStudentAsync(doc.StudentId, cancellationToken);
+        await EnsureEvidenceOwnerAsync(doc.StudentId, doc.TramiteType, doc.DocumentCode, cancellationToken);
         await EnsureCanChangeEvidenceAsync(doc.TramiteType, doc.TramiteId, doc.DocumentCode, cancellationToken);
 
         if (doc.Status != "pending")
@@ -352,7 +354,7 @@ public sealed class DocumentsService(
         var normalizedPage = Math.Max(1, page);
         var normalizedSize = Math.Clamp(pageSize, 1, 100);
 
-        var query = dbContext.ExpedientDocuments
+        var query = currentUser.VisibleDocuments(dbContext, dbContext.ExpedientDocuments)
             .Include(d => d.Student)
                 .ThenInclude(s => s!.Career)
             .Include(d => d.Reviewer)
@@ -439,9 +441,21 @@ public sealed class DocumentsService(
             totalPages);
     }
 
+    private async Task EnsureEvidenceOwnerAsync(long studentId, string type, string code, CancellationToken ct)
+    {
+        if (type == "internship" && code == "CA" && (currentUser.IsInRole("admin") || currentUser.IsInRole("internship_coordinator"))) return;
+        if (!currentUser.IsInRole("student") || !await dbContext.Students.AnyAsync(s => s.Id == studentId && s.UserId == currentUser.Id, ct))
+            throw new AppException(403, "documents.upload_forbidden", "Solo el alumno propietario puede modificar esta evidencia.");
+    }
+
     private async Task EnsureCanChangeEvidenceAsync(string type, long? tramiteId, string code, CancellationToken ct)
     {
-        if (type == "general") return;
+        if (type == "general")
+        {
+            if (!currentUser.IsInRole("student"))
+                throw new AppException(403, "documents.upload_forbidden", "Solo el alumno puede cargar sus documentos generales.");
+            return;
+        }
         var query = type == "social_service"
             ? dbContext.SocialServices.Where(t => t.Id == tramiteId).Select(t => new { t.DocumentWorkflowVersion, t.Status })
             : dbContext.Internships.Where(t => t.Id == tramiteId).Select(t => new { t.DocumentWorkflowVersion, t.Status });
@@ -474,33 +488,9 @@ public sealed class DocumentsService(
         return studentId.Value;
     }
 
-    private async Task EnsureCanAccessStudentAsync(long studentId, CancellationToken cancellationToken)
-    {
-        var student = await dbContext.Students
-            .AsNoTracking()
-            .Where(s => s.Id == studentId)
-            .Select(s => new { s.Id, s.UserId })
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (student is null)
-        {
-            throw new NotFoundException("students.not_found", $"Estudiante con id {studentId} no encontrado.");
-        }
-
-        var isStaffOrViewer = currentUser.IsInRole("admin")
-                              || currentUser.IsInRole("social_service_officer")
-                              || currentUser.IsInRole("internship_coordinator")
-                              || currentUser.IsInRole("department_head");
-
-        if (!isStaffOrViewer)
-        {
-            if (!currentUser.Id.HasValue || student.UserId != currentUser.Id.Value)
-            {
-                // Regla de api-conventions: Recurso ajeno responde 404 para evitar enumeración
-                throw new NotFoundException("documents.not_found", "El expediente solicitado no existe.");
-            }
-        }
-    }
+    // Regla de api-conventions: Recurso ajeno responde 404 para evitar enumeración.
+    private Task EnsureCanAccessStudentAsync(long studentId, CancellationToken cancellationToken) =>
+        currentUser.RequireStudentAsync(dbContext, studentId, cancellationToken, true);
 
     private void EnsureCanReviewTramiteType(string tramiteType)
     {

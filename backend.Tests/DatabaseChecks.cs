@@ -20,11 +20,12 @@ internal static class DatabaseChecks
         var clock = new FixedClock(new DateTimeOffset(2026, 11, 3, 12, 0, 0, TimeSpan.Zero));
         var storage = new LocalFileStorage(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Storage:RootPath"] = Path.GetFullPath("tmp/pdf-qa/db-storage") }).Build());
         var service = new DocumentsService(db, new TestUser(["admin"]), storage, clock);
+        var studentService = new DocumentsService(db, new TestUser(["student"], 2), storage, clock);
         var bytes = File.ReadAllBytes("backend/Resources/Documents/templates/pp-evaluation.pdf");
         IFormFile Upload(byte[] value) => new FormFile(new MemoryStream(value), 0, value.Length, "file", "imss.pdf");
-        var uploaded = await service.UploadDocumentAsync(1, Upload(bytes), "general", null, "IMSS");
+        var uploaded = await studentService.UploadDocumentAsync(1, Upload(bytes), "general", null, "IMSS");
         Ensure(uploaded.Status == "pending", "IMSS upload stays pending");
-        Ensure((await service.UploadDocumentAsync(1, Upload(bytes), "general", null, "IMSS")).Id == uploaded.Id, "Identical upload is idempotent");
+        Ensure((await studentService.UploadDocumentAsync(1, Upload(bytes), "general", null, "IMSS")).Id == uploaded.Id, "Identical upload is idempotent");
         var eligibility = new ImssEligibilityService(db, clock);
         try { await eligibility.RequireApprovedAsync(1); throw new Exception("Pending IMSS admitted"); }
         catch (BusinessRuleException) { }
@@ -33,7 +34,7 @@ internal static class DatabaseChecks
         var approved = await service.ReviewDocumentAsync(uploaded.Id, new("approved", null, new DateOnly(2026, 10, 1)));
         Ensure(approved.Status == "approved" && await eligibility.RequireApprovedAsync(1) == uploaded.Id, "Confirmed current IMSS admits");
         Ensure((await service.ReviewDocumentAsync(uploaded.Id, new("approved", null, new DateOnly(2026, 10, 1)))).Id == uploaded.Id, "Repeated review is idempotent");
-        var replacement = await service.UploadDocumentAsync(1, Upload([.. bytes, 10]), "general", null, "IMSS");
+        var replacement = await studentService.UploadDocumentAsync(1, Upload([.. bytes, 10]), "general", null, "IMSS");
         Ensure(replacement.Id != uploaded.Id && replacement.Status == "pending", "Annual replacement needs new review");
         Ensure(await db.ExpedientDocuments.AsNoTracking().AnyAsync(d => d.Id == uploaded.Id && d.Status == "superseded"), "Old IMSS retained");
         try { await service.ReviewDocumentAsync(replacement.Id, new("rejected", " ")); throw new Exception("Empty rejection accepted"); }

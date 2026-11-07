@@ -3,10 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using TecNM.Api.Core.Entities;
 using TecNM.Api.Core.Exceptions;
 using TecNM.Api.Data;
+using TecNM.Api.Core.Security;
 
 namespace TecNM.Api.Modules.Reports;
 
-public sealed class ReportsService(TecNMDbContext dbContext)
+public sealed partial class ReportsService(TecNMDbContext dbContext, ICurrentUser currentUser)
 {
     private static readonly string[] AllStatuses =
     [
@@ -36,14 +37,14 @@ public sealed class ReportsService(TecNMDbContext dbContext)
 
         var ssCounts = await dbContext.SocialServices
             .AsNoTracking()
-            .Where(s => s.PeriodId == period.Id)
+            .Where(s => s.PeriodId == period.Id && (currentUser.ReadsAll() || currentUser.Roles.Contains("social_service_officer")))
             .GroupBy(s => s.Status)
             .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Status, x => x.Count, cancellationToken);
 
         var ppCounts = await dbContext.Internships
             .AsNoTracking()
-            .Where(i => i.PeriodId == period.Id)
+            .Where(i => i.PeriodId == period.Id && (currentUser.ReadsAll() || currentUser.Roles.Contains("internship_coordinator")))
             .GroupBy(i => i.Status)
             .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Status, x => x.Count, cancellationToken);
@@ -51,7 +52,7 @@ public sealed class ReportsService(TecNMDbContext dbContext)
         var ssDict = AllStatuses.ToDictionary(st => st, st => ssCounts.GetValueOrDefault(st, 0));
         var ppDict = AllStatuses.ToDictionary(st => st, st => ppCounts.GetValueOrDefault(st, 0));
 
-        var pendingReviews = await dbContext.ExpedientDocuments
+        var pendingReviews = await currentUser.VisibleDocuments(dbContext, dbContext.ExpedientDocuments)
             .AsNoTracking()
             .CountAsync(d => d.Status == "pending", cancellationToken);
 
@@ -63,7 +64,7 @@ public sealed class ReportsService(TecNMDbContext dbContext)
 
         var openPncs = await dbContext.NonConformances
             .AsNoTracking()
-            .CountAsync(n => n.PeriodId == period.Id && (n.Status == "open" || n.Status == "under_review"), cancellationToken);
+            .CountAsync(n => n.PeriodId == period.Id && (n.Status == "open" || n.Status == "under_review") && (currentUser.ReadsAll() || n.TramiteType == "social_service" && currentUser.Roles.Contains("social_service_officer") || n.TramiteType == "internship" && currentUser.Roles.Contains("internship_coordinator")), cancellationToken);
 
         return new DashboardResponse(
             new ReportPeriodSummary(period.Id, period.Code, period.Name),
@@ -74,7 +75,15 @@ public sealed class ReportsService(TecNMDbContext dbContext)
             openPncs);
     }
 
-    public async Task<IReadOnlyList<TrackingRowResponse>> GetTrackingAsync(
+    public Task<IReadOnlyList<TrackingRowResponse>> GetTrackingAsync(
+        long? periodId, string tramiteType, string? status, long? careerId, string? search,
+        CancellationToken cancellationToken = default)
+    {
+        currentUser.RequireProcess(ValidateTramiteType(tramiteType));
+        return GetTrackingCoreAsync(periodId, tramiteType, status, careerId, search, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<TrackingRowResponse>> GetTrackingCoreAsync(
         long? periodId,
         string tramiteType,
         string? status,
@@ -107,7 +116,7 @@ public sealed class ReportsService(TecNMDbContext dbContext)
 
             if (period != null)
             {
-                query = query.Where(s => s.PeriodId == period.Id);
+                query = query.Where(s => s.PeriodId == period.Id && (currentUser.ReadsAll() || currentUser.Roles.Contains("social_service_officer")));
             }
 
             if (!string.IsNullOrWhiteSpace(status))
@@ -210,7 +219,7 @@ public sealed class ReportsService(TecNMDbContext dbContext)
 
             if (period != null)
             {
-                query = query.Where(i => i.PeriodId == period.Id);
+                query = query.Where(i => i.PeriodId == period.Id && (currentUser.ReadsAll() || currentUser.Roles.Contains("internship_coordinator")));
             }
 
             if (!string.IsNullOrWhiteSpace(status))
@@ -314,7 +323,7 @@ public sealed class ReportsService(TecNMDbContext dbContext)
             .OrderBy(c => c.Id)
             .ToListAsync(cancellationToken);
 
-        var rows = await GetTrackingAsync(period.Id, normType, null, null, null, cancellationToken);
+        var rows = await GetTrackingCoreAsync(period.Id, normType, null, null, null, cancellationToken);
 
         var byCareer = careers.Select(c =>
         {
@@ -380,7 +389,7 @@ public sealed class ReportsService(TecNMDbContext dbContext)
 
             if (prevPeriod is not null)
             {
-                var prevRows = await GetTrackingAsync(prevPeriod.Id, normType, null, null, null, cancellationToken);
+                var prevRows = await GetTrackingCoreAsync(prevPeriod.Id, normType, null, null, null, cancellationToken);
                 var prevEligible = prevRows.Count(r => r.Documents.Cp);
                 var prevApp = prevRows.Count(r => r.Documents.Ca);
                 var prevRel = prevRows.Count(r =>

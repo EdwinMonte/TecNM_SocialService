@@ -5,9 +5,15 @@ namespace TecNM.Api.Modules.Reports;
 
 [ApiController]
 [Route("api/reports")]
-[Authorize(Roles = "admin,social_service_officer,internship_coordinator,department_head")]
+[Authorize(Policy = "StatisticsRead")]
 public sealed class ReportsController(ReportsService service) : ControllerBase
 {
+    [HttpGet("linkage")]
+    public async Task<ActionResult<LinkageResponse>> GetLinkage(
+        [FromQuery] string tramiteType, [FromQuery] long? periodId = null,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+        => Ok(await service.GetLinkageAsync(tramiteType, periodId, page, pageSize, cancellationToken));
+
     [HttpGet("dashboard")]
     public async Task<ActionResult<DashboardResponse>> GetDashboard(
         [FromQuery] long? periodId = null,

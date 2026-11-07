@@ -8,10 +8,8 @@ namespace TecNM.Api.Modules.Companies;
 [Route("api/companies")]
 public class CompaniesController(CompaniesService companiesService) : ControllerBase
 {
-    private const string StaffAndDeptRoles = "admin,social_service_officer,internship_coordinator,department_head";
-    private const string StaffRoles = "admin,social_service_officer,internship_coordinator";
 
-    [Authorize(Roles = StaffAndDeptRoles)]
+    [Authorize(Policy = "CompaniesRead")]
     [HttpGet]
     public async Task<ActionResult<PagedResponse<CompanyResponse>>> GetPaged(
         [FromQuery] int page = 1,
@@ -22,10 +20,11 @@ public class CompaniesController(CompaniesService companiesService) : Controller
         [FromQuery] bool? isTecnmInternal = null,
         [FromQuery] bool? isActive = null,
         [FromQuery] string? sort = null,
+        [FromQuery] string? companyType = null,
         CancellationToken cancellationToken = default)
     {
         var result = await companiesService.GetPagedAsync(
-            page, pageSize, search, sector, companySize, isTecnmInternal, isActive, sort, cancellationToken);
+            page, pageSize, search, sector, companySize, isTecnmInternal, isActive, sort, companyType, cancellationToken);
         return Ok(result);
     }
 
@@ -39,7 +38,7 @@ public class CompaniesController(CompaniesService companiesService) : Controller
         return Ok(options);
     }
 
-    [Authorize(Roles = StaffAndDeptRoles)]
+    [Authorize(Policy = "CompaniesRead")]
     [HttpGet("{id:long}")]
     public async Task<ActionResult<CompanyResponse>> GetById(long id, CancellationToken cancellationToken = default)
     {
@@ -47,7 +46,7 @@ public class CompaniesController(CompaniesService companiesService) : Controller
         return Ok(company);
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Policy = "CompaniesWrite")]
     [HttpPost]
     public async Task<ActionResult<CompanyResponse>> Create(
         [FromBody] CompanyRequest request,
@@ -57,7 +56,7 @@ public class CompaniesController(CompaniesService companiesService) : Controller
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Policy = "CompaniesWrite")]
     [HttpPut("{id:long}")]
     public async Task<ActionResult<CompanyResponse>> Update(
         long id,
@@ -68,7 +67,7 @@ public class CompaniesController(CompaniesService companiesService) : Controller
         return Ok(updated);
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Policy = "CompaniesWrite")]
     [HttpPatch("{id:long}/status")]
     public async Task<ActionResult<CompanyResponse>> UpdateStatus(
         long id,
@@ -79,7 +78,7 @@ public class CompaniesController(CompaniesService companiesService) : Controller
         return Ok(updated);
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Policy = "CompaniesWrite")]
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {

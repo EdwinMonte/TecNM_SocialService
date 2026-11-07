@@ -65,4 +65,5 @@ docs/sources/
 
 # Local PDF verification renders
 tmp/pdf-qa/
+tmp/document-checks/
 local-data/

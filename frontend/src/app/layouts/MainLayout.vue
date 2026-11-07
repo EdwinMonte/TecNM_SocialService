@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed } from 'vue'
 import { RouterView } from 'vue-router'
 import { LogoutButton } from '../../modules/auth'
-import { me } from '../../modules/auth/api/authApi'
-import type { UserResponse } from '../../modules/auth/types/auth'
+import { sessionUser } from '../../shared/composables/useSession'
 import { UiBadge, UiHeader, UiShell, UiSidebar, UiToggle } from '../../shared/components'
 import { useTheme } from '../../shared/composables/useTheme'
 import {
@@ -14,7 +13,7 @@ import {
 } from './mainLayout.config'
 
 const { dark } = useTheme()
-const currentUser = ref<UserResponse | null>(null)
+const currentUser = sessionUser
 
 const dynamicSidebarItems = computed(() => {
   const roles = currentUser.value?.roles ?? []
@@ -28,13 +27,7 @@ const roleDisplay = computed(() => {
   return getRoleDisplayLabel(currentUser.value?.roles ?? [])
 })
 
-onMounted(async () => {
-  try {
-    currentUser.value = await me()
-  } catch {
-    currentUser.value = null
-  }
-})
+
 </script>
 
 <template>

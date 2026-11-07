@@ -89,7 +89,7 @@ internal static class HttpChecks
         if (!approvedProfile.GetProperty("hasValidImss").GetBoolean()) throw new Exception("Approval projection missing");
         using (var sameFile = ImssForm(today.AddDays(-2)))
         {
-            var repeated = await admin.PutAsync("/api/students/1/imss", sameFile);
+            var repeated = await student.PutAsync("/api/students/me/imss", sameFile);
             Expect(repeated, HttpStatusCode.OK);
             var unchanged = await repeated.Content.ReadFromJsonAsync<JsonElement>();
             if (unchanged.GetProperty("imssDocumentDate").GetString() != today.ToString("yyyy-MM-dd") || !unchanged.GetProperty("hasValidImss").GetBoolean())
@@ -210,6 +210,7 @@ internal static class HttpChecks
             }
             finally { testClock.UtcNow = originalTime; }
         }
+        await AccessChecks.RunAsync(factory);
         async Task<HttpResponseMessage> Replace(byte suffix)
         {
             using var form = new MultipartFormDataContent();
@@ -268,9 +269,9 @@ internal static class HttpChecks
         Expect(acceptance, HttpStatusCode.Created);
         var caId = (await acceptance.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
         Expect(await Upload(student, "CA"), HttpStatusCode.Forbidden);
-        Expect(await Upload(ssOfficer, "CA"), HttpStatusCode.Forbidden);
-        Expect(await ssOfficer.PostAsJsonAsync($"/api/documents/{caId}/review", new { status = "approved" }), HttpStatusCode.Forbidden);
-        Expect(await ssOfficer.DeleteAsync($"/api/documents/{caId}"), HttpStatusCode.Forbidden);
+        Expect(await Upload(ssOfficer, "CA"), HttpStatusCode.NotFound);
+        Expect(await ssOfficer.PostAsJsonAsync($"/api/documents/{caId}/review", new { status = "approved" }), HttpStatusCode.NotFound);
+        Expect(await ssOfficer.DeleteAsync($"/api/documents/{caId}"), HttpStatusCode.NotFound);
         Expect(await viewer.DeleteAsync($"/api/documents/{caId}"), HttpStatusCode.Forbidden);
         Expect(await student.DeleteAsync($"/api/documents/{caId}"), HttpStatusCode.Forbidden);
         if (!await db.ExpedientDocuments.AsNoTracking().AnyAsync(d => d.Id == caId)) throw new Exception("Forbidden delete changed evidence.");
@@ -283,7 +284,7 @@ internal static class HttpChecks
         var original = tramite.Status;
         tramite.Status = "cancelled"; await db.SaveChangesAsync();
         Expect(await student.DeleteAsync($"/api/documents/{evId}"), HttpStatusCode.Conflict);
-        Expect(await admin.DeleteAsync($"/api/documents/{evId}"), HttpStatusCode.Conflict);
+        Expect(await admin.DeleteAsync($"/api/documents/{evId}"), HttpStatusCode.Forbidden);
         Expect(await Upload(student, "EV"), HttpStatusCode.Conflict);
         tramite.Status = original; await db.SaveChangesAsync();
         Expect(await student.DeleteAsync($"/api/documents/{evId}"), HttpStatusCode.NoContent);

@@ -5,6 +5,7 @@ public sealed class Company : AuditableEntity
     public string? Rfc { get; set; }
     public required string Name { get; set; }
     public string? CommercialName { get; set; }
+    public string CompanyType { get; set; } = null!;
     public string Sector { get; set; } = "private";
     public string CompanySize { get; set; } = "not_applicable";
     public bool IsTecnmInternal { get; set; }

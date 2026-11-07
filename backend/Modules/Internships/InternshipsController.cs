@@ -11,7 +11,7 @@ namespace TecNM.Api.Modules.Internships;
 public sealed class InternshipsController(InternshipsService service) : ControllerBase
 {
     [HttpGet]
-    [Authorize(Roles = "admin,internship_coordinator,social_service_officer,department_head")]
+    [Authorize(Policy = "InternshipList")]
     public async Task<ActionResult<PagedResponse<InternshipListItemResponse>>> GetPaged(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -49,7 +49,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpGet("{id:long}")]
-    [Authorize(Roles = "admin,internship_coordinator,social_service_officer,department_head,student")]
+    [Authorize(Policy = "InternshipRead")]
     public async Task<ActionResult<InternshipDetailResponse>> GetById(
         long id,
         CancellationToken cancellationToken = default)
@@ -80,7 +80,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPost("{id:long}/approve")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipDetailResponse>> Approve(
         long id,
         [FromBody] ApproveInternshipRequest request,
@@ -91,7 +91,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPost("{id:long}/presentation-letter")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipDetailResponse>> RegisterPresentationLetter(
         long id,
         [FromBody] InternshipPresentationLetterRequest request,
@@ -113,7 +113,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPost("{id:long}/activate")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipDetailResponse>> Activate(
         long id,
         CancellationToken cancellationToken = default)
@@ -123,7 +123,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPut("{id:long}/evaluation")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipEvaluationResponse>> UpsertEvaluation(
         long id,
         [FromBody] InternshipEvaluationRequest request,
@@ -134,7 +134,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPatch("{id:long}/expedient")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipDetailResponse>> UpdateExpedient(
         long id,
         [FromBody] UpdateInternshipExpedientRequest request,
@@ -145,7 +145,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPost("{id:long}/complete")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipDetailResponse>> Complete(
         long id,
         [FromBody] CompleteInternshipRequest request,
@@ -156,7 +156,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPost("{id:long}/release")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipDetailResponse>> Release(
         long id,
         [FromBody] ReleaseInternshipRequest request,
@@ -167,7 +167,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPost("{id:long}/school-services-act")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipDetailResponse>> SendSchoolServicesAct(
         long id,
         CancellationToken cancellationToken = default)
@@ -188,7 +188,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpPost("{id:long}/non-compliance")]
-    [Authorize(Roles = "admin,internship_coordinator")]
+    [Authorize(Policy = "InternshipManage")]
     public async Task<ActionResult<InternshipDetailResponse>> MarkNonCompliance(
         long id,
         [FromBody] MarkNonComplianceRequest request,
@@ -207,7 +207,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpGet("{id:long}/history")]
-    [Authorize(Roles = "admin,internship_coordinator,social_service_officer,department_head,student")]
+    [Authorize(Policy = "InternshipRead")]
     public async Task<ActionResult<IReadOnlyList<StatusLogItemResponse>>> GetHistory(
         long id,
         CancellationToken cancellationToken = default)
@@ -217,7 +217,7 @@ public sealed class InternshipsController(InternshipsService service) : Controll
     }
 
     [HttpGet("{id:long}/print-data/{document}")]
-    [Authorize(Roles = "admin,internship_coordinator,social_service_officer,department_head,student")]
+    [Authorize(Policy = "InternshipRead")]
     public async Task<ActionResult<Dictionary<string, object?>>> GetPrintData(
         long id,
         string document,

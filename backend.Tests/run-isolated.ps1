@@ -17,12 +17,16 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo leer el esquema v1 de referencia.' }
     $baseline | docker exec -i $containerName psql -U postgres -d document_checks -q -v ON_ERROR_STOP=1 2>$null
     if ($LASTEXITCODE -ne 0) { throw 'Falló el esquema v1 en el contenedor vacío.' }
+    Get-Content database/migrations/20261106_company_type_prepare.sql -Raw | docker exec -i $containerName psql -U postgres -d document_checks -q -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la preparación de clasificación.' }
     Get-ChildItem database/seed/*.sql | Sort-Object Name | ForEach-Object {
         Get-Content -LiteralPath $_.FullName -Raw | docker exec -i $containerName psql -U postgres -d document_checks -q -v ON_ERROR_STOP=1 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Falló seed $($_.Name)." }
     }
     Get-Content database/migrations/20261103_document_workflow_v2.sql -Raw | docker exec -i $containerName psql -U postgres -d document_checks -q -v ON_ERROR_STOP=1
     if ($LASTEXITCODE -ne 0) { throw 'Falló la migración incremental.' }
+    Get-Content database/migrations/20261106_company_type_finalize.sql -Raw | docker exec -i $containerName psql -U postgres -d document_checks -q -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) { throw 'Falló la clasificación final.' }
     $mapping = docker port $containerName 5432
     $port = ($mapping -split ':')[-1]
     $env:DOCUMENT_TEST_CONNECTION = "Host=127.0.0.1;Port=$port;Database=document_checks;Username=postgres;Password=document-checks-local;Timeout=3"

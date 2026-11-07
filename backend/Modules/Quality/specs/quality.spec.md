@@ -1,3 +1,5 @@
+> Autorización vigente: [Acceso por proceso](../../../../docs/specs/process-access.spec.md). Sus reglas prevalecen sobre permisos anteriores incompatibles.
+
 # Quality backend
 
 Contrato compartido: [spec raíz de calidad](../../../../docs/specs/quality.spec.md).

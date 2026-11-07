@@ -11,7 +11,7 @@ namespace TecNM.Api.Modules.SocialService;
 public sealed class SocialServicesController(SocialServiceService service) : ControllerBase
 {
     [HttpGet]
-    [Authorize(Roles = "admin,social_service_officer,internship_coordinator,department_head")]
+    [Authorize(Policy = "SocialServiceList")]
     public async Task<ActionResult<PagedResponse<SocialServiceListItemResponse>>> GetPaged(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -49,7 +49,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpGet("{id:long}")]
-    [Authorize(Roles = "admin,social_service_officer,internship_coordinator,department_head,student")]
+    [Authorize(Policy = "SocialServiceRead")]
     public async Task<ActionResult<SocialServiceDetailResponse>> GetById(
         long id,
         CancellationToken cancellationToken = default)
@@ -80,7 +80,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/application/review")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> ReviewApplication(
         long id,
         [FromBody] ReviewApplicationRequest request,
@@ -91,7 +91,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/presentation-letter")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> RegisterPresentationLetter(
         long id,
         [FromBody] PresentationLetterRequest request,
@@ -102,7 +102,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/acceptance")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> RegisterAcceptance(
         long id,
         [FromBody] AcceptanceLetterRequest request,
@@ -124,7 +124,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/activate")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> Activate(
         long id,
         CancellationToken cancellationToken = default)
@@ -146,7 +146,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/reports/{reportId:long}/review")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<BiMonthlyReportResponse>> ReviewReport(
         long id,
         long reportId,
@@ -158,7 +158,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPut("{id:long}/evaluations/{evaluatorType}/{bimonthlyPeriod}")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceEvaluationResponse>> UpsertEvaluation(
         long id,
         string evaluatorType,
@@ -171,7 +171,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPut("{id:long}/activity-assessment")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<ActivityAssessmentResponse>> UpsertActivityAssessment(
         long id,
         [FromBody] ActivityAssessmentRequest request,
@@ -182,7 +182,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPatch("{id:long}/impact")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> UpdateImpact(
         long id,
         [FromBody] UpdateImpactRequest request,
@@ -193,7 +193,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/complete")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> Complete(
         long id,
         [FromBody] CompleteSocialServiceRequest request,
@@ -204,7 +204,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/release")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> Release(
         long id,
         [FromBody] ReleaseSocialServiceRequest request,
@@ -215,7 +215,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/school-services-act")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> SendSchoolServicesAct(
         long id,
         CancellationToken cancellationToken = default)
@@ -236,7 +236,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpPost("{id:long}/non-compliance")]
-    [Authorize(Roles = "admin,social_service_officer")]
+    [Authorize(Policy = "SocialServiceManage")]
     public async Task<ActionResult<SocialServiceDetailResponse>> MarkNonCompliance(
         long id,
         [FromBody] MarkNonComplianceRequest request,
@@ -247,7 +247,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpGet("{id:long}/history")]
-    [Authorize(Roles = "admin,social_service_officer,internship_coordinator,department_head,student")]
+    [Authorize(Policy = "SocialServiceRead")]
     public async Task<ActionResult<IReadOnlyList<StatusLogItemResponse>>> GetHistory(
         long id,
         CancellationToken cancellationToken = default)
@@ -257,7 +257,7 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
     }
 
     [HttpGet("{id:long}/print-data/{document}")]
-    [Authorize(Roles = "admin,social_service_officer,internship_coordinator,department_head,student")]
+    [Authorize(Policy = "SocialServiceRead")]
     public async Task<ActionResult<Dictionary<string, object?>>> GetPrintData(
         long id,
         string document,

@@ -5,7 +5,7 @@ export const expedientsRoutes: RouteRecordRaw[] = [
     path: 'expedients/review',
     name: 'expedients-review',
     component: () => import('./views/ExpedientsReviewView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, roles: ['admin', 'social_service_officer', 'internship_coordinator'] },
   },
 ]
 

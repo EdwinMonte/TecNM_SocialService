@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { defaultProcess, canReadProcess } from '../../../shared/composables/useSession'
 import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiField } from '../../../shared/components'
 import { getCareerOptions, getPeriodOptions } from '../../catalogs/api/careersApi'
 import type { OptionItem } from '../../catalogs/types/careers'
@@ -13,7 +14,7 @@ const careerOptions = ref<OptionItem[]>([])
 const isLoading = ref(true)
 const errorMessage = ref('')
 
-const tramiteType = ref<'social_service' | 'internship'>('social_service')
+const tramiteType = ref<'social_service' | 'internship'>(defaultProcess.value)
 const selectedPeriodId = ref<number | undefined>(undefined)
 const selectedCareerId = ref<number | undefined>(undefined)
 const searchQuery = ref('')
@@ -155,6 +156,7 @@ onMounted(async () => {
       <div class="toolbar-row">
         <div style="display: flex; gap: 0.5rem;">
           <UiButton
+            v-if="canReadProcess('social_service')"
             :variant="tramiteType === 'social_service' ? 'primary' : 'secondary'"
             @click="
               tramiteType = 'social_service';
@@ -164,6 +166,7 @@ onMounted(async () => {
             Hoja: Servicio Social (10 Hitos)
           </UiButton>
           <UiButton
+            v-if="canReadProcess('internship')"
             :variant="tramiteType === 'internship' ? 'primary' : 'secondary'"
             @click="
               tramiteType = 'internship';

@@ -31,9 +31,11 @@ export async function getSemesterStatistics(
   periodId?: number,
   tramiteType: 'social_service' | 'internship' = 'social_service',
   comparePeriodId?: number,
+  signal?: AbortSignal,
 ): Promise<any> {
   return (
     await http.get('/reports/statistics', {
+      signal,
       params: {
         periodId: periodId || undefined,
         tramiteType,
@@ -47,9 +49,11 @@ export async function get911Report(
   periodId?: number,
   tramiteType: 'social_service' | 'internship' = 'social_service',
   comparePeriodId?: number,
+  signal?: AbortSignal,
 ): Promise<any> {
   return (
     await http.get('/reports/911', {
+      signal,
       params: {
         periodId: periodId || undefined,
         tramiteType,

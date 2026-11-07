@@ -1,5 +1,11 @@
 # Comprobaciones documentales
 
+Acceso por proceso y empresas: la suite incluye `AccessChecks` y `LinkageDatabaseChecks`: roles por petición, listados administrativos, documentos ajenos, preingreso mínimo, gestión compartida, clasificación incompleta, esquema nuevo, `EXPLAIN`, agregados SS/PP y paginación. El padrón global queda reservado a admin.
+
+Sin Docker: `pwsh -File backend.Tests/run-native-isolated.ps1`. Usa PostgreSQL 18 instalado, puerto local libre y un clúster temporal; lo detiene y elimina al terminar. Puede requerir ejecución fuera del aislamiento de procesos del agente para iniciar PostgreSQL.
+
+Interfaz nueva: `node frontend/scripts/check-process-access-ui.mjs` con Vite activo. Usa datos sintéticos y comprueba defaults por rol, selección explícita, respuestas fuera de orden, guards, catálogo compartido y móvil. Capturas en `tmp/pdf-qa/process-access/`. Conserva también los recorridos documentales y de revisión existentes.
+
 Desde la raíz, ejecutar `pwsh -File backend.Tests/run-isolated.ps1`. Requiere Docker y la imagen `postgres:18-alpine`; prepara esquema v1, seeds demo y migración en una base nueva `document_checks`. El contenedor se elimina en `finally`. Nunca toma la conexión de la base del proyecto.
 
 `BaselineRevision` fija el commit con esquema anterior a v2. Actualizarlo únicamente si cambia deliberadamente la base de comparación de migraciones.

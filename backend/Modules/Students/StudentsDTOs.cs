@@ -87,8 +87,8 @@ public sealed record EligibilityResult(
     IReadOnlyList<EligibilityReason> Reasons);
 
 public sealed record StudentEligibility(
-    EligibilityResult SocialService,
-    EligibilityResult Internship);
+    EligibilityResult? SocialService,
+    EligibilityResult? Internship);
 
 public sealed record StudentImportBatchDto(
     long Id,

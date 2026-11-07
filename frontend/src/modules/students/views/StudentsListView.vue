@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { hasRole } from '../../../shared/composables/useSession'
 import {
   UiAlert,
   UiBadge,
@@ -20,7 +21,6 @@ import {
   getStudentImssBlob,
   getStudents,
   updateStudent,
-  uploadStudentImssFile,
   uploadStudentsExcel,
   validateStudentImss,
 } from '../api/studentsApi'
@@ -32,6 +32,9 @@ import type {
   StudentRequest,
   StudentShift,
 } from '../types/students'
+
+const canRegister = computed(() => hasRole('admin'))
+const canReview = computed(() => hasRole('admin', 'social_service_officer', 'internship_coordinator'))
 
 interface StudentRow extends StudentListItem {
   actions?: string
@@ -78,9 +81,7 @@ const editingId = ref<number | null>(null)
 const isSubmittingStudent = ref(false)
 const selectedDetail = ref<StudentDetail | null>(null)
 const imssDocumentDate = ref('')
-const imssDeclaredDate = ref('')
 const imssRejectionReason = ref('')
-const staffImssFile = ref<File | null>(null)
 
 const studentForm = reactive<StudentRequest>({
   careerId: 0,
@@ -244,8 +245,6 @@ function openCreateModal(): void {
   isEditing.value = false
   editingId.value = null
   selectedDetail.value = null
-  staffImssFile.value = null
-  imssDeclaredDate.value = ''; imssDocumentDate.value = ''; imssRejectionReason.value = ''
   Object.assign(studentForm, {
     careerId: careerOptions.value[0]?.id ?? 1,
     controlNumber: '',
@@ -274,8 +273,6 @@ async function openEditModal(row: StudentListItem): Promise<void> {
     isEditing.value = true
     editingId.value = detail.id
     selectedDetail.value = detail
-    staffImssFile.value = null
-    imssDeclaredDate.value = ''; imssDocumentDate.value = detail.imssDocumentDate || ''; imssRejectionReason.value = ''
     Object.assign(studentForm, {
       careerId: detail.careerId,
       controlNumber: detail.controlNumber,
@@ -305,7 +302,6 @@ async function handleSaveStudent(): Promise<void> {
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    if (staffImssFile.value && !imssDeclaredDate.value) throw new Error('Indica la fecha de expedición de la constancia IMSS.')
     const payload: StudentRequest = {
       ...studentForm,
       controlNumber: studentForm.controlNumber.trim().toUpperCase(),
@@ -321,15 +317,9 @@ async function handleSaveStudent(): Promise<void> {
 
     if (isEditing.value && editingId.value) {
       await updateStudent(editingId.value, payload)
-      if (staffImssFile.value) {
-        await uploadStudentImssFile(editingId.value, staffImssFile.value, imssDeclaredDate.value)
-      }
       successMessage.value = `Expediente de ${payload.controlNumber} actualizado correctamente.`
     } else {
-      const created = await createStudent(payload)
-      if (staffImssFile.value) {
-        await uploadStudentImssFile(created.id, staffImssFile.value, imssDeclaredDate.value)
-      }
+      await createStudent(payload)
       successMessage.value = `Alumno ${payload.controlNumber} agregado al padrón exitosamente.`
     }
     isStudentModalOpen.value = false
@@ -403,10 +393,7 @@ function handleExcelFileChange(event: Event): void {
   importFile.value = input.files?.[0] ?? null
 }
 
-function handleStaffImssFileChange(event: Event): void {
-  const input = event.target as HTMLInputElement
-  staffImssFile.value = input.files?.[0] ?? null
-}
+
 
 async function handleRunImport(): Promise<void> {
   if (!importFile.value || !importPeriodId.value) return
@@ -655,10 +642,10 @@ onMounted(async () => {
               title="Ver expediente y vigencia IMSS"
               @click="openEditModal(row)"
             >
-              Editar / IMSS
+              Consultar / IMSS
             </button>
             <button
-              v-if="!row.hasUserAccount"
+              v-if="canRegister && !row.hasUserAccount"
               type="button"
               class="table-btn primary"
               title="Generar credenciales para el alumno"
@@ -677,9 +664,9 @@ onMounted(async () => {
     <UiDialog
       v-model="isStudentModalOpen"
       size="lg"
-      :title="isEditing ? `Editar Expediente · ${studentForm.controlNumber}` : 'Agregar Alumno (Caso Específico)'"
+      :title="isEditing ? `Expediente · ${studentForm.controlNumber}` : 'Agregar Alumno (Caso Específico)'"
     >
-      <div class="modal-form-grid">
+      <fieldset class="modal-form-grid" :disabled="!canRegister" style="border:0;padding:0;margin:0">
         <UiField label="No. de Control *" hint="Ej. I23050363">
           <input v-model="studentForm.controlNumber" type="text" class="modern-input" placeholder="I23050999" />
         </UiField>
@@ -741,7 +728,7 @@ onMounted(async () => {
         <UiField label="Teléfono de Contacto">
           <input v-model="studentForm.phoneNumber" type="text" class="modern-input" placeholder="8661234567" />
         </UiField>
-      </div>
+      </fieldset>
 
       <!-- Sección de Constancia de Vigencia IMSS en edición o alta -->
       <div class="imss-box">
@@ -754,11 +741,10 @@ onMounted(async () => {
         <p class="imss-box-desc">
           Revisa el PDF y confirma su fecha de expedición antes de aprobarlo.
         </p>
-        <input type="file" accept="application/pdf" class="file-input" @change="handleStaffImssFileChange" />
-        <UiField v-if="staffImssFile" v-model="imssDeclaredDate" type="date" label="Fecha de expedición declarada para el nuevo PDF IMSS" />
+        <p>El alumno debe cargar su constancia desde su portal.</p>
 
-        <label>Fecha de expedición confirmada en el PDF <input v-model="imssDocumentDate" type="date" /></label>
-        <label>Observaciones de rechazo <textarea v-model="imssRejectionReason" maxlength="1000" /></label>
+        <label v-if="canReview">Fecha de expedición confirmada en el PDF <input v-model="imssDocumentDate" type="date" /></label>
+        <label v-if="canReview">Observaciones de rechazo <textarea v-model="imssRejectionReason" maxlength="1000" /></label>
         <p v-if="selectedDetail?.imssRejectionReason">{{ selectedDetail.imssRejectionReason }}</p>
         <div
           v-if="isEditing && selectedDetail"
@@ -773,6 +759,7 @@ onMounted(async () => {
             Ver PDF IMSS Almacenado
           </UiButton>
           <UiButton
+            v-if="canReview"
             variant="secondary"
             size="sm"
             @click="handleToggleImssValidation(selectedDetail.id, !selectedDetail.hasValidImss)"
@@ -784,7 +771,7 @@ onMounted(async () => {
 
       <template #footer>
         <UiButton variant="secondary" @click="isStudentModalOpen = false">Cancelar</UiButton>
-        <UiButton variant="primary" :disabled="isSubmittingStudent" @click="handleSaveStudent">
+        <UiButton v-if="canRegister" variant="primary" :disabled="isSubmittingStudent" @click="handleSaveStudent">
           {{ isSubmittingStudent ? 'Guardando...' : isEditing ? 'Guardar Cambios' : 'Registrar Alumno' }}
         </UiButton>
       </template>

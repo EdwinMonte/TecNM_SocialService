@@ -5,19 +5,19 @@ export const reportsRoutes: RouteRecordRaw[] = [
     path: 'reports/dashboard',
     name: 'reports-dashboard',
     component: () => import('./views/DashboardView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, roles: ['admin', 'social_service_officer', 'internship_coordinator', 'department_head'] },
   },
   {
     path: 'reports/tracking',
     name: 'reports-tracking',
     component: () => import('./views/TrackingSheetView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, roles: ['admin', 'social_service_officer', 'internship_coordinator', 'department_head'] },
   },
   {
     path: 'reports/stats',
     name: 'reports-stats',
     component: () => import('./views/StatisticsView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, roles: ['admin', 'social_service_officer', 'internship_coordinator', 'department_head'] },
   },
 ]
 

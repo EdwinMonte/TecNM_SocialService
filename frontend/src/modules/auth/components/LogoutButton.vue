@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { UiButton } from '../../../shared/components'
 import { clearSessionMarker } from '../../../shared/utils/sessionCookie'
 import { logout } from '../api/authApi'
+import { clearSession } from '../../../shared/composables/useSession'
 
 const router = useRouter()
 const isLoggingOut = ref(false)
@@ -17,6 +18,7 @@ async function endSession(): Promise<void> {
     // The local session marker must disappear even if the API is unavailable.
   } finally {
     clearSessionMarker()
+    clearSession()
     await router.replace({ name: 'login' })
     isLoggingOut.value = false
   }

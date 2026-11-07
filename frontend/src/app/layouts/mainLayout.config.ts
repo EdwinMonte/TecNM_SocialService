@@ -50,6 +50,8 @@ export function getSidebarNavigationForRoles(roles: string[]): NavigationItem[] 
     ]
   }
 
+  if (!isStaff) return []
+
   const nav: NavigationItem[] = [
     { label: 'Panel Principal', to: '/', icon: 'dashboard' },
   ]
@@ -85,11 +87,12 @@ export function getSidebarNavigationForRoles(roles: string[]): NavigationItem[] 
   })
 
   // Catálogos Oficiales (para Administrador y Encargados)
-  if (isAdmin || isSSOfficer || isPPCoord) {
+  if (isStaff) {
     nav.push({
       label: 'Catálogos Oficiales',
       open: false,
       children: [
+        { label: 'Empresas y dependencias', to: '/companies', icon: 'careers' },
         { label: 'Carreras Oficiales', to: '/catalogs/careers', icon: 'careers' },
       ],
     })

@@ -1,3 +1,5 @@
+> Contrato de autorización vigente: [Acceso por proceso](./process-access.spec.md). Prevalece sobre permisos anteriores incompatibles.
+
 # Contrato: Calidad (bitácora y Producto No Conforme)
 
 > **Estado:** Borrador v0.1. Convenciones en [api-conventions.spec.md](./api-conventions.spec.md). Tablas: `tramite_status_logs`, `non_conformances`.

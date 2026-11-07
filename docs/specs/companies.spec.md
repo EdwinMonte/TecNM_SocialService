@@ -1,3 +1,5 @@
+> Contrato de autorización vigente: [Acceso por proceso](./process-access.spec.md). Prevalece sobre permisos anteriores incompatibles.
+
 # Contrato: Empresas, supervisores y convenios
 
 > **Estado:** Borrador v0.1. Convenciones en [api-conventions.spec.md](./api-conventions.spec.md). Tablas: `companies`, `company_supervisors`, `agreements`.

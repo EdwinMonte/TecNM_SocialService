@@ -18,8 +18,8 @@ public static class DocumentDefinitions
             new("CP", "Carta de Presentación", CanUpload: false),
             new("CA", "Carta de Aceptación", CanUpload: staff,
                 BlockedReason: staff ? null : "La empresa la envía a arturo.martinez@monclova.tecnm.mx. Vinculación la incorpora al expediente."),
-            new("EV", "Anexo XVII · Evaluación de desempeño", "evaluation"),
-            new("CT", "Oficio de Terminación"),
+            new("EV", "Anexo XVII · Evaluación de desempeño", "evaluation", CanUpload: user.IsInRole("student")),
+            new("CT", "Oficio de Terminación", CanUpload: user.IsInRole("student")),
             new("CC", "Constancia de Liberación", CanUpload: false)
         ];
 
@@ -42,7 +42,7 @@ public static class DocumentDefinitions
         }
         if (version >= 2) docs.Add(new("EV_ACT", "Anexo XXV · Evaluación de actividades", "activity_assessment"));
         docs.Add(new("CT", "Anexo XIX · Carta de Terminación", TemplateKey: "ss-termination"));
-        return docs.Select(d => d with { CanUpload = d.CanUpload && (staff || user.IsInRole("student")) }).ToList();
+        return docs.Select(d => d with { CanUpload = d.CanUpload && user.IsInRole("student") }).ToList();
     }
 
     public static bool CanUpload(string type, string code, int version, ICurrentUser user)

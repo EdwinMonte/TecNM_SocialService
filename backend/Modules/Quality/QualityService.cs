@@ -353,7 +353,10 @@ public sealed class QualityService(
     }
 
     private IQueryable<NonConformance> BuildBaseQuery() =>
-        dbContext.NonConformances
+        dbContext.NonConformances.Where(n =>
+            currentUser.ReadsAll()
+            || n.TramiteType == "social_service" && currentUser.Roles.Contains("social_service_officer")
+            || n.TramiteType == "internship" && currentUser.Roles.Contains("internship_coordinator"))
             .Include(n => n.Student)
             .Include(n => n.Period)
             .Include(n => n.Resolver);
@@ -387,10 +390,8 @@ public sealed class QualityService(
         long tramiteId,
         CancellationToken cancellationToken)
     {
-        var isStaffOrViewer = currentUser.IsInRole("admin")
-                              || currentUser.IsInRole("social_service_officer")
-                              || currentUser.IsInRole("internship_coordinator")
-                              || currentUser.IsInRole("department_head");
+        if (!currentUser.IsInRole("student")) currentUser.RequireProcess(tramiteType);
+        var isStaffOrViewer = currentUser.CanReadProcess(tramiteType);
 
         if (tramiteType == "social_service")
         {

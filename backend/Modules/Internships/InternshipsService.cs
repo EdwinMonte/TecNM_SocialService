@@ -63,6 +63,7 @@ public sealed class InternshipsService(
         string? sort,
         CancellationToken cancellationToken = default)
     {
+        currentUser.RequireProcess("internship");
         var normalizedPage = Math.Max(1, page);
         var normalizedSize = Math.Clamp(pageSize, 1, 100);
 
@@ -1254,15 +1255,9 @@ public sealed class InternshipsService(
 
     private void EnsureCanViewTramite(Internship entity)
     {
-        if (currentUser.IsInRole("admin")
-            || currentUser.IsInRole("internship_coordinator")
-            || currentUser.IsInRole("social_service_officer")
-            || currentUser.IsInRole("department_head"))
-        {
-            return;
-        }
+        if (currentUser.CanReadProcess("internship")) return;
 
-        if (!currentUser.Id.HasValue || entity.Student?.UserId != currentUser.Id.Value)
+        if (!currentUser.IsInRole("student") || !currentUser.Id.HasValue || entity.Student?.UserId != currentUser.Id.Value)
         {
             throw new NotFoundException("internships.not_found", $"Trámite de Prácticas Profesionales #{entity.Id} no encontrado.");
         }
@@ -1275,7 +1270,7 @@ public sealed class InternshipsService(
             return;
         }
 
-        if (!currentUser.Id.HasValue || entity.Student?.UserId != currentUser.Id.Value)
+        if (!currentUser.IsInRole("student") || !currentUser.Id.HasValue || entity.Student?.UserId != currentUser.Id.Value)
         {
             throw new NotFoundException("internships.not_found", $"Trámite de Prácticas Profesionales #{entity.Id} no encontrado.");
         }

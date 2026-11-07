@@ -27,10 +27,17 @@ public partial class CompaniesService(TecNMDbContext dbContext)
         bool? isTecnmInternal,
         bool? isActive,
         string? sort,
+        string? companyType,
         CancellationToken cancellationToken = default)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var query = dbContext.Companies.AsNoTracking();
+        if (companyType is not null)
+        {
+            if (!CompanyTypes.All.Contains(companyType))
+                throw new ValidationException(new Dictionary<string, string[]> { ["companyType"] = ["Selecciona un tipo de empresa válido."] });
+            query = query.Where(c => c.CompanyType == companyType);
+        }
 
         if (isActive.HasValue)
         {
@@ -78,6 +85,7 @@ public partial class CompaniesService(TecNMDbContext dbContext)
             c.CommercialName,
             c.Sector,
             c.CompanySize,
+            c.CompanyType,
             c.IsTecnmInternal,
             c.Address,
             c.City,
@@ -91,7 +99,7 @@ public partial class CompaniesService(TecNMDbContext dbContext)
             c.CreatedAt,
             c.UpdatedAt));
 
-        return await projected.ToPagedResponseAsync(page, pageSize, cancellationToken);
+        return await projected.ToPagedResponseAsync(Math.Max(1, page), Math.Clamp(pageSize, 1, 100), cancellationToken);
     }
 
     public async Task<IReadOnlyList<OptionItem>> GetOptionsAsync(
@@ -142,6 +150,7 @@ public partial class CompaniesService(TecNMDbContext dbContext)
                 c.CommercialName,
                 c.Sector,
                 c.CompanySize,
+            c.CompanyType,
                 c.IsTecnmInternal,
                 c.Address,
                 c.City,
@@ -188,6 +197,7 @@ public partial class CompaniesService(TecNMDbContext dbContext)
             CommercialName = string.IsNullOrWhiteSpace(request.CommercialName) ? null : request.CommercialName.Trim(),
             Sector = request.Sector.Trim().ToLowerInvariant(),
             CompanySize = request.CompanySize.Trim().ToLowerInvariant(),
+            CompanyType = request.CompanyType,
             IsTecnmInternal = request.IsTecnmInternal,
             Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim(),
             City = string.IsNullOrWhiteSpace(request.City) ? "Monclova" : request.City.Trim(),
@@ -234,6 +244,7 @@ public partial class CompaniesService(TecNMDbContext dbContext)
         company.CommercialName = string.IsNullOrWhiteSpace(request.CommercialName) ? null : request.CommercialName.Trim();
         company.Sector = request.Sector.Trim().ToLowerInvariant();
         company.CompanySize = request.CompanySize.Trim().ToLowerInvariant();
+        company.CompanyType = request.CompanyType;
         company.IsTecnmInternal = request.IsTecnmInternal;
         company.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
         company.City = string.IsNullOrWhiteSpace(request.City) ? "Monclova" : request.City.Trim();
@@ -289,6 +300,10 @@ public partial class CompaniesService(TecNMDbContext dbContext)
             throw new ConflictException("companies.in_use", "No es posible eliminar la empresa porque tiene convenios vinculados.");
         }
 
+        if (await dbContext.SocialServices.AnyAsync(t => t.CompanyId == id, cancellationToken)
+            || await dbContext.Internships.AnyAsync(t => t.CompanyId == id, cancellationToken))
+            throw new ConflictException("companies.in_use", "No es posible eliminar una empresa con trámites vinculados.");
+
         dbContext.Companies.Remove(company);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -314,6 +329,8 @@ public partial class CompaniesService(TecNMDbContext dbContext)
         }
 
         var size = request.CompanySize?.Trim().ToLowerInvariant() ?? "";
+        if (!CompanyTypes.IsConsistent(request.CompanyType, sector, size))
+            errors["companyType"] = ["Selecciona uno de los seis tipos compatible con el sector y tamaño."];
         if (!ValidSizes.Contains(size))
         {
             errors["companySize"] = [$"El tamaño de empresa '{request.CompanySize}' no es válido. Opciones: {string.Join(", ", ValidSizes)}."];

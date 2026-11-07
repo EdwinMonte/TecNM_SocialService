@@ -1,3 +1,5 @@
+> Autorización vigente: [Acceso por proceso](../../../../../docs/specs/process-access.spec.md). Sus reglas prevalecen sobre permisos anteriores incompatibles.
+
 # Especificación Frontend: Módulo de Calidad ISO 9001 & PNC
 
 > **Contrato Backend:** [`docs/specs/quality.spec.md`](../../../../../docs/specs/quality.spec.md)  

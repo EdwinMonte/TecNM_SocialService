@@ -48,6 +48,21 @@ Check(!DocumentDefinitions.CanUpload("social_service", "CA", 2, new TestUser(["i
 Check(DocumentDefinitions.CanUpload("internship", "CA", 2, new TestUser(["internship_coordinator"])), "PP staff can upload acceptance");
 Check(DocumentDefinitions.CanUpload("social_service", "EV1", 1, student), "Keep historic bundles");
 Check(!DocumentDefinitions.CanUpload("social_service", "EV1", 2, student), "New cases cannot submit old bundles");
+foreach (var role in new[] { "admin", "social_service_officer", "internship_coordinator", "department_head" })
+{
+    var actor = new TestUser([role]);
+    foreach (var version in new[] { 1, 2 })
+    {
+        Check(DocumentDefinitions.For("social_service", version, actor).All(d => !d.CanUpload), "Staff cannot upload SS student evidence");
+        Check(DocumentDefinitions.For("internship", version, actor).Where(d => d.Code != "CA").All(d => !d.CanUpload), "Staff cannot upload PP student evidence");
+    }
+}
+Check(!new TestUser(["social_service_officer"]).CanReadProcess("internship"), "SS cannot read PP individual process");
+Check(!new TestUser(["internship_coordinator"]).CanReadProcess("social_service"), "PP cannot read SS individual process");
+Check(new TestUser(["social_service_officer", "internship_coordinator"]).CanReadProcess("internship"), "Dual roles retain explicit access");
+Check(CompanyTypes.IsConsistent("micro", "private", "micro"), "Private size mapping");
+Check(!CompanyTypes.IsConsistent("public", "private", "large"), "Reject inconsistent type");
+Check(!CompanyTypes.IsConsistent(null, "educational", "not_applicable"), "Educational needs explicit classification");
 var approved = new HashSet<string> { "EV_SUP1", "EV_SELF1" };
 Check(DocumentProgressCalculator.EvaluationDone(approved, 2, 1), "Both annexes complete period 1");
 approved = ["EV_SUP3", "EV_SELF3"];
@@ -191,14 +206,15 @@ if (Directory.Exists(fonts))
     catch (ConflictException) { }
 }
 else Console.WriteLine("PDF rendering checks skipped: set DOCUMENT_TEST_FONTS to authorized Arial/Century Gothic fonts.");
+await LinkageDatabaseChecks.RunAsync();
 await DatabaseChecks.RunAsync();
 await HttpChecks.RunAsync();
 Console.WriteLine("Document policy checks passed.");
 
 sealed class FixedClock(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
-sealed class TestUser(string[] roles) : ICurrentUser
+sealed class TestUser(string[] roles, long id = 1) : ICurrentUser
 {
-    public long? Id => 1;
+    public long? Id => id;
     public string? Username => "test";
     public bool IsAuthenticated => true;
     public IReadOnlyList<string> Roles => roles;

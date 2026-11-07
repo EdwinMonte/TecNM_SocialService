@@ -48,7 +48,7 @@ public partial class StudentsService(
         string? sort,
         CancellationToken cancellationToken = default)
     {
-        var query = dbContext.Students
+        var query = currentUser.VisibleStudents(dbContext)
             .Include(s => s.Career)
             .AsNoTracking();
 
@@ -127,7 +127,7 @@ public partial class StudentsService(
         string? search,
         CancellationToken cancellationToken = default)
     {
-        var query = dbContext.Students
+        var query = currentUser.VisibleStudents(dbContext)
             .Include(s => s.Career)
             .AsNoTracking()
             .Where(s => s.IsEnrolled);
@@ -165,6 +165,7 @@ public partial class StudentsService(
 
     public async Task<StudentDetail> GetByIdAsync(long id, CancellationToken cancellationToken = default)
     {
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var student = await dbContext.Students
             .Include(s => s.Career)
             .Include(s => s.ImssValidator)
@@ -242,6 +243,7 @@ public partial class StudentsService(
 
     public async Task<StudentDetail> UpdateAsync(long id, StudentRequest request, CancellationToken cancellationToken = default)
     {
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var career = await ValidateAndGetCareerAsync(request.CareerId, cancellationToken);
         ValidateRequest(request, career.TotalCredits);
 
@@ -352,6 +354,7 @@ public partial class StudentsService(
 
     public async Task DeleteAsync(long id, CancellationToken cancellationToken = default)
     {
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var student = await dbContext.Students
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken);
 
@@ -384,6 +387,7 @@ public partial class StudentsService(
 
     public async Task<StudentEligibility> GetEligibilityAsync(long id, CancellationToken cancellationToken = default)
     {
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var student = await dbContext.Students
             .AsNoTracking()
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken);
@@ -406,6 +410,7 @@ public partial class StudentsService(
         long id,
         CancellationToken cancellationToken = default)
     {
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var student = await dbContext.Students
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken);
 
@@ -488,6 +493,7 @@ public partial class StudentsService(
         CancellationToken cancellationToken = default,
         DateOnly? documentDate = null)
     {
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var student = await dbContext.Students
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken);
 
@@ -512,6 +518,7 @@ public partial class StudentsService(
         long id,
         CancellationToken cancellationToken = default)
     {
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var student = await dbContext.Students
             .AsNoTracking()
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken);
@@ -550,6 +557,7 @@ public partial class StudentsService(
         DateOnly? documentDate,
         CancellationToken cancellationToken = default)
     {
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var doc = await imss.GetLatestAsync(id, cancellationToken)
             ?? throw new BusinessRuleException("students.imss_file_missing", "Carga primero un PDF IMSS en el expediente.");
         await documents.ReviewDocumentAsync(doc.Id, new ReviewDocumentRequest(isValid ? "approved" : "rejected", rejectionReason, documentDate), cancellationToken);
@@ -594,7 +602,7 @@ public partial class StudentsService(
             throw new NotFoundException("students.profile_not_linked", "No hay una sesión de estudiante activa.");
         }
 
-        var query = dbContext.Students
+        var query = currentUser.VisibleStudents(dbContext)
             .Include(s => s.Career)
             .Include(s => s.ImssValidator)
             .AsQueryable();
@@ -668,9 +676,10 @@ public partial class StudentsService(
             ppReasons.Add(new EligibilityReason("eligibility.internship_exists", "El estudiante ya cuenta con Prácticas Profesionales en curso o liberadas."));
         }
 
+        var owner = currentUser.IsInRole("student") && student.UserId == currentUser.Id;
         return new StudentEligibility(
-            new EligibilityResult(ssReasons.Count == 0, ssReasons),
-            new EligibilityResult(ppReasons.Count == 0, ppReasons));
+            owner || currentUser.CanReadProcess("social_service") ? new EligibilityResult(ssReasons.Count == 0, ssReasons) : null,
+            owner || currentUser.CanReadProcess("internship") ? new EligibilityResult(ppReasons.Count == 0, ppReasons) : null);
     }
 
     private async Task<Career> ValidateAndGetCareerAsync(long careerId, CancellationToken cancellationToken)

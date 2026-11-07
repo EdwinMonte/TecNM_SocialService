@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { canReadProcess, hasRole } from '../../../shared/composables/useSession'
 import { useRouter } from 'vue-router'
 import { getRoleDisplayLabel } from '../../../app/layouts/mainLayout.config'
 import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard } from '../../../shared/components'
@@ -98,9 +99,9 @@ async function loadData(): Promise<void> {
     } else {
       const [dash, docs, ssRes, ppRes] = await Promise.all([
         getDashboardMetrics().catch(() => null),
-        getReviewQueue('pending', { pageSize: 10 }).catch(() => []),
-        getSocialServices({ pageSize: 6 }).catch(() => ({ items: [], totalItems: 0, page: 1, pageSize: 6 })),
-        getInternships({ pageSize: 6 }).catch(() => ({ items: [], totalItems: 0, page: 1, pageSize: 6 })),
+        hasRole('admin', 'social_service_officer', 'internship_coordinator') ? getReviewQueue('pending', { pageSize: 10 }).catch(() => []) : Promise.resolve([]),
+        canReadProcess('social_service') ? getSocialServices({ pageSize: 6 }).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+        canReadProcess('internship') ? getInternships({ pageSize: 6 }).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
       ])
       dashboard.value = dash
       pendingDocs.value = docs
@@ -335,7 +336,7 @@ onMounted(() => {
     <!-- ==================================================================== -->
     <div v-else class="staff-portal-grid">
       <div class="kpi-row">
-        <UiCard>
+        <UiCard v-if="canReadProcess('social_service')">
           <div class="kpi-label">TRÁMITES SERVICIO SOCIAL</div>
           <div class="kpi-number blue">{{ totalSSCount }}</div>
           <small class="kpi-sub">
@@ -344,7 +345,7 @@ onMounted(() => {
           </small>
         </UiCard>
 
-        <UiCard>
+        <UiCard v-if="canReadProcess('internship')">
           <div class="kpi-label">TRÁMITES PRÁCTICAS PROF.</div>
           <div class="kpi-number green">{{ totalPPCount }}</div>
           <small class="kpi-sub">

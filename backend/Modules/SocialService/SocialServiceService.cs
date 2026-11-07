@@ -94,6 +94,7 @@ public sealed class SocialServiceService(
         string? sort,
         CancellationToken cancellationToken = default)
     {
+        currentUser.RequireProcess("social_service");
         var normalizedPage = Math.Max(1, page);
         var normalizedSize = Math.Clamp(pageSize, 1, 100);
 
@@ -1674,15 +1675,9 @@ public sealed class SocialServiceService(
 
     private void EnsureCanViewTramite(Core.Entities.SocialService entity)
     {
-        if (currentUser.IsInRole("admin")
-            || currentUser.IsInRole("social_service_officer")
-            || currentUser.IsInRole("internship_coordinator")
-            || currentUser.IsInRole("department_head"))
-        {
-            return;
-        }
+        if (currentUser.CanReadProcess("social_service")) return;
 
-        if (!currentUser.Id.HasValue || entity.Student?.UserId != currentUser.Id.Value)
+        if (!currentUser.IsInRole("student") || !currentUser.Id.HasValue || entity.Student?.UserId != currentUser.Id.Value)
         {
             throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{entity.Id} no encontrado.");
         }
@@ -1695,7 +1690,7 @@ public sealed class SocialServiceService(
             return;
         }
 
-        if (!currentUser.Id.HasValue || entity.Student?.UserId != currentUser.Id.Value)
+        if (!currentUser.IsInRole("student") || !currentUser.Id.HasValue || entity.Student?.UserId != currentUser.Id.Value)
         {
             throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{entity.Id} no encontrado.");
         }

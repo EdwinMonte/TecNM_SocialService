@@ -4,7 +4,7 @@ BEGIN;
 -- 1. EMPRESAS Y DEPENDENCIAS RECEPTORAS (Región Centro de Coahuila)
 -- ============================================================================
 INSERT INTO companies (
-    id, rfc, name, commercial_name, sector, company_size, is_tecnm_internal,
+    id, rfc, name, commercial_name, company_type, sector, company_size, is_tecnm_internal,
     address, city, state, postal_code, phone_number, email, is_active
 )
 OVERRIDING SYSTEM VALUE
@@ -14,6 +14,7 @@ VALUES
         NULL,
         'Instituto Tecnológico Superior de Monclova Ejército Mexicano',
         'TecNM Campus Monclova',
+        'public', -- Clasificación explícita de esta institución pública demo.
         'educational',
         'not_applicable',
         true,
@@ -31,6 +32,7 @@ VALUES
         'Presidencia Municipal de Monclova',
         'Ayuntamiento de Monclova',
         'public',
+        'public',
         'large',
         false,
         'Zaragoza No. 402, Zona Centro',
@@ -46,6 +48,7 @@ VALUES
         'GGI890101XYZ',
         'Gunderson Gimsa S.A. de C.V.',
         'Gunderson',
+        'large',
         'private',
         'large',
         false,
@@ -62,6 +65,7 @@ VALUES
         'SIM150620AA1',
         'Soluciones Industriales de Monclova S.A. de C.V.',
         'SIMSA Industrial',
+        'medium',
         'private',
         'medium',
         false,
@@ -77,6 +81,7 @@ ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     rfc = EXCLUDED.rfc,
     commercial_name = EXCLUDED.commercial_name,
+    company_type = EXCLUDED.company_type,
     sector = EXCLUDED.sector,
     company_size = EXCLUDED.company_size,
     is_tecnm_internal = EXCLUDED.is_tecnm_internal,

@@ -286,6 +286,7 @@ CREATE TABLE companies (
     rfc varchar(13) NULL,
     name varchar(200) NOT NULL,
     commercial_name varchar(200) NULL,
+    company_type varchar(16) NOT NULL,
     sector varchar(50) NOT NULL DEFAULT 'private',
     company_size varchar(32) NOT NULL DEFAULT 'not_applicable',
     is_tecnm_internal boolean NOT NULL DEFAULT false,
@@ -302,6 +303,8 @@ CREATE TABLE companies (
     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at timestamp with time zone NULL,
+    CONSTRAINT ck_companies__type CHECK (company_type IN ('public','micro','small','medium','large','social')),
+    CONSTRAINT ck_companies__type_dimensions CHECK (sector = 'educational' OR sector = 'public' AND company_type = 'public' OR sector = 'social' AND company_type = 'social' OR sector = 'private' AND company_type = company_size),
     CONSTRAINT ck_companies__sector CHECK (sector IN ('public', 'private', 'social', 'educational')),
     CONSTRAINT ck_companies__size CHECK (company_size IN ('micro', 'small', 'medium', 'large', 'not_applicable'))
 );
@@ -1061,7 +1064,7 @@ CREATE INDEX idx_non_conformances__period_id ON non_conformances (period_id);
 CREATE INDEX idx_non_conformances__status ON non_conformances (status);
 CREATE INDEX idx_non_conformances__deleted_at ON non_conformances (deleted_at);
 
-COMMIT;
+
 
 
 
@@ -1069,3 +1072,35 @@ CREATE UNIQUE INDEX uq_expedient_documents__current ON expedient_documents (stud
 
 CREATE UNIQUE INDEX uq_social_services__student_open ON social_services(student_id) WHERE deleted_at IS NULL AND status NOT IN ('cancelled','non_compliant');
 CREATE UNIQUE INDEX uq_internships__student_open ON internships(student_id) WHERE deleted_at IS NULL AND status NOT IN ('cancelled','non_compliant');
+
+CREATE INDEX idx_companies__company_type ON companies (company_type);
+CREATE INDEX idx_social_services__linkage ON social_services (period_id, company_id, student_id) INCLUDE (status)
+ WHERE deleted_at IS NULL AND status IN ('approved','accepted','active','completed_pending_review');
+CREATE INDEX idx_internships__linkage ON internships (period_id, company_id, student_id) INCLUDE (status)
+ WHERE deleted_at IS NULL AND status IN ('approved','accepted','active','completed_pending_review');
+
+CREATE VIEW vw_linkage_company_metrics AS
+WITH assignments AS (
+ SELECT 'social_service'::text AS tramite_type, student_id, period_id, company_id, status
+ FROM social_services WHERE deleted_at IS NULL
+ UNION ALL
+ SELECT 'internship'::text AS tramite_type, student_id, period_id, company_id, status
+ FROM internships WHERE deleted_at IS NULL
+)
+SELECT a.tramite_type, a.period_id, c.id AS company_id, c.name AS company_name, c.company_type,
+ COUNT(*) AS projects, COUNT(DISTINCT a.student_id) AS assigned_students,
+ COUNT(DISTINCT a.student_id) FILTER (WHERE a.status = 'active') AS active_students
+FROM assignments a
+JOIN companies c ON c.id = a.company_id AND c.deleted_at IS NULL
+JOIN students s ON s.id = a.student_id AND s.deleted_at IS NULL
+WHERE a.status IN ('approved','accepted','active','completed_pending_review')
+GROUP BY a.tramite_type, a.period_id, c.id, c.name, c.company_type;
+
+CREATE VIEW vw_linkage_company_type_metrics AS
+SELECT tramite_type, period_id, company_type,
+ SUM(projects)::bigint AS projects, SUM(assigned_students)::bigint AS assigned_students,
+ SUM(active_students)::bigint AS active_students
+FROM vw_linkage_company_metrics
+GROUP BY tramite_type, period_id, company_type;
+
+COMMIT;

@@ -16,6 +16,8 @@ public sealed class CompanyConfiguration : AuditableEntityConfiguration<Company>
         builder.Property(c => c.Rfc).HasColumnName("rfc").HasMaxLength(13);
         builder.Property(c => c.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         builder.Property(c => c.CommercialName).HasColumnName("commercial_name").HasMaxLength(200);
+        builder.Property(c => c.CompanyType).HasColumnName("company_type").HasMaxLength(16).IsRequired();
+        builder.HasIndex(c => c.CompanyType).HasDatabaseName("idx_companies__company_type");
         builder.Property(c => c.Sector).HasColumnName("sector").HasMaxLength(50).HasDefaultValue("private").IsRequired();
         builder.Property(c => c.CompanySize).HasColumnName("company_size").HasMaxLength(32).HasDefaultValue("not_applicable").IsRequired();
         builder.Property(c => c.IsTecnmInternal).HasColumnName("is_tecnm_internal").HasDefaultValue(false).IsRequired();

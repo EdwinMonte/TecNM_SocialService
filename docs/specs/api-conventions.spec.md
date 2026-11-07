@@ -1,3 +1,5 @@
+> Contrato de autorización vigente: [Acceso por proceso](./process-access.spec.md). Prevalece sobre permisos anteriores incompatibles.
+
 # Convenciones transversales de API
 
 Fuente canónica compartida por backend y frontend para todos los módulos posteriores a Auth. Cambiar este archivo antes de cambiar código.

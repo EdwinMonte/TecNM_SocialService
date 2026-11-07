@@ -1,3 +1,5 @@
+> Contrato de autorización vigente: [Acceso por proceso](./process-access.spec.md). Prevalece sobre permisos anteriores incompatibles.
+
 # Expediente documental v2
 
 Contrato vigente para documentos, alumnos, SS, PP y estadísticos. Las reglas v1 de los contratos anteriores solo aplican donde aquí se indica compatibilidad histórica.

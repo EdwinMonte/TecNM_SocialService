@@ -2,6 +2,7 @@ import axios from 'axios'
 
 import router from '../../app/router'
 import { clearSessionMarker } from '../utils/sessionCookie'
+import { clearSession } from '../composables/useSession'
 
 const baseURL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? '/api'
@@ -24,6 +25,7 @@ http.interceptors.response.use(
 
     if (isUnauthorized && !isLoginRequest) {
       clearSessionMarker()
+      clearSession()
 
       if (router.currentRoute.value.name !== 'login') {
         await router.replace({ name: 'login' })

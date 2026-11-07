@@ -17,6 +17,8 @@ Cuentas demo verificadas: `usuario` (alumno) y `admin` (administración). Contra
 
 ## Recorrido
 
+Verificación real de RBAC, empresas y métricas: `node frontend/scripts/check-live-process-access.mjs`. Inicia sesión con los cinco roles demo y comprueba estadísticas de ambas áreas, valores iniciales por rol, catálogo tipificado y bloqueo de expedientes cruzados. No carga archivos ni modifica empresas o dictámenes. `PLAYWRIGHT_MODULE` puede apuntar al runtime local; `UI_TEST_URL` y `UI_TEST_PASSWORD` permiten ajustar el entorno. `LINKAGE_SQL_SNAPSHOT` permite indicar un snapshot SQL reciente para comparar las métricas HTTP con los agregados de la base; no usa automáticamente capturas anteriores.
+
 1. Entrar como alumno y abrir Mi perfil. Cargar constancia IMSS PDF real con fecha de expedición.
 2. Entrar como admin y revisar IMSS: consultar PDF, confirmar fecha del año actual y aprobar, o rechazar con motivo. Los datos demo anteriores no acreditan vigencia para nuevas solicitudes.
 3. Alumno: crear SS o PP, guardar datos y descargar prellenados; firmar físicamente y subir el PDF.
@@ -34,3 +36,14 @@ Desde la raíz: `docker compose up -d --build`. Para iniciar las imágenes ya co
 Estado: `docker compose ps`. Detener conservando datos: `docker compose stop`.
 
 No ejecutar nuevamente la migración ya aplicada ni el archivo de diseño sobre esta base. Prueba HTTP aislada reproducible: `pwsh -File backend.Tests/run-isolated.ps1`. Comprobación del entorno Docker activo sin modificar evidencias: `node frontend/scripts/check-live-documents.mjs` (requiere Playwright y Edge; `UI_TEST_URL` permite otro origen). Verificados login real de alumno/admin, bandeja, PDFs SS/PP y mes en español del Compromiso.
+
+## RBAC y empresas desplegados — 6 de noviembre de 2026
+
+- Aplicadas `20261106_company_type_prepare.sql` y `20261106_company_type_finalize.sql` en una sola transacción, con API y frontend detenidos. No se ejecutaron schema de diseño ni seeds sobre esta instalación.
+- Clasificación individual: TecNM interno `public`, conservando `sector=educational`; Presidencia Municipal `public`; Gunderson `large`; SIMSA `medium`. No quedan empresas pendientes y `company_type` es `NOT NULL`.
+- Respaldo verificado: `tmp/pdf-qa/backups/tecnm-before-rbac-20261107T031301Z.dump` (nombre en UTC; operación realizada la noche del 6 de noviembre en México).
+- Huellas anteriores y posteriores verificadas para 11 alumnos, 6 expedientes SS, 4 expedientes PP, 47 documentos, campos previos de empresas y archivos del volumen. Evidencias y dictámenes conservados.
+- Imágenes backend/frontend reconstruidas y servicios actualizados activos en `http://localhost:3000`, API en puerto 5055 y PostgreSQL en 15432. Volúmenes existentes conservados.
+- Pasan ambos recorridos reales: acceso con cinco roles, tipología, área inicial, alternancia estadística, bloqueo de expedientes cruzados, comparación de métricas SQL/HTTP y descargas documentales. Capturas en `tmp/pdf-qa/live-process-access/`.
+
+Estas migraciones ya están aplicadas en esta base local. No volver a ejecutarlas; para otras instalaciones seguir `database/migrations/README.md` y clasificar sus registros individualmente.

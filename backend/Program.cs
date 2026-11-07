@@ -1,6 +1,7 @@
 using PdfSharp.Fonts;
 using TecNM.Api.Modules.Expedients.Pdf;
 using System.Text;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -141,6 +142,23 @@ builder.Services
         };
         options.Events = new JwtBearerEvents
         {
+            OnTokenValidated = async context =>
+            {
+                var idText = context.Principal?.FindFirst("sub")?.Value;
+                if (!long.TryParse(idText, out var id)) { context.Fail("Sesión inválida."); return; }
+                var db = context.HttpContext.RequestServices.GetRequiredService<TecNMDbContext>();
+                var account = await db.Users.Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+                    .SingleOrDefaultAsync(u => u.Id == id, context.HttpContext.RequestAborted);
+                if (account is null || !account.IsActive) { context.Fail("Sesión inválida."); return; }
+                var identity = (ClaimsIdentity)context.Principal!.Identity!;
+                foreach (var claim in identity.Claims.Where(c => c.Type is "role" or "roles" || c.Type == ClaimTypes.Role).ToArray())
+                    identity.RemoveClaim(claim);
+                foreach (var role in account.UserRoles.Where(ur => ur.Role != null && ur.Role.DeletedAt == null).Select(ur => ur.Role!.Name).Distinct())
+                {
+                    identity.AddClaim(new Claim("role", role));
+                    identity.AddClaim(new Claim("roles", role));
+                }
+            },
             OnMessageReceived = context =>
             {
                 var token = context.Request.Cookies["auth_token"];
@@ -157,7 +175,19 @@ builder.Services
             }
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
+    options.AddPolicy("SocialServiceList", p => p.RequireRole("admin", "social_service_officer", "department_head"));
+    options.AddPolicy("InternshipList", p => p.RequireRole("admin", "internship_coordinator", "department_head"));
+    options.AddPolicy("SocialServiceRead", p => p.RequireRole("admin", "social_service_officer", "department_head", "student"));
+    options.AddPolicy("SocialServiceManage", p => p.RequireRole("admin", "social_service_officer"));
+    options.AddPolicy("InternshipRead", p => p.RequireRole("admin", "internship_coordinator", "department_head", "student"));
+    options.AddPolicy("InternshipManage", p => p.RequireRole("admin", "internship_coordinator"));
+    options.AddPolicy("CompaniesRead", p => p.RequireRole("admin", "social_service_officer", "internship_coordinator", "department_head"));
+    options.AddPolicy("CompaniesWrite", p => p.RequireRole("admin", "social_service_officer", "internship_coordinator"));
+    options.AddPolicy("StatisticsRead", p => p.RequireRole("admin", "social_service_officer", "internship_coordinator", "department_head"));
+});
 
 var app = builder.Build();
 

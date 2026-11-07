@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { canReadProcess } from '../../../shared/composables/useSession'
 import {
   UiAlert,
   UiBadge,
@@ -321,6 +322,7 @@ onMounted(() => {
       <!-- KPI 2: Servicio Social -->
       <article
         class="kpi-tile"
+        v-if="canReadProcess('social_service')"
         :class="{ 'kpi-tile--selected': modalityFilter === 'social_service' }"
         @click="
           modalityFilter = modalityFilter === 'social_service' ? 'all' : 'social_service'
@@ -348,6 +350,7 @@ onMounted(() => {
       <!-- KPI 3: Prácticas Profesionales -->
       <article
         class="kpi-tile"
+        v-if="canReadProcess('internship')"
         :class="{ 'kpi-tile--selected': modalityFilter === 'internship' }"
         @click="modalityFilter = modalityFilter === 'internship' ? 'all' : 'internship'"
       >
@@ -798,7 +801,7 @@ onMounted(() => {
       <span>Página {{ page }} de {{ Math.max(1, totalPages) }} · {{ totalItems }} documentos. Contadores de esta página.</span>
       <UiButton variant="secondary" :disabled="page >= totalPages || isLoading" @click="page++; loadQueue()">Siguiente</UiButton>
       <label for="review-tramite-type">Tipo</label>
-      <select id="review-tramite-type" v-model="modalityFilter"><option value="all">Todos</option><option value="general">General / IMSS</option><option value="social_service">Servicio Social</option><option value="internship">Prácticas Profesionales</option></select>
+      <select id="review-tramite-type" v-model="modalityFilter"><option value="all">Todos</option><option value="general">General / IMSS</option><option v-if="canReadProcess('social_service')" value="social_service">Servicio Social</option><option v-if="canReadProcess('internship')" value="internship">Prácticas Profesionales</option></select>
       <label>Id de periodo <input v-model.number="periodId" type="number" min="1" /></label>
       <UiButton variant="secondary" :disabled="isLoading" @click="loadQueue">Actualizar bandeja</UiButton>
     </div>

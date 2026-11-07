@@ -7,6 +7,7 @@ import UiAlert from '../../../shared/components/UiAlert.vue'
 import UiButton from '../../../shared/components/UiButton.vue'
 import UiField from '../../../shared/components/UiField.vue'
 import { login } from '../api/authApi'
+import { clearSession } from '../../../shared/composables/useSession'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,6 +46,7 @@ async function submit(): Promise<void> {
   isSubmitting.value = true
 
   try {
+    clearSession()
     await login({ username: username.value.trim(), password: password.value })
 
     const redirect = route.query.redirect

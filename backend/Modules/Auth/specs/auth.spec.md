@@ -1,3 +1,5 @@
+> Autorización vigente: [Acceso por proceso](../../../../docs/specs/process-access.spec.md). Sus reglas prevalecen sobre permisos anteriores incompatibles.
+
 # Auth backend
 
 Contrato compartido: [spec raíz de autenticación](../../../../docs/specs/auth.spec.md).

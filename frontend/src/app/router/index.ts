@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { loadSession, clearSession } from '../../shared/composables/useSession'
+import { companiesRoutes } from '../../modules/companies/routes'
 
 import { authRoutes, authenticatedAuthRoutes } from '../../modules/auth'
 import { catalogsRoutes } from '../../modules/catalogs'
@@ -24,6 +26,8 @@ const router = createRouter({
       children: [
         ...authenticatedAuthRoutes,
         ...catalogsRoutes,
+        ...companiesRoutes,
+        { path: 'access-denied', name: 'access-denied', component: () => import('../../modules/auth/views/AccessDeniedView.vue') },
         ...studentsRoutes,
         ...expedientsRoutes,
         ...socialServiceRoutes,
@@ -39,17 +43,25 @@ const router = createRouter({
   },
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   if (!to.meta.requiresAuth) return true
 
   if (!hasActiveSession()) {
     clearSessionMarker()
+    clearSession()
     return {
       name: 'login',
       query: { redirect: to.fullPath },
     }
   }
 
+  try {
+    const user = await loadSession()
+    if (to.meta.roles && !to.meta.roles.some(role => user.roles.some(assigned => assigned === role))) return { name: 'access-denied' }
+  } catch (error: any) {
+    if (error.response?.status === 401) return { name: 'login', query: { redirect: to.fullPath } }
+    if (to.name !== 'access-denied') return { name: 'access-denied' }
+  }
   return true
 })
 

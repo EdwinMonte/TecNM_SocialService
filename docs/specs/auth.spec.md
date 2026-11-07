@@ -1,3 +1,5 @@
+> Contrato de autorización vigente: [Acceso por proceso](./process-access.spec.md). Prevalece sobre permisos anteriores incompatibles.
+
 # Contrato de autenticación local
 
 Fuente canónica para backend y frontend. Cambiar este archivo antes de cambiar código o specs locales.

@@ -95,7 +95,7 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
         return Ok(detail);
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Roles = "admin")]
     [HttpPost]
     public async Task<ActionResult<StudentDetail>> Create(
         [FromBody] StudentRequest request,
@@ -105,7 +105,7 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Roles = "admin")]
     [HttpPut("{id:long}")]
     public async Task<ActionResult<StudentDetail>> Update(
         long id,
@@ -116,7 +116,7 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
         return Ok(updated);
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Roles = "admin")]
     [HttpDelete("{id:long}")]
     public async Task<IActionResult> Delete(long id, CancellationToken cancellationToken = default)
     {
@@ -134,7 +134,7 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
         return Ok(eligibility);
     }
 
-    [Authorize(Roles = StaffRoles)]
+    [Authorize(Roles = "admin")]
     [HttpPost("{id:long}/account")]
     public async Task<ActionResult<CreateStudentAccountResponse>> CreateAccount(
         long id,

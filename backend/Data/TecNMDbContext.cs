@@ -34,5 +34,28 @@ public sealed class TecNMDbContext(DbContextOptions<TecNMDbContext> options) : D
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TecNMDbContext).Assembly);
+        modelBuilder.Entity<LinkageCompanyMetric>(entity =>
+        {
+            entity.HasNoKey().ToView("vw_linkage_company_metrics");
+            entity.Property(m => m.TramiteType).HasColumnName("tramite_type");
+            entity.Property(m => m.PeriodId).HasColumnName("period_id");
+            entity.Property(m => m.CompanyId).HasColumnName("company_id");
+            entity.Property(m => m.CompanyName).HasColumnName("company_name");
+            entity.Property(m => m.CompanyType).HasColumnName("company_type");
+            entity.Property(m => m.Projects).HasColumnName("projects");
+            entity.Property(m => m.AssignedStudents).HasColumnName("assigned_students");
+            entity.Property(m => m.ActiveStudents).HasColumnName("active_students");
+        });
+        modelBuilder.Entity<LinkageTypeMetric>(entity =>
+        {
+            entity.HasNoKey().ToView("vw_linkage_company_type_metrics");
+            entity.Property(m => m.TramiteType).HasColumnName("tramite_type");
+            entity.Property(m => m.PeriodId).HasColumnName("period_id");
+            entity.Property(m => m.CompanyType).HasColumnName("company_type");
+            entity.Property(m => m.Projects).HasColumnName("projects");
+            entity.Property(m => m.AssignedStudents).HasColumnName("assigned_students");
+            entity.Property(m => m.ActiveStudents).HasColumnName("active_students");
+        });
+
     }
 }

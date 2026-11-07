@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { defaultProcess } from '../../../shared/composables/useSession'
+import LinkageMetrics from '../components/LinkageMetrics.vue'
 import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiField } from '../../../shared/components'
 import { getPeriodOptions } from '../../catalogs/api/careersApi'
 import type { OptionItem } from '../../catalogs/types/careers'
@@ -9,7 +12,12 @@ const stats = ref<any>(null)
 const rep911 = ref<any>(null)
 const periodOptions = ref<OptionItem[]>([])
 const selectedPeriodId = ref<number | undefined>(undefined)
-const tramiteType = ref<'social_service' | 'internship'>('social_service')
+const route = useRoute(), router = useRouter()
+const tramiteType = computed<'social_service' | 'internship'>(() => route.query.tramiteType === 'internship' || route.query.tramiteType === 'social_service' ? route.query.tramiteType : defaultProcess.value)
+function selectProcess(value: 'social_service' | 'internship') { void router.replace({ query: { ...route.query, tramiteType: value } }) }
+let sequence = 0, controller: AbortController | undefined
+watch(tramiteType, () => { void loadData() })
+onBeforeUnmount(() => { sequence++; controller?.abort() })
 const isLoading = ref(true)
 const errorMessage = ref('')
 
@@ -21,20 +29,23 @@ const sectorLabels: Record<string, string> = {
 }
 
 async function loadData(): Promise<void> {
+  controller?.abort(); controller = new AbortController(); const request = ++sequence
   isLoading.value = true
-  errorMessage.value = ''
+  errorMessage.value = ''; stats.value = null; rep911.value = null
   try {
     const [sData, rData] = await Promise.all([
-      getSemesterStatistics(selectedPeriodId.value, tramiteType.value),
-      get911Report(selectedPeriodId.value, tramiteType.value),
+      getSemesterStatistics(selectedPeriodId.value, tramiteType.value, undefined, controller.signal),
+      get911Report(selectedPeriodId.value, tramiteType.value, undefined, controller.signal),
     ])
+    if (request !== sequence) return
     stats.value = sData
     rep911.value = rData
   } catch (err: any) {
+    if (request !== sequence || err.code === 'ERR_CANCELED') return
     errorMessage.value =
       err?.response?.data?.message || 'Error al cargar estadísticas institucionales.'
   } finally {
-    isLoading.value = false
+    if (request === sequence) isLoading.value = false
   }
 }
 
@@ -64,19 +75,13 @@ onMounted(async () => {
         <div style="display: flex; gap: 0.5rem;">
           <UiButton
             :variant="tramiteType === 'social_service' ? 'primary' : 'secondary'"
-            @click="
-              tramiteType = 'social_service';
-              loadData()
-            "
+            @click="selectProcess('social_service')"
           >
             Estadístico Servicio Social
           </UiButton>
           <UiButton
             :variant="tramiteType === 'internship' ? 'primary' : 'secondary'"
-            @click="
-              tramiteType = 'internship';
-              loadData()
-            "
+            @click="selectProcess('internship')"
           >
             Estadístico Prácticas Profesionales
           </UiButton>
@@ -95,7 +100,8 @@ onMounted(async () => {
       Calculando indicadores en tiempo real...
     </div>
 
-    <div v-else style="display: flex; flex-direction: column; gap: 1.5rem;">
+    <div v-else-if="stats && rep911" style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <LinkageMetrics :tramite-type="tramiteType" :period-id="selectedPeriodId" />
       <!-- Tabla 1: Hoja ESTADÍSTICO por Carrera y Género -->
       <UiCard
         :title="`Hoja ESTADÍSTICO (${tramiteType === 'social_service' ? 'Servicio Social' : 'Prácticas Profesionales'})`"

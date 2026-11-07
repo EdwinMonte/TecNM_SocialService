@@ -1,5 +1,7 @@
 # Base de Datos (`database/`)
 
+Tipología de empresas y métricas: seguir la [guía de migración incremental](./migrations/README.md). La API nueva requiere preparación, clasificación explícita de pendientes y finalización. Los seeds actualizados son solo para bases de desarrollo nuevas o aisladas.
+
 Este directorio centraliza los recursos y especificaciones de base de datos del proyecto **TecNM SSPP**, organizados según su rol dentro del ciclo de vida del desarrollo.
 
 | Subcarpeta | Estado | Propósito | Reglas de Uso |
