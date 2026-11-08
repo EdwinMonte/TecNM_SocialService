@@ -53,6 +53,15 @@ Reemplaza las hojas `SERVICIO SOCIAL`, `PRÁCTICAS` y `PRINCIPAL CONSULTA` de `S
     - En Prácticas Profesionales (5 columnas): `C.P.`, `C.A.`, `EV.`, `C.T.`, `CC`.
   - Columnas de Folios y Cierre: Folio CP, Folio Liberación, Fecha Término, Calificación, PNC (`SI`/`NO`), Acta Enviada.
 
+#### Consulta de expediente desde la matriz actual
+- Incorporar únicamente un botón compacto con ícono de ver, tooltip «Ver expediente» y nombre accesible que identifique al alumno, junto al nombre en la celda existente. Mantener estructura, columnas, estilos y disposición de la matriz implementada.
+- Abrir `UiDialog` de consulta sobre la matriz: datos personales, académicos, contacto, IMSS, detalle del trámite y documentos autorizados con estado, observaciones y consulta/descarga de PDF mediante el visor existente.
+- Resolver `student.id` mediante el detalle de SS/PP de la fila; consultar perfil y documentos del trámite exacto más documentos generales autorizados. No cambiar contratos ni permisos.
+- Mantener filtros, búsqueda, filas y scroll al abrir/cerrar; restaurar foco al botón mediante `UiDialog`. Descartar respuestas pendientes cuando se cierra o cambia el expediente.
+- Deshabilitar los botones mientras se actualiza la matriz o falla su carga y descartar respuestas de filtros anteriores para no abrir un trámite de otro proceso.
+- Mostrar carga, error con reintento y estado sin documentos. No conservar información de otro alumno ante fallos.
+- Verificar SS y PP, selección de alumnos distintos, PDF, errores, cierre durante carga, teclado y conservación de columnas/filtros/scroll.
+
 ---
 
 ### 2.3 Vista `/reports/statistics` (Estadístico Semestral y por Ciclo Escolar)

@@ -185,4 +185,8 @@ interface CycleTimesResponse {
 
 - Dashboard inicial de staff con tarjetas y gráficas en vivo.
 - Vista **"Seguimiento Vinculación"** con buscador tipo `PRINCIPAL CONSULTA` (barra de 0% a 100% por alumno) y tabla general con columnas `CP, CA, SOL, CC, R1, R2, R3, EV1, EV2, EV3, CT`.
+- Cada fila de seguimiento incluye un botón «Ver expediente» junto al nombre, dentro de la columna existente. Conserva columnas, orden, estilos, filtros y exportación de la matriz.
+- El botón abre un modal de consulta con datos personales, académicos y de contacto del alumno, información del trámite seleccionado y sus documentos con estado y acceso al PDF. Obtiene el alumno desde el detalle del trámite (`tramiteId` y proceso); no confunde el identificador del trámite con el del alumno. Incluye documentación general autorizada (IMSS), sin mezclar trámites ni procesos ajenos.
+- Reutiliza las APIs de detalle de SS/PP, Students y Documents y sus permisos vigentes. Presenta carga, error con reintento y ausencia de documentos; un fallo de carga nunca se presenta como expediente vacío.
+- Al cerrar, conserva la matriz montada, filtros, búsqueda y desplazamiento, y devuelve el foco al botón. Admite teclado, Escape y nombre accesible del alumno.
 - Vista **"Estadístico y 911.10"** con selector de semestre / ciclo escolar y botón **"Exportar a Excel"**.

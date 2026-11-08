@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { defaultProcess, canReadProcess } from '../../../shared/composables/useSession'
-import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiField } from '../../../shared/components'
+import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiDialog, UiField } from '../../../shared/components'
 import { getCareerOptions, getPeriodOptions } from '../../catalogs/api/careersApi'
 import type { OptionItem } from '../../catalogs/types/careers'
 import { getTrackingData } from '../api/reportsApi'
 import type { TrackingItem } from '../types/reports'
+import TrackingExpedient from '../components/TrackingExpedient.vue'
 
 const items = ref<TrackingItem[]>([])
 const periodOptions = ref<OptionItem[]>([])
@@ -13,11 +14,21 @@ const careerOptions = ref<OptionItem[]>([])
 
 const isLoading = ref(true)
 const errorMessage = ref('')
+let dataRequest = 0
 
 const tramiteType = ref<'social_service' | 'internship'>(defaultProcess.value)
 const selectedPeriodId = ref<number | undefined>(undefined)
 const selectedCareerId = ref<number | undefined>(undefined)
 const searchQuery = ref('')
+const isExpedientOpen = ref(false)
+const selectedRow = ref<TrackingItem | null>(null)
+const selectedProcess = ref<'social_service' | 'internship'>(tramiteType.value)
+
+function openExpedient(row: TrackingItem): void {
+  selectedRow.value = row
+  selectedProcess.value = tramiteType.value
+  isExpedientOpen.value = true
+}
 
 const ssDocKeys = [
   { key: 'cp', label: 'CP' },
@@ -64,6 +75,7 @@ function handleClearSearch(): void {
 }
 
 async function loadData(): Promise<void> {
+  const request = ++dataRequest
   isLoading.value = true
   errorMessage.value = ''
   try {
@@ -73,12 +85,14 @@ async function loadData(): Promise<void> {
       selectedCareerId.value,
       searchQuery.value.trim() || undefined,
     )
+    if (request !== dataRequest) return
     items.value = (res.items || []).map((i) => ({ ...i, id: i.tramiteId }))
   } catch (err: any) {
+    if (request !== dataRequest) return
     errorMessage.value =
       err?.response?.data?.message || 'Error al cargar la matriz de seguimiento en vivo.'
   } finally {
-    isLoading.value = false
+    if (request === dataRequest) isLoading.value = false
   }
 }
 
@@ -248,7 +262,25 @@ onMounted(async () => {
             </tr>
             <tr v-for="row in items" :key="row.tramiteId">
               <td><strong>{{ row.controlNumber }}</strong></td>
-              <td>{{ row.studentFullName }}</td>
+              <td>
+                <div class="student-cell">
+                  <span>{{ row.studentFullName }}</span>
+                  <UiButton
+                    class="expedient-button"
+                    variant="secondary"
+                    title="Ver expediente"
+                    :aria-label="`Ver expediente de ${row.studentFullName} (${row.controlNumber})`"
+                    aria-haspopup="dialog"
+                    :disabled="isLoading || !!errorMessage"
+                    @click="openExpedient(row)"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  </UiButton>
+                </div>
+              </td>
               <td><UiBadge tone="info">{{ row.careerCode }}</UiBadge></td>
               <td>{{ row.companyName || 'Pendiente de CA' }}</td>
               <td><small>{{ row.presentationLetterFolio || '—' }}</small></td>
@@ -295,10 +327,33 @@ onMounted(async () => {
         </table>
       </div>
     </UiCard>
+    <UiDialog v-model="isExpedientOpen" :title="`Expediente · ${selectedRow?.studentFullName || ''}`" size="xl">
+      <TrackingExpedient v-if="selectedRow" :tramite-id="selectedRow.tramiteId" :tramite-type="selectedProcess" />
+      <template #footer>
+        <UiButton variant="secondary" @click="isExpedientOpen = false">Cerrar expediente</UiButton>
+      </template>
+    </UiDialog>
   </UiBasePage>
 </template>
 
 <style scoped>
+.student-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.expedient-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+}
+
 .header-row {
   display: flex;
   justify-content: space-between;
