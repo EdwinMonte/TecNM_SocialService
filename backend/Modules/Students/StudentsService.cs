@@ -44,13 +44,22 @@ public partial class StudentsService(
         bool? hasValidImss,
         bool? hasDisability,
         string? sort,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string? followUpStatus = null, string? followUpProgress = null)
     {
-        var query = currentUser.VisibleStudents(dbContext)
+        var canFollowUp=currentUser.CanReadProcess("social_service");
+        if((followUpStatus!=null||followUpProgress!=null)&&!canFollowUp) currentUser.RequireProcess("social_service");
+        if(followUpStatus!=null&&!new[]{"first_notice","second_notice","third_notice","non_compliant","in_progress","released","pending_setup"}.Contains(followUpStatus)) throw new ValidationException(new Dictionary<string,string[]>{{"followUpStatus",["Estatus inválido."]}});
+        if(followUpProgress!=null&&!new[]{"consistent","low_progress","pending"}.Contains(followUpProgress)) throw new ValidationException(new Dictionary<string,string[]>{{"followUpProgress",["Valoración inválida."]}});
+        var fullAccessIds=currentUser.VisibleStudents(dbContext).Select(s=>s.Id);
+        var query = (canFollowUp ? dbContext.Students : currentUser.VisibleStudents(dbContext))
             .Include(s => s.User).ThenInclude(u => u!.UserRoles).ThenInclude(r => r.Role)
             .Include(s => s.Career)
             .AsNoTracking();
 
+        if(followUpStatus!=null) query=query.Where(s=>dbContext.StudentSocialServiceFollowUps.Any(f=>f.StudentId==s.Id&&f.Status==followUpStatus));
+        if(followUpProgress!=null) query=query.Where(s=>dbContext.StudentSocialServiceFollowUps.Any(f=>f.StudentId==s.Id&&f.Status=="in_progress"&&(followUpProgress=="pending"?f.ProgressAssessment==null:f.ProgressAssessment==followUpProgress)));
+        // Protected candidate values must not be inferred through filters.
+        if(shift!=null||isEnrolled!=null||hasValidImss!=null||hasDisability!=null) query=query.Where(s=>fullAccessIds.Contains(s.Id));
         if (!string.IsNullOrWhiteSpace(search))
         {
             var pattern = $"%{search.Trim()}%";
@@ -59,7 +68,7 @@ public partial class StudentsService(
                 EF.Functions.ILike(s.FirstName, pattern) ||
                 EF.Functions.ILike(s.FirstSurname, pattern) ||
                 (s.SecondSurname != null && EF.Functions.ILike(s.SecondSurname, pattern)) ||
-                (s.Curp != null && EF.Functions.ILike(s.Curp, pattern)));
+                (fullAccessIds.Contains(s.Id) && s.Curp != null && EF.Functions.ILike(s.Curp, pattern)));
         }
 
         if (careerId.HasValue)
@@ -101,6 +110,7 @@ public partial class StudentsService(
             _ => query.OrderBy(s => s.FirstSurname).ThenBy(s => s.SecondSurname).ThenBy(s => s.FirstName)
         };
 
+        if(!currentUser.ReadsAll() && sort?.Contains("curriculum", StringComparison.OrdinalIgnoreCase)==true) query=query.OrderBy(s=>s.FirstSurname).ThenBy(s=>s.Id);
         var totalItems = await query.CountAsync(cancellationToken);
         var currentPage = Math.Max(1, page);
         var validPageSize = Math.Clamp(pageSize, 1, 100);
@@ -112,8 +122,11 @@ public partial class StudentsService(
             .ToListAsync(cancellationToken);
 
         await ProjectImssAsync(items, cancellationToken);
+        var ids=items.Select(s=>s.Id).ToList();
+        var allowed=await currentUser.VisibleStudents(dbContext).Where(s=>ids.Contains(s.Id)).Select(s=>s.Id).ToListAsync(cancellationToken);
+        var followUps=canFollowUp ? await dbContext.StudentSocialServiceFollowUps.Where(f=>ids.Contains(f.StudentId)).ToDictionaryAsync(f=>f.StudentId,cancellationToken) : new Dictionary<long,StudentSocialServiceFollowUp>();
         return new PagedResponse<StudentListItem>(
-            items.Select(ToListItem).ToList(),
+            items.Select(s=> { var item=ToListItem(s); if(!allowed.Contains(s.Id)) item=item with {CurrentSemester=null,CurriculumProgressPercentage=null,Shift=null,IsEnrolled=null,HasValidImss=null,HasUserAccount=null,AccountUsername=null,AccountStatus=null,CanReadProfile=false}; return item with {SocialServiceFollowUp=followUps.TryGetValue(s.Id,out var f)?FollowUpDto(f):null}; }).ToList(),
             currentPage,
             validPageSize,
             totalItems,
@@ -215,6 +228,7 @@ public partial class StudentsService(
 
         var student = new Student
         {
+            SocialServiceEligiblePeriodId = await ResolveEligiblePeriodAsync(request.SocialServiceEligiblePeriodId, cancellationToken),
             CareerId = career.Id,
             ControlNumber = normControlNumber,
             Curp = NormalizeOptionalUpper(request.Curp),
@@ -267,6 +281,7 @@ public partial class StudentsService(
 
         var credits = request.CompletedCredits >= 0 ? request.CompletedCredits : student.CompletedCredits;
 
+        if(request.SocialServiceEligiblePeriodId.HasValue) student.SocialServiceEligiblePeriodId=await ResolveEligiblePeriodAsync(request.SocialServiceEligiblePeriodId,cancellationToken);
         student.CareerId = career.Id;
         student.ControlNumber = normControlNumber;
         student.Curp = NormalizeOptionalUpper(request.Curp);
@@ -819,7 +834,7 @@ public partial class StudentsService(
             s.ImssValidatedAt,
             validatorName,
             s.CreatedAt,
-            s.UpdatedAt) { AccountUsername = s.User?.Username, AccountStatus = StudentAccountsService.Status(s) };
+            s.UpdatedAt) { SocialServiceEligiblePeriodId=s.SocialServiceEligiblePeriodId, AccountUsername = s.User?.Username, AccountStatus = StudentAccountsService.Status(s) };
     }
 
     private static string? NormalizeOptional(string? value) =>

@@ -4,6 +4,9 @@ public sealed class Student : AuditableEntity
 {
     public long? UserId { get; set; }
     public long CareerId { get; set; }
+    public DateTimeOffset? SocialServiceEligiblePeriodUpdatedAt { get; set; }
+    public long? SocialServiceEligiblePeriodUpdatedBy { get; set; }
+    public long? SocialServiceEligiblePeriodId { get; set; }
     public long? ImportBatchId { get; set; }
     public string ControlNumber { get; set; } = string.Empty;
     public string? Curp { get; set; }

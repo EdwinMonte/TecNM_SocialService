@@ -16,6 +16,8 @@ public sealed class TecNMDbContext(DbContextOptions<TecNMDbContext> options) : D
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<CompanySupervisor> CompanySupervisors => Set<CompanySupervisor>();
     public DbSet<Agreement> Agreements => Set<Agreement>();
+    public DbSet<StudentSocialServiceFollowUp> StudentSocialServiceFollowUps => Set<StudentSocialServiceFollowUp>();
+    public DbSet<SocialServiceFollowUpReview> SocialServiceFollowUpReviews => Set<SocialServiceFollowUpReview>();
     public DbSet<Student> Students => Set<Student>();
     public DbSet<StudentImportBatch> StudentImportBatches => Set<StudentImportBatch>();
     public DbSet<ExpedientDocument> ExpedientDocuments => Set<ExpedientDocument>();
@@ -33,6 +35,11 @@ public sealed class TecNMDbContext(DbContextOptions<TecNMDbContext> options) : D
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<StudentSocialServiceFollowUp>(b => {
+            b.HasNoKey().ToView("vw_student_social_service_follow_up");
+            foreach (var property in typeof(StudentSocialServiceFollowUp).GetProperties())
+                b.Property(property.Name).HasColumnName(System.Text.RegularExpressions.Regex.Replace(property.Name, "([a-z0-9])([A-Z])", "$1_$2").ToLowerInvariant());
+        });
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TecNMDbContext).Assembly);
         modelBuilder.Entity<LinkageCompanyMetric>(entity =>
         {

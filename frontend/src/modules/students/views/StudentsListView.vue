@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import DocumentReviewDialog from '../../expedients/components/DocumentReviewDialog.vue'
-import { getReviewQueuePage, getStudentDocuments } from '../../expedients/api/expedientsApi'
-import type { ExpedientDocument, ReviewQueueItem } from '../../expedients/types/expedients'
+import { getStudentDocuments } from '../../expedients/api/expedientsApi'
+import type { ExpedientDocument } from '../../expedients/types/expedients'
 import { problemMessage } from '../../../shared/api/problemDetails'
 import { hasRole } from '../../../shared/composables/useSession'
 import {
@@ -18,6 +18,7 @@ import {
 import { getCareerOptions, getPeriodOptions } from '../../catalogs/api/careersApi'
 import type { OptionItem } from '../../catalogs/types/careers'
 import {
+  reviewSocialServiceFollowUp,
   createStudent,
   createStudentAccount,
   downloadImportTemplate,
@@ -37,6 +38,25 @@ import type {
   StudentShift,
 } from '../types/students'
 
+const canFollowUp = computed(() => hasRole('admin', 'social_service_officer', 'department_head'))
+const canAssess = computed(() => hasRole('admin', 'social_service_officer'))
+const followUpStatus = ref(''), followUpProgress = ref('')
+const followUpLabels: Record<string, string> = { first_notice: 'Primer aviso', second_notice: 'Segundo aviso', third_notice: 'Tercer aviso', non_compliant: 'Producto no conforme', in_progress: 'En proceso de realización del servicio', released: 'Liberado', pending_setup: 'Periodo de aptitud pendiente' }
+const assessmentLabels: Record<string, string> = {consistent: 'Constante', low_progress: 'Con poco avance', pending: 'Pendiente de valoración'}
+const assessmentCandidate = ref<StudentListItem | null>(null)
+const assessmentOpen = ref(false), savingAssessment = ref(false)
+const assessment = ref('consistent'), assessmentNotes = ref(''), assessmentError = ref('')
+function openAssessment(row: StudentListItem) {
+ assessmentCandidate.value = row; assessment.value = row.socialServiceFollowUp?.progressAssessment || 'consistent'; assessmentNotes.value = row.socialServiceFollowUp?.notes || ''; assessmentError.value = ''; assessmentOpen.value = true
+}
+async function saveAssessment() {
+ const row = assessmentCandidate.value, periodId = row?.socialServiceFollowUp?.trackingPeriodId
+ if (!row || !periodId || savingAssessment.value) return
+ savingAssessment.value = true; assessmentError.value = ''
+ try { await reviewSocialServiceFollowUp(row.id, {periodId, assessment: assessment.value, notes: assessmentNotes.value}); assessmentOpen.value = false; await loadData() }
+ catch (error) { assessmentError.value = problemMessage(error, 'No se pudo guardar la valoración.') }
+ finally {savingAssessment.value = false}
+}
 const canRegister = computed(() => hasRole('admin'))
 const canReview = computed(() => hasRole('admin', 'social_service_officer', 'internship_coordinator'))
 
@@ -45,7 +65,6 @@ interface StudentRow extends StudentListItem {
 }
 
 const students = ref<StudentRow[]>([])
-const allStudentsCache = ref<StudentRow[]>([])
 const careerOptions = ref<OptionItem[]>([])
 const periodOptions = ref<OptionItem[]>([])
 
@@ -55,27 +74,21 @@ const successMessage = ref('')
 
 // Filtros
 const searchQuery = ref('')
-const selectedCareerId = ref<number | undefined>(undefined)
+const selectedCareerId = ref<number | string>('')
 const selectedShift = ref<string>('')
 const selectedImssFilter = ref<string>('')
 const currentPage = ref(1)
 const totalItems = ref(0)
 
 // Autocomplete
-const isSearchFocused = ref(false)
-const isAutocompleteOpen = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const columns: { key: keyof StudentRow & string; label: string }[] = [
-  { key: 'controlNumber', label: 'No. Control' },
-  { key: 'fullName', label: 'Nombre Completo' },
-  { key: 'careerCode', label: 'Carrera' },
-  { key: 'currentSemester', label: 'Sem.' },
-  { key: 'curriculumProgressPercentage', label: '% Créditos' },
-  { key: 'shift', label: 'Turno' },
-  { key: 'hasValidImss', label: 'Vigencia IMSS' },
-  { key: 'hasUserAccount', label: 'Cuenta' },
-  { key: 'actions', label: 'Acciones' },
+  { key: 'fullName', label: 'Alumno' },
+  { key: 'controlNumber', label: 'Matrícula' },
+  { key: 'careerCode', label: 'Carrera / semestre' },
+  ...(hasRole('admin', 'social_service_officer', 'department_head') ? [{ key: 'socialServiceFollowUp' as const, label: 'Seguimiento SS' }] : []),
+  { key: 'actions', label: 'Detalle' },
 ]
 
 // Modal de Alta / Edición de Alumno (Caso Específico)
@@ -88,28 +101,16 @@ const imssError = ref('')
 const reviewOpen = ref(false)
 const reviewDocument = ref<ExpedientDocument | null>(null)
 const reviewStudentName = ref('')
-const preAdmission = ref<(ReviewQueueItem & { actions?: string })[]>([])
-const preAdmissionSearch = ref('')
-const preAdmissionPage = ref(1), preAdmissionPages = ref(0)
-const preAdmissionError = ref('')
 const resetCandidate = ref<StudentListItem | null>(null)
 const resetOpen = ref(false), resetting = ref(false)
 const resetError = ref('')
 const generatedControlNumber = ref('')
 
-async function loadPreAdmission() {
-  if (!canReview.value) return
-  preAdmissionError.value = ''
-  try {
-    const data = await getReviewQueuePage({ page: preAdmissionPage.value, pageSize: 20, status: 'all', tramiteType: 'general', documentCode: 'IMSS', search: preAdmissionSearch.value || undefined })
-    preAdmission.value = data.items
-    preAdmissionPages.value = data.totalPages
-  } catch (error) { preAdmissionError.value = problemMessage(error, 'No fue posible cargar los requisitos IMSS.'); preAdmission.value = [] }
-}
 function openDocumentReview(document: ExpedientDocument, name: string) {
   reviewDocument.value = document
   reviewStudentName.value = name
   isStudentModalOpen.value = false
+  detailOpen.value = false
   reviewOpen.value = true
 }
 async function reviewStudentImss() {
@@ -122,7 +123,7 @@ async function reviewStudentImss() {
     openDocumentReview(document, `${selectedDetail.value.firstName} ${selectedDetail.value.firstSurname}`)
   } catch (error) { imssError.value = problemMessage(error, 'No se pudo consultar la constancia IMSS.') }
 }
-async function afterReview() { await Promise.all([loadData(), loadPreAdmission()]) }
+async function afterReview() { await loadData() }
 async function confirmReset() {
   if (!resetCandidate.value || resetting.value) return
   resetting.value = true; resetError.value = ''
@@ -133,6 +134,48 @@ async function confirmReset() {
   } catch (error) { resetError.value = problemMessage(error, 'No se pudo restablecer la contraseña.') }
   finally { resetting.value = false }
 }
+
+const detailOpen = ref(false)
+const detailRow = ref<StudentListItem | null>(null)
+const detailLoading = ref(false)
+const detailError = ref('')
+let detailRequest = 0
+async function openDetail(row: StudentListItem) {
+  const request = ++detailRequest
+  detailRow.value = row
+  selectedDetail.value = null
+  detailError.value = ''; imssError.value = ''
+  detailOpen.value = true
+  detailLoading.value = row.canReadProfile !== false
+  if (row.canReadProfile === false) return
+  try {
+    const result = await getStudentById(row.id)
+    if (request === detailRequest) selectedDetail.value = result
+  } catch (error) {
+    if (request === detailRequest) detailError.value = problemMessage(error, 'No se pudo cargar el detalle del alumno.')
+  } finally { if (request === detailRequest) detailLoading.value = false }
+}
+function displayDate(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }) : 'Sin registro'
+}
+function followUpTone(row: StudentListItem): 'success' | 'warning' | 'danger' | 'info' {
+  const status = row.socialServiceFollowUp?.status
+  if (status === 'non_compliant' || status === 'third_notice') return 'danger'
+  if (status === 'released' || row.socialServiceFollowUp?.progressAssessment === 'consistent') return 'success'
+  return status === 'second_notice' || row.socialServiceFollowUp?.progressAssessment === 'low_progress' ? 'warning' : 'info'
+}
+const detailSections = computed(() => {
+  const d = selectedDetail.value
+  if (!d) return []
+  const accountLabels = {missing: 'Sin cuenta', active: 'Activa', inactive: 'Inactiva', inconsistent: 'Revisar cuenta'}
+  return [
+    { title: 'Datos personales', fields: [['Nombre', d.firstName], ['Primer apellido', d.firstSurname], ['Segundo apellido', d.secondSurname], ['CURP', d.curp], ['Sexo', d.gender === 'M' ? 'Hombre' : d.gender === 'F' ? 'Mujer' : null], ['Discapacidad', d.hasDisability ? d.disabilityDescription || 'Sí' : 'No']] },
+    { title: 'Datos académicos', fields: [['Carrera', d.careerName], ['Semestre', String(d.currentSemester)], ['Turno', formatShift(d.shift)], ['Créditos aprobados', String(d.completedCredits)], ['Avance reticular', d.curriculumProgressPercentage + '%'], ['Inscripción', d.isEnrolled ? 'Inscrito' : 'No inscrito']] },
+    { title: 'Contacto y cuenta', fields: [['Correo institucional', d.institutionalEmail], ['Correo personal', d.personalEmail], ['Teléfono', d.phoneNumber], ['Cuenta de acceso', accountLabels[d.accountStatus]], ['Usuario', d.accountUsername]] },
+    { title: 'Registro', fields: [['Alta', displayDate(d.createdAt)], ['Última actualización', displayDate(d.updatedAt)], ['Lote de importación', d.importBatchId ? String(d.importBatchId) : 'Alta individual']] },
+  ]
+})
+function applyFilters() { currentPage.value = 1; void loadData() }
 
 const studentForm = reactive<StudentRequest>({
   careerId: 0,
@@ -165,33 +208,18 @@ const isAccountModalOpen = ref(false)
 const generatedAccount = ref<CreateStudentAccountResponse | null>(null)
 
 // Autocomplete Suggestions
-const autocompleteSuggestions = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-  if (!query) return []
-  const map = new Map<number, StudentRow>()
-  for (const s of allStudentsCache.value) map.set(s.id, s)
-  for (const s of students.value) map.set(s.id, s)
-  const pool = Array.from(map.values())
-  return pool
-    .filter(
-      (s) =>
-        s.controlNumber.toLowerCase().includes(query) ||
-        s.fullName.toLowerCase().includes(query) ||
-        s.careerCode.toLowerCase().includes(query),
-    )
-    .slice(0, 8)
-})
 
 const hasActiveFilters = computed(() => {
   return (
     searchQuery.value.trim() !== '' ||
-    selectedCareerId.value !== undefined ||
+    Boolean(selectedCareerId.value) ||
     selectedShift.value !== '' ||
-    selectedImssFilter.value !== ''
+    selectedImssFilter.value !== '' || followUpStatus.value !== '' || followUpProgress.value !== ''
   )
 })
 
-function formatShift(shift: StudentShift | string): string {
+function formatShift(shift: StudentShift | string | null): string {
+  if (!shift) return "—"
   if (shift === 'morning') return 'Matutino'
   if (shift === 'afternoon') return 'Vespertino'
   if (shift === 'night') return 'Nocturno'
@@ -217,7 +245,9 @@ async function loadCatalogs(): Promise<void> {
   }
 }
 
+let listRequest = 0
 async function loadData(): Promise<void> {
+  const request = ++listRequest
   isLoading.value = true
   errorMessage.value = ''
   try {
@@ -232,63 +262,36 @@ async function loadData(): Promise<void> {
       page: currentPage.value,
       pageSize: 50,
       search: searchQuery.value.trim() || undefined,
-      careerId: selectedCareerId.value || undefined,
+      careerId: Number(selectedCareerId.value) || undefined,
       shift: selectedShift.value || undefined,
       hasValidImss,
+      followUpStatus: followUpStatus.value || undefined,
+      followUpProgress: followUpProgress.value || undefined,
     })
+    if (request !== listRequest) return
     students.value = res.items || []
     totalItems.value = res.totalItems || students.value.length
 
-    // Guardar en cache para sugerencias de autocomplete
-    if (allStudentsCache.value.length === 0 && students.value.length > 0) {
-      allStudentsCache.value = [...students.value]
-    } else if (!hasActiveFilters.value && students.value.length > 0) {
-      allStudentsCache.value = [...students.value]
-    }
   } catch (err: any) {
+    if (request !== listRequest) return
+    students.value = []; totalItems.value = 0
     errorMessage.value = err?.response?.data?.detail || err?.response?.data?.message || 'Error al cargar padrón de alumnos.'
   } finally {
-    isLoading.value = false
+    if (request === listRequest) isLoading.value = false
   }
 }
 
 function handleSearchInput(): void {
-  isAutocompleteOpen.value = searchQuery.value.trim().length > 0
-}
-
-function handleSearchFocus(): void {
-  isSearchFocused.value = true
-  if (searchQuery.value.trim().length > 0) {
-    isAutocompleteOpen.value = true
-  }
-}
-
-function handleSearchBlur(): void {
-  // Retraso para permitir click en sugerencia
-  setTimeout(() => {
-    isSearchFocused.value = false
-    isAutocompleteOpen.value = false
-  }, 220)
-}
-
-function selectSuggestion(suggestion: StudentListItem): void {
-  searchQuery.value = suggestion.controlNumber
-  isAutocompleteOpen.value = false
-  loadData()
-}
-
-function clearSearch(): void {
-  searchQuery.value = ''
-  isAutocompleteOpen.value = false
-  loadData()
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(applyFilters, 300)
 }
 
 function resetAllFilters(): void {
+  followUpStatus.value = ''; followUpProgress.value = ''; currentPage.value = 1
   searchQuery.value = ''
-  selectedCareerId.value = undefined
+  selectedCareerId.value = ''
   selectedShift.value = ''
   selectedImssFilter.value = ''
-  isAutocompleteOpen.value = false
   loadData()
 }
 
@@ -297,6 +300,7 @@ function openCreateModal(): void {
   editingId.value = null
   selectedDetail.value = null
   Object.assign(studentForm, {
+    socialServiceEligiblePeriodId: undefined,
     careerId: careerOptions.value[0]?.id ?? 1,
     controlNumber: '',
     curp: '',
@@ -326,6 +330,7 @@ async function openEditModal(row: StudentListItem): Promise<void> {
     editingId.value = detail.id
     selectedDetail.value = detail
     Object.assign(studentForm, {
+      socialServiceEligiblePeriodId: detail.socialServiceEligiblePeriodId,
       careerId: detail.careerId,
       controlNumber: detail.controlNumber,
       curp: detail.curp || '',
@@ -436,7 +441,6 @@ async function handleRunImport(): Promise<void> {
     importResult.value = await uploadStudentsExcel(importPeriodId.value, importFile.value)
     successMessage.value = `Importación finalizada: ${importResult.value.importedRecords} alumnos; ${importResult.value.createdAccounts} cuentas creadas; ${importResult.value.existingAccounts} existentes; ${importResult.value.failedRecords} filas rechazadas.`
     await loadData()
-    await loadPreAdmission()
   } catch (err: any) {
     errorMessage.value = err?.response?.data?.detail || err?.response?.data?.message || 'Error al procesar el archivo Excel (.xlsx).'
   } finally {
@@ -444,8 +448,11 @@ async function handleRunImport(): Promise<void> {
   }
 }
 
+onBeforeUnmount(() => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  listRequest++; detailRequest++
+})
 onMounted(async () => {
-  void loadPreAdmission()
   await Promise.all([loadCatalogs(), loadData()])
 })
 </script>
@@ -507,222 +514,96 @@ onMounted(async () => {
       {{ successMessage }}
     </UiAlert>
 
-    <UiCard v-if="canReview" class="mb-4">
-      <h2>IMSS de preingreso</h2>
-      <p>Revisa requisitos previos y constancias de tu proceso sin abrir el expediente académico.</p>
-      <UiAlert v-if="preAdmissionError" tone="danger">{{ preAdmissionError }}</UiAlert>
-      <div class="row-actions">
-        <UiField v-model="preAdmissionSearch" label="Buscar constancia por nombre o matrícula" type="search" />
-        <UiButton variant="secondary" @click="preAdmissionPage = 1; loadPreAdmission()">Buscar / Actualizar</UiButton>
-      </div>
-      <UiTable label="Constancias IMSS para revisión" :columns="[{ key: 'studentControlNumber', label: 'Matrícula' }, { key: 'studentFullName', label: 'Alumno' }, { key: 'status', label: 'Estado' }, { key: 'actions', label: 'Revisión' }]" :rows="preAdmission">
-        <template #cell-status="{ row }">{{ row.status === 'pending' ? 'Pendiente' : row.status === 'approved' ? 'Aprobado' : 'Rechazado' }}</template>
-        <template #cell-actions="{ row }"><UiButton variant="secondary" @click="openDocumentReview(row, row.studentFullName)">{{ row.status === 'pending' ? 'Revisar IMSS' : 'Ver dictamen' }}</UiButton></template>
-      </UiTable>
-      <div class="row-actions">
-        <UiButton variant="secondary" :disabled="preAdmissionPage <= 1" @click="preAdmissionPage--; loadPreAdmission()">Anterior</UiButton>
-        <span>Página {{ preAdmissionPage }} de {{ Math.max(1, preAdmissionPages) }}</span>
-        <UiButton variant="secondary" :disabled="preAdmissionPage >= preAdmissionPages" @click="preAdmissionPage++; loadPreAdmission()">Siguiente</UiButton>
-      </div>
-    </UiCard>
-
     <!-- Main Container -->
     <UiCard class="main-card">
-      <!-- Toolbar de Filtros Modernos con Autocomplete y Comboboxes -->
-      <div class="filters-toolbar">
-        <!-- 1. Buscador con Autocomplete -->
-        <div class="filter-col search-col">
-          <label class="filter-label">Buscar alumno</label>
-          <div class="autocomplete-container">
-            <div class="search-input-wrapper">
-              <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                v-model="searchQuery"
-                type="text"
-                class="modern-input"
-                placeholder="No. Control o Nombre..."
-                @input="handleSearchInput"
-                @focus="handleSearchFocus"
-                @blur="handleSearchBlur"
-                @keyup.enter="loadData"
-              />
-              <button
-                v-if="searchQuery"
-                type="button"
-                class="clear-search-btn"
-                aria-label="Limpiar búsqueda"
-                @click="clearSearch"
-              >
-                ✕
-              </button>
+      <div class="roster-toolbar">
+        <p v-if="canFollowUp" class="tracking-period">Periodo de seguimiento: <strong>{{ students[0]?.socialServiceFollowUp?.trackingPeriodCode || periodOptions.find(p => p.meta?.isActive)?.label || 'Sin periodo activo' }}</strong></p>
+        <div class="roster-filters">
+          <UiField id="roster-search" v-model="searchQuery" label="Buscar alumno" type="search" placeholder="Nombre o matrícula" @input="handleSearchInput" />
+          <UiField id="roster-career" label="Carrera" as="select" v-model="selectedCareerId" @change="applyFilters"><template #options><option value="">Todas las carreras</option><option v-for="c in careerOptions" :key="c.id" :value="c.id">{{ c.label }}</option></template></UiField>
+          <UiField v-if="canFollowUp" id="follow-up-status" label="Seguimiento SS" as="select" v-model="followUpStatus" @change="applyFilters"><template #options><option value="">Todos</option><option v-for="(label, value) in followUpLabels" :key="value" :value="value">{{ label }}</option></template></UiField>
+        </div>
+        <div class="roster-filter-actions">
+          <details class="extra-filters">
+            <summary>Más filtros</summary>
+            <div class="extra-filter-fields">
+              <UiField id="roster-shift" label="Turno" as="select" v-model="selectedShift" @change="applyFilters"><template #options><option value="">Todos los turnos</option><option value="morning">Matutino</option><option value="afternoon">Vespertino</option><option value="night">Nocturno</option></template></UiField>
+              <UiField id="roster-imss" label="Vigencia IMSS" as="select" v-model="selectedImssFilter" @change="applyFilters"><template #options><option value="">Todos los estados</option><option value="true">Vigente</option><option value="false">Pendiente</option></template></UiField>
+              <UiField v-if="canFollowUp" id="follow-up-progress" label="Constancia documental" as="select" v-model="followUpProgress" @change="applyFilters"><template #options><option value="">Todas</option><option v-for="(label, value) in assessmentLabels" :key="value" :value="value">{{ label }}</option></template></UiField>
             </div>
-
-            <!-- Sugerencias Flotantes Autocomplete -->
-            <div v-if="isAutocompleteOpen && autocompleteSuggestions.length > 0" class="suggestions-dropdown">
-              <div
-                v-for="item in autocompleteSuggestions"
-                :key="item.id"
-                class="suggestion-item"
-                @mousedown.prevent="selectSuggestion(item)"
-              >
-                <div class="suggestion-left">
-                  <span class="suggestion-control">{{ item.controlNumber }}</span>
-                  <span class="suggestion-name">{{ item.fullName }}</span>
-                </div>
-                <div class="suggestion-right">
-                  <span class="suggestion-career">{{ item.careerCode }}</span>
-                  <span class="suggestion-progress">{{ item.curriculumProgressPercentage }}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. Combobox Carrera -->
-        <div class="filter-col">
-          <label class="filter-label">Carrera</label>
-          <div class="select-wrapper">
-            <select v-model="selectedCareerId" class="modern-select" @change="loadData">
-              <option :value="undefined">Todas las carreras</option>
-              <option v-for="c in careerOptions" :key="c.id" :value="c.id">
-                {{ c.label }}
-              </option>
-            </select>
-            <svg class="select-chevron" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </div>
-        </div>
-
-        <!-- 3. Combobox Turno -->
-        <div class="filter-col">
-          <label class="filter-label">Turno</label>
-          <div class="select-wrapper">
-            <select v-model="selectedShift" class="modern-select" @change="loadData">
-              <option value="">Todos los turnos</option>
-              <option value="morning">Matutino</option>
-              <option value="afternoon">Vespertino</option>
-              <option value="night">Nocturno</option>
-            </select>
-            <svg class="select-chevron" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </div>
-        </div>
-
-        <!-- 4. Combobox Vigencia IMSS -->
-        <div class="filter-col">
-          <label class="filter-label">Vigencia IMSS</label>
-          <div class="select-wrapper">
-            <select v-model="selectedImssFilter" class="modern-select" @change="loadData">
-              <option value="">Todos los estados</option>
-              <option value="true">Con IMSS Vigente</option>
-              <option value="false">Pendiente de IMSS</option>
-            </select>
-            <svg class="select-chevron" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </div>
-        </div>
-
-        <!-- Botones de Acción de Filtro -->
-        <div class="filter-actions">
-          <UiButton
-            v-if="hasActiveFilters"
-            variant="secondary"
-            class="reset-filters-btn"
-            title="Restablecer filtros"
-            @click="resetAllFilters"
-          >
-            Limpiar
-          </UiButton>
-          <UiButton variant="primary" class="apply-filter-btn" :disabled="isLoading" @click="loadData">
-            {{ isLoading ? 'Buscando...' : 'Filtrar' }}
-          </UiButton>
+          </details>
+          <UiButton v-if="hasActiveFilters" variant="secondary" @click="resetAllFilters">Limpiar filtros</UiButton>
         </div>
       </div>
-
-      <!-- Tabla de Estudiantes con Alineación Perfecta -->
-      <UiTable label="Listado del Padrón de Alumnos" :columns="columns" :rows="students">
-        <template #cell-controlNumber="{ row }">
-          <span class="control-number-cell">{{ row.controlNumber }}</span>
-        </template>
-
-        <template #cell-fullName="{ row }">
-          <span class="fullname-cell">{{ row.fullName }}</span>
-        </template>
-
-        <template #cell-careerCode="{ row }">
-          <span class="career-pill">{{ row.careerCode }}</span>
-        </template>
-
-        <template #cell-currentSemester="{ row }">
-          <span class="semester-cell">{{ row.currentSemester }}°</span>
-        </template>
-
-        <template #cell-curriculumProgressPercentage="{ row }">
-          <span
-            class="progress-badge"
-            :class="{ qualified: row.curriculumProgressPercentage >= 70 }"
-          >
-            {{ row.curriculumProgressPercentage }}%
-          </span>
-        </template>
-
-        <template #cell-shift="{ row }">
-          <span class="shift-cell">{{ formatShift(row.shift) }}</span>
-        </template>
-
-        <template #cell-hasValidImss="{ row }">
-          <UiBadge :tone="row.hasValidImss ? 'success' : 'warning'">
-            {{ row.hasValidImss ? 'Vigente' : 'Pendiente' }}
-          </UiBadge>
-        </template>
-
-        <template #cell-hasUserAccount="{ row }">
-          <UiBadge :tone="row.hasUserAccount ? 'info' : 'warning'">
-            {{ ({ missing: 'Sin cuenta', active: 'Activa', inactive: 'Inactiva', inconsistent: 'Revisar cuenta' })[row.accountStatus] || 'Revisar cuenta' }}
-          </UiBadge>
-          <small v-if="row.accountUsername">{{ row.accountUsername }}</small>
-        </template>
-
-        <template #cell-actions="{ row }">
-          <div class="row-actions">
-            <button
-              type="button"
-              class="table-btn secondary"
-              title="Ver expediente y vigencia IMSS"
-              @click="openEditModal(row)"
-            >
-              Consultar / IMSS
-            </button>
-            <button
-              v-if="canRegister && !row.hasUserAccount"
-              type="button"
-              class="table-btn primary"
-              title="Generar credenciales para el alumno"
-              @click="handleCreateAccount(row)"
-            >
-              Crear Cuenta
-            </button>
-            <button v-if="canRegister && row.hasUserAccount" type="button" class="table-btn secondary" @click="resetCandidate = row; resetError = ''; resetOpen = true">Restablecer contraseña</button>
-          </div>
-        </template>
-      </UiTable>
+      <p v-if="isLoading" class="roster-feedback" role="status">Cargando alumnos…</p>
+      <div class="roster-table" :aria-busy="isLoading">
+        <UiTable label="Listado del Padrón de Alumnos" :columns="columns" :rows="students">
+          <template #cell-fullName="{ row }"><span class="roster-name">{{ row.fullName }}</span></template>
+          <template #cell-controlNumber="{ row }"><span class="roster-control">{{ row.controlNumber }}</span></template>
+          <template #cell-careerCode="{ row }"><div class="roster-career"><span>{{ row.careerCode }}</span><small v-if="row.currentSemester != null">Semestre {{ row.currentSemester }}</small></div></template>
+          <template #cell-socialServiceFollowUp="{ row }"><div v-if="row.socialServiceFollowUp" class="roster-status"><UiBadge :tone="followUpTone(row)">{{ followUpLabels[row.socialServiceFollowUp.status] }}</UiBadge><small v-if="row.socialServiceFollowUp.status === 'in_progress'">{{ assessmentLabels[row.socialServiceFollowUp.progressAssessment || 'pending'] }}</small></div></template>
+          <template #cell-actions="{ row }"><UiButton variant="secondary" @click="openDetail(row)" :aria-label="'Ver detalle de ' + row.fullName">Ver detalle</UiButton></template>
+        </UiTable>
+      </div>
+      <p v-if="!isLoading && !students.length && !errorMessage" class="roster-feedback" role="status">No hay alumnos que coincidan con los filtros.</p>
+      <div class="roster-pagination">
+        <span>{{ totalItems }} alumnos · Página {{ currentPage }} de {{ Math.max(1, Math.ceil(totalItems / 50)) }}</span>
+        <div><UiButton variant="secondary" :disabled="isLoading || currentPage <= 1" @click="currentPage--; loadData()">Anterior</UiButton><UiButton variant="secondary" :disabled="isLoading || currentPage * 50 >= totalItems" @click="currentPage++; loadData()">Siguiente</UiButton></div>
+      </div>
     </UiCard>
 
     <!-- ================================================================== -->
     <!-- MODAL 1: ALTA / EDICIÓN INDIVIDUAL DE ALUMNO (CASO ESPECÍFICO)      -->
     <!-- ================================================================== -->
+    <UiDialog v-model="detailOpen" size="lg" title="Detalle del alumno">
+      <div v-if="detailRow" class="student-detail">
+        <header class="student-detail-heading"><h2>{{ detailRow.fullName }}</h2><p>{{ detailRow.controlNumber }} · {{ detailRow.careerCode }}</p></header>
+        <p v-if="detailLoading" role="status">Cargando expediente…</p>
+        <UiAlert v-if="detailError" tone="danger"><p>{{ detailError }}</p><UiButton variant="secondary" @click="openDetail(detailRow)">Reintentar</UiButton></UiAlert>
+        <section v-if="detailRow.socialServiceFollowUp" class="detail-section">
+          <h3>Seguimiento de Servicio Social</h3>
+          <UiBadge :tone="followUpTone(detailRow)">{{ followUpLabels[detailRow.socialServiceFollowUp.status] }}</UiBadge>
+          <dl class="detail-fields">
+            <div v-if="detailRow.socialServiceFollowUp.status === 'in_progress'"><dt>Constancia documental</dt><dd>{{ assessmentLabels[detailRow.socialServiceFollowUp.progressAssessment || 'pending'] }}</dd></div>
+            <div><dt>Primer periodo de aptitud</dt><dd>{{ detailRow.socialServiceFollowUp.eligiblePeriodCode || 'Pendiente de confirmar' }}</dd></div>
+            <div><dt>Periodo de seguimiento</dt><dd>{{ detailRow.socialServiceFollowUp.trackingPeriodCode || 'Sin periodo activo' }}</dd></div>
+            <div><dt>Semestres desde la aptitud</dt><dd>{{ detailRow.socialServiceFollowUp.elapsedSemesters ?? 'Pendiente' }}</dd></div>
+            <div><dt>Evidencias aprobadas</dt><dd>{{ detailRow.socialServiceFollowUp.approvedDocumentsCount }}</dd></div>
+            <div><dt>Última evidencia aprobada</dt><dd>{{ displayDate(detailRow.socialServiceFollowUp.lastApprovedAt) }}</dd></div>
+            <div><dt>Observación de seguimiento</dt><dd>{{ detailRow.socialServiceFollowUp.notes || 'Sin observaciones' }}</dd></div>
+            <div><dt>Última valoración</dt><dd>{{ displayDate(detailRow.socialServiceFollowUp.reviewedAt) }}</dd></div>
+          </dl>
+          <UiButton v-if="canAssess && detailRow.socialServiceFollowUp.status === 'in_progress' && detailRow.socialServiceFollowUp.trackingPeriodId" variant="secondary" @click="detailOpen = false; openAssessment(detailRow)">Valorar seguimiento</UiButton>
+        </section>
+        <UiAlert v-if="detailRow.canReadProfile === false" tone="info">Este candidato dispone de un resumen de seguimiento. Los datos personales y académicos completos requieren acceso a su expediente.</UiAlert>
+        <section v-for="section in detailSections" :key="section.title" class="detail-section">
+          <h3>{{ section.title }}</h3><dl class="detail-fields"><div v-for="field in section.fields" :key="field[0] ?? ''"><dt>{{ field[0] }}</dt><dd>{{ field[1] || 'Sin registro' }}</dd></div></dl>
+        </section>
+        <section v-if="selectedDetail" class="detail-section">
+          <h3>Vigencia IMSS</h3>
+          <dl class="detail-fields"><div><dt>Estado documental</dt><dd>{{ ({missing:'Sin documento',pending:'Pendiente de revisión',approved:'Aprobado',rejected:'Rechazado'})[selectedDetail.imssStatus] || selectedDetail.imssStatus }}</dd></div><div><dt>Validó</dt><dd>{{ selectedDetail.imssValidatedByName || 'Sin registro' }}</dd></div><div><dt>Fecha de validación</dt><dd>{{ displayDate(selectedDetail.imssValidatedAt) }}</dd></div><div v-if="selectedDetail.imssRejectionReason"><dt>Motivo de rechazo</dt><dd>{{ selectedDetail.imssRejectionReason }}</dd></div></dl>
+          <UiAlert v-if="imssError" tone="danger">{{ imssError }}</UiAlert>
+          <div class="detail-actions"><UiButton v-if="selectedDetail.hasImssFile" variant="secondary" @click="handleDownloadStudentImss(selectedDetail.id, selectedDetail.controlNumber)">Ver PDF IMSS</UiButton><UiButton v-if="canReview" variant="secondary" :disabled="!selectedDetail.imssDocumentId" @click="reviewStudentImss">{{ selectedDetail.imssStatus === 'pending' ? 'Revisar IMSS' : 'Ver dictamen IMSS' }}</UiButton></div>
+        </section>
+        <section v-if="canRegister && selectedDetail" class="detail-section"><h3>Administración</h3><div class="detail-actions"><UiButton variant="secondary" @click="detailOpen = false; openEditModal(detailRow)">Editar datos</UiButton><UiButton v-if="!detailRow.hasUserAccount" variant="secondary" @click="detailOpen = false; handleCreateAccount(detailRow)">Crear cuenta</UiButton><UiButton v-else variant="secondary" @click="detailOpen = false; resetCandidate = detailRow; resetError = ''; resetOpen = true">Restablecer contraseña</UiButton></div></section>
+      </div>
+      <template #footer><UiButton variant="secondary" @click="detailOpen = false">Cerrar detalle</UiButton></template>
+    </UiDialog>
+
+    <UiDialog v-model="assessmentOpen" title="Valorar seguimiento SS">
+      <p>{{ assessmentCandidate?.fullName }}</p>
+      <UiField id="follow-up-assessment" label="Constancia"><select id="follow-up-assessment" v-model="assessment" :disabled="savingAssessment"><option value="consistent">Constante</option><option value="low_progress">Con poco avance</option></select></UiField>
+      <UiField id="follow-up-notes" label="Observación"><textarea id="follow-up-notes" v-model="assessmentNotes" maxlength="1000" :disabled="savingAssessment" /></UiField>
+      <p v-if="assessmentError" role="alert">{{ assessmentError }}</p>
+      <UiButton :disabled="savingAssessment" @click="saveAssessment">{{ savingAssessment ? 'Guardando…' : 'Guardar valoración' }}</UiButton>
+    </UiDialog>
     <UiDialog
       v-model="isStudentModalOpen"
       size="lg"
       :title="isEditing ? `Expediente · ${studentForm.controlNumber}` : 'Agregar Alumno (Caso Específico)'"
     >
       <fieldset class="modal-form-grid" :disabled="!canRegister" style="border:0;padding:0;margin:0">
+        <UiField id="ss-eligible-period" label="Primer periodo de aptitud SS" hint="Primer semestre como candidato"><select id="ss-eligible-period" v-model="studentForm.socialServiceEligiblePeriodId" class="modern-select"><option :value="undefined">Activo al crear / conservar al editar</option><option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option></select></UiField>
         <UiField label="No. de Control *" hint="Ej. I23050363">
           <input v-model="studentForm.controlNumber" type="text" class="modern-input" placeholder="I23050999" />
         </UiField>
@@ -795,7 +676,7 @@ onMounted(async () => {
           </span>
         </div>
         <p class="imss-box-desc">
-          Revisa el PDF y confirma su fecha de expedición antes de aprobarlo.
+          Revisa que el PDF corresponda al alumno y muestre estado VIGENTE antes de aprobarlo.
         </p>
         <p>El alumno debe cargar su constancia desde su portal.</p>
 
@@ -1444,5 +1325,59 @@ onMounted(async () => {
   border-radius: 4px;
   display: inline-block;
   width: fit-content;
+}
+</style>
+
+<style scoped>
+.main-card { padding: 0; overflow: hidden; border-color: var(--color-border); }
+.page-subtitle { color: var(--color-text-secondary); }
+.roster-toolbar { padding: 24px; }
+.tracking-period { margin: 0 0 16px; font-size: 14px; color: var(--color-text-secondary); }
+.roster-filters { display: grid; grid-template-columns: 1.3fr 1fr 1.3fr; gap: 16px; }
+.roster-filters :deep(.field), .extra-filter-fields :deep(.field) { margin-bottom: 0; }
+.roster-filter-actions { display: flex; align-items: start; gap: 12px; margin-top: 12px; }
+.extra-filters { flex: 1; }
+.extra-filters summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--color-primary); font-weight: 600; }
+.extra-filters summary::before { content: '+'; margin-right: 8px; }
+.extra-filters[open] summary::before { content: '−'; }
+.extra-filter-fields { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; padding-top: 8px; }
+.roster-table :deep(.table-wrap) { margin: 0; border-radius: 0; }
+.roster-table :deep(table) { width: 100%; table-layout: fixed; white-space: normal; }
+.roster-table :deep(th), .roster-table :deep(td) { padding: 16px; overflow-wrap: anywhere; vertical-align: middle; }
+.roster-table :deep(th) { font-size: 12px; text-transform: none; letter-spacing: 0; }
+.roster-table :deep(th:nth-child(1)) { width: 27%; }
+.roster-table :deep(th:nth-child(2)) { width: 15%; }
+.roster-table :deep(th:nth-child(3)) { width: 17%; }
+.roster-table :deep(th:nth-child(4)) { width: 27%; }
+.roster-table :deep(th:last-child) { width: 14%; }
+.roster-table :deep(button) { min-height: 44px; padding: 8px 12px; white-space: normal; }
+.roster-name { font-weight: 600; color: var(--color-text-primary); line-height: 1.5; }
+.roster-control { font-variant-numeric: tabular-nums; }
+.roster-career, .roster-status { display: flex; flex-direction: column; align-items: start; gap: 6px; }
+.roster-career small, .roster-status small { color: var(--color-text-secondary); font-size: 13px; }
+.roster-status :deep(.badge) { max-width: 100%; white-space: normal; line-height: 1.4; }
+.roster-feedback { margin: 0; padding: 24px; color: var(--color-text-secondary); }
+.roster-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); font-size: 14px; }
+.roster-pagination > div, .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.student-detail { min-width: 0; }
+.student-detail-heading h2 { font-size: 22px; margin: 0 0 8px; overflow-wrap: anywhere; }
+.student-detail-heading p { margin: 0; color: var(--color-text-secondary); }
+.detail-section { padding-top: 20px; margin-top: 20px; border-top: 1px solid var(--color-border); }
+.detail-section h3 { font-size: 16px; margin: 0 0 16px; }
+.detail-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px 24px; margin: 16px 0; }
+.detail-fields > div { min-width: 0; }
+.detail-fields dt { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 4px; }
+.detail-fields dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--color-text-primary); }
+@media(max-width:800px) {
+ .roster-filters, .extra-filter-fields { grid-template-columns: 1fr; }
+ .roster-toolbar { padding: 16px; }
+ .roster-table :deep(thead) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+ .roster-table :deep(table), .roster-table :deep(tbody) { display: block; }
+ .roster-table :deep(tr) { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; padding: 20px 16px; border-bottom: 1px solid var(--color-border); }
+ .roster-table :deep(td) { display: block; padding: 0; border: 0; }
+ .roster-table :deep(td:first-child), .roster-table :deep(td:nth-child(4)), .roster-table :deep(td:last-child) { grid-column: 1 / -1; }
+ .roster-table :deep(td:last-child) { text-align: right; }
+ .detail-fields { grid-template-columns: 1fr; }
+ .roster-pagination { padding: 16px; }
 }
 </style>

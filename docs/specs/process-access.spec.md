@@ -5,7 +5,7 @@ Contrato vigente; prevalece sobre permisos contradictorios de contratos anterior
 - SS consulta y aprueba únicamente expedientes y documentos SS; PP únicamente PP. Aplicar alcance a listados, detalles, PDF, historial, seguimiento y PNC antes de paginar.
 - Alumno consulta y carga exclusivamente sus propias evidencias. Personal, incluido admin, no carga formatos del alumno. Aceptación PP admite coordinador PP y admin; alumno solo consulta. Eliminación y reemplazo exigen el mismo permiso.
 - Requisitos generales de preingreso: revisión compartida con datos mínimos. Después del ingreso, vincular su consulta al proceso propio.
-- Padrón agrega sección IMSS de preingreso usando la cola General/IMSS. No amplía acceso a perfiles completos. Dictamen compartido mediante `/api/documents/{id}/review`; adaptador `/api/students/{id}/imss/validation` aplica el mismo alcance y devuelve documento, sin consultar detalle académico.
+- Padrón presenta IMSS dentro del detalle autorizado; la cola General/IMSS de preingreso permanece en la bandeja documental, sin duplicar tablas en el padrón. No amplía acceso a perfiles completos. Dictamen compartido mediante `/api/documents/{id}/review`; adaptador `/api/students/{id}/imss/validation` aplica el mismo alcance y devuelve documento, sin consultar detalle académico.
 - Ambos encargados gestionan empresas, supervisores y convenios. Admin conserva gestión; jefatura consulta. Altas, importaciones y cuentas globales del padrón son exclusivas de admin; la consulta de los encargados se limita a su proceso.
 - Estadísticas agregadas SS/PP disponibles para ambos encargados, admin y jefatura; nunca exponen identificadores de alumnos o documentos. Seguimiento nominal permanece restringido.
 - Estadísticas abren en el proceso propio; ambos roles, admin y jefatura abren SS. Query explícita prevalece. Botones alternan un proceso a la vez, conservan periodo y descartan respuestas anteriores.
@@ -26,3 +26,5 @@ Aceptación: matriz por rol y proceso mediante HTTP real, IDOR sin efectos de al
 - Catálogo `/companies`: listado, formularios y filtros; supervisores y convenios en detalle, incluyendo estado, PDF y eliminación protegida. Jefatura consulta; ambos encargados y admin gestionan.
 
 Migración y despliegue: [guía incremental](../../database/migrations/README.md).
+
+Seguimiento SS: encargado SS puede consultar candidatos sin trámite únicamente como resumen nominal (matrícula, nombre, carrera, seguimiento). Los otros campos son nulos y el perfil sigue restringido. Admin/encargado SS valoran; jefatura consulta; PP no recibe seguimiento SS.

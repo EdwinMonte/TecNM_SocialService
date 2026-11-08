@@ -33,6 +33,11 @@ public sealed class AuditInterceptor(ICurrentUser currentUser) : SaveChangesInte
 
         foreach (var entry in context.ChangeTracker.Entries<AuditableEntity>())
         {
+            if (entry.Entity is Student student && (entry.State == EntityState.Added && student.SocialServiceEligiblePeriodId.HasValue || entry.State == EntityState.Modified && entry.Property(nameof(Student.SocialServiceEligiblePeriodId)).IsModified))
+            {
+                student.SocialServiceEligiblePeriodUpdatedAt = now;
+                student.SocialServiceEligiblePeriodUpdatedBy = currentUserId;
+            }
             switch (entry.State)
             {
                 case EntityState.Added:

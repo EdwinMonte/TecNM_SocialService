@@ -75,6 +75,13 @@ public sealed class StudentConfiguration : AuditableEntityConfiguration<Student>
             .HasFilter("user_id IS NOT NULL AND deleted_at IS NULL")
             .HasDatabaseName("uq_students__user_id");
 
+        builder.Property(s => s.SocialServiceEligiblePeriodUpdatedAt).HasColumnName("social_service_eligible_period_updated_at");
+        builder.Property(s => s.SocialServiceEligiblePeriodUpdatedBy).HasColumnName("social_service_eligible_period_updated_by");
+        builder.HasOne<User>().WithMany().HasForeignKey(s => s.SocialServiceEligiblePeriodUpdatedBy).OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(s => s.SocialServiceEligiblePeriodUpdatedBy);
+        builder.Property(s => s.SocialServiceEligiblePeriodId).HasColumnName("social_service_eligible_period_id");
+        builder.HasOne<AcademicPeriod>().WithMany().HasForeignKey(s => s.SocialServiceEligiblePeriodId).OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_students__ss_eligible_period");
+        builder.HasIndex(s => s.SocialServiceEligiblePeriodId).HasDatabaseName("idx_students__ss_eligible_period_id");
         builder.HasIndex(s => s.CareerId).HasDatabaseName("idx_students__career_id");
         builder.HasIndex(s => s.ImportBatchId).HasDatabaseName("idx_students__import_batch_id");
         builder.HasIndex(s => s.Shift).HasDatabaseName("idx_students__shift");

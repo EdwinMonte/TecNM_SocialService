@@ -55,6 +55,7 @@ internal static class AccountImportChecks
         db.ChangeTracker.Clear();
         var one=await db.Students.Include(s=>s.User).SingleAsync(s=>s.ControlNumber=="QAIMP01");
         var two=await db.Students.Include(s=>s.User).SingleAsync(s=>s.ControlNumber=="QAIMP02");
+        if(one.SocialServiceEligiblePeriodId!=period || one.SocialServiceEligiblePeriodUpdatedAt==null || one.SocialServiceEligiblePeriodUpdatedBy==null) throw new Exception("Import must preserve eligible period provenance.");
         using var student=factory.CreateClient(new(){BaseAddress=new Uri("https://localhost")});
         await Expect(await student.PostAsJsonAsync("/api/auth/login",new{username=" QA.IMPORT2@MONCLOVA.TECNM.MX ",password="QAIMP02"}),HttpStatusCode.OK);
         await Expect(await student.PostAsJsonAsync("/api/auth/login",new{username="QAIMP02",password="QAIMP02"}),HttpStatusCode.Unauthorized);
@@ -63,6 +64,7 @@ internal static class AccountImportChecks
         result=await Import(Excel(("QAIMP01","qa.import1@monclova.tecnm.mx","Actualizado")));
         if(result.GetProperty("existingAccounts").GetInt32()!=1 || result.GetProperty("createdAccounts").GetInt32()!=0) throw new Exception("Reimport created a duplicate account.");
         db.ChangeTracker.Clear();
+        if((await db.Students.AsNoTracking().SingleAsync(s=>s.Id==one.Id)).SocialServiceEligiblePeriodId!=period) throw new Exception("Reimport must not reset eligibility origin.");
         var preserved=await db.Users.SingleAsync(u=>u.Id==one.UserId);
         if(preserved.PasswordHash!=custom || preserved.IsActive || await db.Users.Where(u=>u.Username=="admin").Select(u=>u.PasswordHash).SingleAsync()!=adminHash) throw new Exception("Import modified account credentials/activity.");
         await Expect(await student.PutAsJsonAsync("/api/students/me/contact",new{institutionalEmail="changed@monclova.tecnm.mx"}),HttpStatusCode.BadRequest);

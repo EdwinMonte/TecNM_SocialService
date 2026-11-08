@@ -6,15 +6,17 @@ public sealed record StudentListItem(
     string FullName,
     long CareerId,
     string CareerCode,
-    int CurrentSemester,
-    decimal CurriculumProgressPercentage,
-    string Shift,
-    bool IsEnrolled,
-    bool HasValidImss,
-    bool HasUserAccount)
+    int? CurrentSemester,
+    decimal? CurriculumProgressPercentage,
+    string? Shift,
+    bool? IsEnrolled,
+    bool? HasValidImss,
+    bool? HasUserAccount)
 {
     public string? AccountUsername { get; init; }
-    public string AccountStatus { get; init; } = "missing";
+    public string? AccountStatus { get; init; } = "missing";
+    public bool CanReadProfile {get;init;} = true;
+    public SocialServiceFollowUpDto? SocialServiceFollowUp {get;init;}
 }
 
 public sealed record StudentDetail(
@@ -48,6 +50,7 @@ public sealed record StudentDetail(
 {
     public string? AccountUsername { get; init; }
     public string AccountStatus { get; init; } = "missing";
+    public long? SocialServiceEligiblePeriodId {get;init;}
     public string ImssStatus { get; init; } = "missing";
     public long? ImssDocumentId { get; init; }
     public DateOnly? ImssDocumentDate { get; init; }
@@ -70,7 +73,8 @@ public sealed record StudentRequest(
     string? PhoneNumber = null,
     int CurrentSemester = 7,
     int CompletedCredits = 156,
-    bool IsEnrolled = true);
+    bool IsEnrolled = true,
+    long? SocialServiceEligiblePeriodId = null);
 
 public sealed record StudentContactRequest(
     string? PersonalEmail,
@@ -129,3 +133,6 @@ public sealed record StudentImportResult(
     string? CreatedByName,
     IReadOnlyList<StudentImportRowError> RowErrors) { public int CreatedAccounts { get; init; } public int ExistingAccounts { get; init; } }
 
+
+public sealed record FollowUpReviewRequest(long PeriodId, string Assessment, string? Notes = null);
+public sealed record SocialServiceFollowUpDto(long? SocialServiceId, long? EligiblePeriodId, string? EligiblePeriodCode, long? TrackingPeriodId, string? TrackingPeriodCode, int? ElapsedSemesters, int ApprovedDocumentsCount, DateTimeOffset? LastApprovedAt, string Status, string? ProgressAssessment, string? Notes, DateTimeOffset? ReviewedAt);

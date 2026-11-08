@@ -441,6 +441,7 @@ public partial class StudentImportsService(
                         student = new Student
                         {
                             CareerId = career.Id,
+                            SocialServiceEligiblePeriodId = periodId,
                             ImportBatchId = batch.Id,
                             ControlNumber = rawControl,
                             Curp = string.IsNullOrWhiteSpace(curp) ? null : curp,

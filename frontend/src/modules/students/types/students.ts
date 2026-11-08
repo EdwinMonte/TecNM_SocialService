@@ -6,17 +6,20 @@ export interface StudentListItem {
   fullName: string
   careerId: number
   careerCode: string
-  currentSemester: number
-  curriculumProgressPercentage: number
-  shift: StudentShift
-  isEnrolled: boolean
-  hasValidImss: boolean
-  hasUserAccount: boolean
+  currentSemester: number | null
+  curriculumProgressPercentage: number | null
+  shift: StudentShift | null
+  isEnrolled: boolean | null
+  hasValidImss: boolean | null
+  canReadProfile?: boolean
+  socialServiceFollowUp?: SocialServiceFollowUp | null
+  hasUserAccount: boolean | null
   accountUsername: string | null
-  accountStatus: 'missing' | 'active' | 'inactive' | 'inconsistent'
+  accountStatus: 'missing' | 'active' | 'inactive' | 'inconsistent' | null
 }
 
 export interface StudentDetail {
+  socialServiceEligiblePeriodId: number | null
   id: number
   userId: number | null
   accountUsername: string | null
@@ -55,6 +58,8 @@ export interface StudentDetail {
 export type Student = StudentListItem
 
 export interface StudentFilterParams {
+  followUpStatus?: string
+  followUpProgress?: string
   page?: number
   pageSize?: number
   search?: string
@@ -75,6 +80,7 @@ export interface PagedResponse<T> {
 }
 
 export interface StudentRequest {
+  socialServiceEligiblePeriodId?: number | null
   careerId: number
   controlNumber: string
   curp?: string | null
@@ -146,4 +152,19 @@ export interface StudentImportResult {
   createdAt: string
   createdByName?: string | null
   rowErrors: StudentImportRowError[]
+}
+
+export interface SocialServiceFollowUp {
+ socialServiceId: number | null
+ eligiblePeriodId: number | null
+ eligiblePeriodCode: string | null
+ trackingPeriodId: number | null
+ trackingPeriodCode: string | null
+ elapsedSemesters: number | null
+ approvedDocumentsCount: number
+ lastApprovedAt: string | null
+ status: string
+ progressAssessment: 'consistent' | 'low_progress' | null
+ notes: string | null
+ reviewedAt: string | null
 }

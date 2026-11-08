@@ -14,3 +14,7 @@ Este directorio centraliza los recursos y especificaciones de base de datos del 
 
 > [!WARNING]
 > La carpeta `database/legacy/` contiene scripts y esquemas del sistema legacy bajo SQL Server. No deben ejecutarse contra el motor PostgreSQL del proyecto ni intentar migrarse 1:1 sin rediseño previo.
+
+Escenarios opcionales de seguimiento SS: ejecutar seed/scenarios/01_social_service_follow_up.sql después de la migración 20261108. Reutiliza los once alumnos demo, activa AD26, añade FJ25 y distribuye avisos, PNC, progreso constante/poco avance/pendiente, liberado y periodo de aptitud pendiente. Repetible; solo para datos de prueba autorizados.
+
+Verificación contra estos escenarios locales: node frontend/scripts/check-live-follow-up.mjs (PLAYWRIGHT_MODULE configurado). Usa API real, verifica los siete estatus, filtros, valoración y permisos SS/PP; capturas en tmp/pdf-qa/live-follow-up.

@@ -25,3 +25,6 @@ No ejecutar `database/design/schema.sql` sobre una instalación existente.
 Detener escrituras durante clasificación y finalización. La versión nueva de la API requiere ambas migraciones completas. Una falla de finalización revierte su transacción; corregir pendientes y volver a ejecutarla. No elimina empresas, evidencias ni historiales.
 
 Verificación aislada: `pwsh -File backend.Tests/run-isolated.ps1` con Docker, o `pwsh -File backend.Tests/run-native-isolated.ps1` con PostgreSQL 18 local. Ambas crean una base temporal `document_checks`; nunca usan la conexión del proyecto. Prueban migración incompleta, esquema nuevo, permisos HTTP y agregaciones SQL.
+
+## Seguimiento SS — 8 de noviembre de 2026
+Aplicar 20261108_student_social_service_follow_up.sql después de cuentas. Desplegar API/frontend juntos. La migración conserva todos los datos y deja periodos de aptitud históricos nulos; admin debe confirmarlos. PNC de seguimiento no crea casos de Calidad. Ensayar en base aislada antes del despliegue.

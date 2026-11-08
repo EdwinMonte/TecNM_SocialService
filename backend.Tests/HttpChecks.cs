@@ -210,6 +210,7 @@ internal static class HttpChecks
             }
             finally { testClock.UtcNow = originalTime; }
         }
+        await FollowUpChecks.RunAsync(factory);
         await AccessChecks.RunAsync(factory);
         await AccountImportChecks.RunAsync(factory, bytes);
         async Task<HttpResponseMessage> Replace(byte suffix)

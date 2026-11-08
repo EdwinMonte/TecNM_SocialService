@@ -35,3 +35,7 @@ Geometría de plantillas: comprobar páginas y dimensiones del manifiesto, campo
 ClosingChecks completa SS/PP por HTTP después del cambio de año IMSS. Comprueba siete anexos SS, progreso 80/90/100, CA/EV/CT PP, liberación concurrente con un solo folio y bloqueos terminales. Seguimiento y detalle deben coincidir; fechas históricas/paquetes v1 conservan su validez sin acreditar documentos v2.
 
 Entorno local migrado: `frontend/scripts/check-live-documents.mjs` verifica login real alumno/admin, bandeja y generación SS/PP sin mocks ni modificación de evidencias. Guía de acceso y reinicio en docs/LOCAL_DOCUMENT_TESTING.md. Pruebas de interfaz con fixtures cubren carga CP firmada visible y ausencia de prellenado CP temporal.
+
+Seguimiento SS: FollowUpChecks cubre avisos semestrales, PDFs aprobados frente a pendientes y automáticos, PNC, cancelados, liberados, resumen de candidatos, aislamiento PP, concurrencia e idempotencia de valoraciones y filtros. Interfaz: node frontend/scripts/check-follow-up-ui.mjs con Vite en puerto 5900 y PLAYWRIGHT_MODULE; capturas escritorio/móvil en tmp/pdf-qa/follow-up.
+
+Padrón compacto: node frontend/scripts/check-students-layout-ui.mjs verifica una sola tabla, cinco columnas, detalle completo/restringido, reintento, Escape/foco, vacíos, fallos y geometría a 1440/1024/390 px, además de tema oscuro. Capturas en tmp/pdf-qa/students-layout. La revisión IMSS sigue cubierta desde la bandeja documental y el detalle.
