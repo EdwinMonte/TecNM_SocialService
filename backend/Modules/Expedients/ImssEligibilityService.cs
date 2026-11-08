@@ -11,8 +11,7 @@ public sealed class ImssEligibilityService(TecNMDbContext db, TimeProvider clock
         TimeZoneInfo.ConvertTime(clock.GetUtcNow(), TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City")).DateTime);
 
     public static bool IsCurrent(ExpedientDocument? document, DateOnly today) => document is
-        { TramiteType: "general", TramiteId: null, DocumentCode: "IMSS", Status: "approved", DeletedAt: null, DocumentDate: { } issued }
-        && issued.Year == today.Year && issued <= today;
+        { TramiteType: "general", TramiteId: null, DocumentCode: "IMSS", Status: "approved", DeletedAt: null };
 
     public Task<ExpedientDocument?> GetLatestAsync(long studentId, CancellationToken ct = default) => db.ExpedientDocuments
         .Include(d => d.Reviewer).AsNoTracking()
@@ -23,14 +22,8 @@ public sealed class ImssEligibilityService(TecNMDbContext db, TimeProvider clock
     {
         var doc = await GetLatestAsync(studentId, ct);
         if (!IsCurrent(doc, Today(clock))) throw new BusinessRuleException("students.imss_approval_required",
-            "Requiere una Constancia de Vigencia IMSS del año actual aprobada por Vinculación.");
+            "Requiere una Constancia de Vigencia IMSS con estado VIGENTE aprobada por Vinculación.");
         return doc!.Id;
     }
 
-    public static void ValidateApprovalDate(DateOnly? issued, TimeProvider clock)
-    {
-        var today = Today(clock);
-        if (!issued.HasValue || issued.Value.Year != today.Year || issued.Value > today)
-            throw new ValidationException(new Dictionary<string, string[]> { ["documentDate"] = ["Confirma la fecha de expedición del año actual, sin fechas futuras."] });
-    }
 }

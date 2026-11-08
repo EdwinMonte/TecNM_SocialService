@@ -249,7 +249,7 @@ public sealed class InternshipsService(
         student.CurrentSemester = request.CurrentSemester;
         student.Shift = normalizedShift;
         student.PhoneNumber = request.PhoneNumber.Trim();
-        student.InstitutionalEmail = request.InstitutionalEmail.Trim();
+        // Institutional email is the login identity and is managed only through student administration.
 
         var targetPeriodId = request.PeriodId;
         if (targetPeriodId <= 0)
@@ -322,7 +322,7 @@ public sealed class InternshipsService(
             entity.Student.CurrentSemester = request.CurrentSemester;
             entity.Student.Shift = normalizedShift;
             entity.Student.PhoneNumber = request.PhoneNumber.Trim();
-            entity.Student.InstitutionalEmail = request.InstitutionalEmail.Trim();
+            // Preserve the institutional login identity.
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

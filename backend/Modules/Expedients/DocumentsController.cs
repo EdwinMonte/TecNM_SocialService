@@ -95,6 +95,11 @@ public sealed class DocumentsController(DocumentsService service) : ControllerBa
         return File(stream, "application/pdf", fileName);
     }
 
+    [HttpGet("/api/documents/{id:long}/imss-date-suggestion")]
+    [Authorize(Roles = "admin,social_service_officer,internship_coordinator")]
+    public async Task<ActionResult<ImssDateSuggestion>> SuggestImssDate(long id, CancellationToken cancellationToken = default)
+        => Ok(await service.GetImssDateSuggestionAsync(id, cancellationToken));
+
     [HttpPost("/api/documents/{id:long}/review")]
     [Authorize(Roles = "admin,social_service_officer,internship_coordinator")]
     public async Task<ActionResult<ExpedientDocumentResponse>> ReviewDocument(

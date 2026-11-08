@@ -32,3 +32,5 @@ export interface ReviewDocumentRequest {
 
 
 export interface DocumentRequirement { code: string; title: string; pdfKey: string | null; templateKey: string | null; canUpload: boolean; blockedReason: string | null }
+
+export interface ImssDateSuggestion { status: "found" | "ambiguous" | "not_found" | "unavailable"; suggestedDate: string | null; pageNumber: number | null }

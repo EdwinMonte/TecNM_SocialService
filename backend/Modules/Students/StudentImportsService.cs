@@ -16,7 +16,8 @@ namespace TecNM.Api.Modules.Students;
 
 public partial class StudentImportsService(
     TecNMDbContext dbContext,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    StudentAccountsService accounts)
 {
     private static readonly byte[] ZipMagicBytes = [0x50, 0x4B, 0x03, 0x04]; // PK.. (.xlsx)
 
@@ -283,6 +284,11 @@ public partial class StudentImportsService(
         var fullFilePath = Path.Combine(importsDir, storedFileName);
         await File.WriteAllBytesAsync(fullFilePath, fileBytes, cancellationToken);
 
+        var careers = await dbContext.Careers
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .ToListAsync(cancellationToken);
+
         var batch = new StudentImportBatch
         {
             PeriodId = period.Id,
@@ -294,173 +300,210 @@ public partial class StudentImportsService(
         dbContext.StudentImportBatches.Add(batch);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var careers = await dbContext.Careers
-            .AsNoTracking()
-            .Where(c => c.IsActive)
-            .ToListAsync(cancellationToken);
-
-        var existingStudents = await dbContext.Students
-            .ToDictionaryAsync(s => s.ControlNumber.ToUpperInvariant(), s => s, cancellationToken);
+        var successfulControls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var successfulEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var createdAccounts = 0;
+        var existingAccounts = 0;
+        var fatal = false;
 
         var rowErrors = new List<StudentImportRowError>();
         var totalRecords = 0;
         var importedRecords = 0;
         var failedRecords = 0;
 
-        for (var i = 1; i < rawRows.Count; i++)
+        try
         {
-            var rowNumber = i + 1;
-            var rowCells = rawRows[i];
-
-            if (rowCells.Values.All(string.IsNullOrWhiteSpace))
+            for (var i = 1; i < rawRows.Count; i++)
             {
-                continue;
-            }
+                var rowNumber = i + 1;
+                var rowCells = rawRows[i];
 
-            totalRecords++;
-
-            var rawControl = GetCell(rowCells, headerMap, "control_number")?.Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(rawControl) || rawControl.Length > 32)
-            {
-                failedRecords++;
-                rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "control_number", "La matrícula es obligatoria (máximo 32 caracteres)."));
-                continue;
-            }
-
-            var rawCareer = GetCell(rowCells, headerMap, "career_code")?.Trim();
-            var career = MatchCareer(careers, rawCareer);
-            if (career is null)
-            {
-                failedRecords++;
-                rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "career_code", $"Carrera '{rawCareer}' no reconocida en el catálogo activo."));
-                continue;
-            }
-
-            var firstSurname = GetCell(rowCells, headerMap, "first_surname")?.Trim();
-            var secondSurname = GetCell(rowCells, headerMap, "second_surname")?.Trim();
-            var firstName = GetCell(rowCells, headerMap, "first_name")?.Trim();
-
-            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(firstSurname))
-            {
-                var fullName = GetCell(rowCells, headerMap, "full_name")?.Trim();
-                if (!string.IsNullOrWhiteSpace(fullName))
+                if (rowCells.Values.All(string.IsNullOrWhiteSpace))
                 {
-                    (firstSurname, secondSurname, firstName) = SplitFullName(fullName);
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(firstSurname))
-            {
-                failedRecords++;
-                rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "first_name", "Nombre y primer apellido son obligatorios."));
-                continue;
-            }
-
-            var curp = GetCell(rowCells, headerMap, "curp")?.Trim().ToUpperInvariant();
-            if (!string.IsNullOrWhiteSpace(curp) && curp.Length != 18)
-            {
-                failedRecords++;
-                rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "curp", "La CURP debe tener exactamente 18 caracteres."));
-                continue;
-            }
-
-            var gender = NormalizeGender(GetCell(rowCells, headerMap, "gender"));
-            var shift = NormalizeShift(GetCell(rowCells, headerMap, "shift"));
-
-            var semester = 7;
-            var rawSemester = GetCell(rowCells, headerMap, "current_semester")?.Trim();
-            if (!string.IsNullOrWhiteSpace(rawSemester))
-            {
-                if (!int.TryParse(rawSemester, NumberStyles.Integer, CultureInfo.InvariantCulture, out semester) ||
-                    semester < 1 || semester > 15)
-                {
-                    failedRecords++;
-                    rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "current_semester", "El semestre debe ser un entero entre 1 y 15."));
                     continue;
                 }
-            }
 
-            var credits = 156;
-            var rawCredits = GetCell(rowCells, headerMap, "completed_credits")?.Trim();
-            if (!string.IsNullOrWhiteSpace(rawCredits))
-            {
-                if (!int.TryParse(rawCredits, NumberStyles.Integer, CultureInfo.InvariantCulture, out credits) ||
-                    credits < 0 || credits > career.TotalCredits)
+                totalRecords++;
+
+                var rawControl = GetCell(rowCells, headerMap, "control_number")?.Trim().ToUpperInvariant();
+                if (string.IsNullOrWhiteSpace(rawControl) || rawControl.Length > 32)
                 {
                     failedRecords++;
-                    rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "completed_credits", $"Los créditos deben estar entre 0 y {career.TotalCredits}."));
+                    rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "control_number", "La matrícula es obligatoria (máximo 32 caracteres)."));
                     continue;
                 }
-            }
 
-            var institutionalEmail = GetCell(rowCells, headerMap, "institutional_email")?.Trim().ToLowerInvariant();
-            var personalEmail = GetCell(rowCells, headerMap, "personal_email")?.Trim().ToLowerInvariant();
-            var phone = GetCell(rowCells, headerMap, "phone_number")?.Trim();
-            var hasDisability = ParseBool(GetCell(rowCells, headerMap, "has_disability"));
-            var disabilityDesc = hasDisability ? (GetCell(rowCells, headerMap, "disability_description")?.Trim() ?? "Reportada en padrón") : null;
-
-            var progress = StudentsService.CalculateProgress(credits, career.TotalCredits);
-
-            if (existingStudents.TryGetValue(rawControl, out var student))
-            {
-                student.CareerId = career.Id;
-                student.ImportBatchId = batch.Id;
-                student.FirstSurname = firstSurname;
-                student.SecondSurname = string.IsNullOrWhiteSpace(secondSurname) ? null : secondSurname;
-                student.FirstName = firstName;
-                student.Curp = string.IsNullOrWhiteSpace(curp) ? student.Curp : curp;
-                student.Gender = gender ?? student.Gender;
-                student.Shift = shift;
-                student.CurrentSemester = semester;
-                student.CompletedCredits = credits;
-                student.CurriculumProgressPercentage = progress;
-                student.InstitutionalEmail = string.IsNullOrWhiteSpace(institutionalEmail) ? student.InstitutionalEmail : institutionalEmail;
-                student.PersonalEmail = string.IsNullOrWhiteSpace(personalEmail) ? student.PersonalEmail : personalEmail;
-                student.PhoneNumber = string.IsNullOrWhiteSpace(phone) ? student.PhoneNumber : phone;
-                student.HasDisability = hasDisability;
-                student.DisabilityDescription = disabilityDesc;
-                student.IsEnrolled = true;
-            }
-            else
-            {
-                student = new Student
+                var rawCareer = GetCell(rowCells, headerMap, "career_code")?.Trim();
+                var career = MatchCareer(careers, rawCareer);
+                if (career is null)
                 {
-                    CareerId = career.Id,
-                    ImportBatchId = batch.Id,
-                    ControlNumber = rawControl,
-                    Curp = string.IsNullOrWhiteSpace(curp) ? null : curp,
-                    FirstSurname = firstSurname,
-                    SecondSurname = string.IsNullOrWhiteSpace(secondSurname) ? null : secondSurname,
-                    FirstName = firstName,
-                    Gender = gender,
-                    Shift = shift,
-                    HasDisability = hasDisability,
-                    DisabilityDescription = disabilityDesc,
-                    InstitutionalEmail = string.IsNullOrWhiteSpace(institutionalEmail) ? null : institutionalEmail,
-                    PersonalEmail = string.IsNullOrWhiteSpace(personalEmail) ? null : personalEmail,
-                    PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone,
-                    CurrentSemester = semester,
-                    CompletedCredits = credits,
-                    CurriculumProgressPercentage = progress,
-                    IsEnrolled = true
-                };
+                    failedRecords++;
+                    rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "career_code", $"Carrera '{rawCareer}' no reconocida en el catálogo activo."));
+                    continue;
+                }
 
-                dbContext.Students.Add(student);
-                existingStudents[rawControl] = student;
+                var firstSurname = GetCell(rowCells, headerMap, "first_surname")?.Trim();
+                var secondSurname = GetCell(rowCells, headerMap, "second_surname")?.Trim();
+                var firstName = GetCell(rowCells, headerMap, "first_name")?.Trim();
+
+                if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(firstSurname))
+                {
+                    var fullName = GetCell(rowCells, headerMap, "full_name")?.Trim();
+                    if (!string.IsNullOrWhiteSpace(fullName))
+                    {
+                        (firstSurname, secondSurname, firstName) = SplitFullName(fullName);
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(firstSurname))
+                {
+                    failedRecords++;
+                    rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "first_name", "Nombre y primer apellido son obligatorios."));
+                    continue;
+                }
+
+                var curp = GetCell(rowCells, headerMap, "curp")?.Trim().ToUpperInvariant();
+                if (!string.IsNullOrWhiteSpace(curp) && curp.Length != 18)
+                {
+                    failedRecords++;
+                    rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "curp", "La CURP debe tener exactamente 18 caracteres."));
+                    continue;
+                }
+
+                var gender = NormalizeGender(GetCell(rowCells, headerMap, "gender"));
+                var shift = NormalizeShift(GetCell(rowCells, headerMap, "shift"));
+
+                var semester = 7;
+                var rawSemester = GetCell(rowCells, headerMap, "current_semester")?.Trim();
+                if (!string.IsNullOrWhiteSpace(rawSemester))
+                {
+                    if (!int.TryParse(rawSemester, NumberStyles.Integer, CultureInfo.InvariantCulture, out semester) ||
+                        semester < 1 || semester > 15)
+                    {
+                        failedRecords++;
+                        rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "current_semester", "El semestre debe ser un entero entre 1 y 15."));
+                        continue;
+                    }
+                }
+
+                var credits = 156;
+                var rawCredits = GetCell(rowCells, headerMap, "completed_credits")?.Trim();
+                if (!string.IsNullOrWhiteSpace(rawCredits))
+                {
+                    if (!int.TryParse(rawCredits, NumberStyles.Integer, CultureInfo.InvariantCulture, out credits) ||
+                        credits < 0 || credits > career.TotalCredits)
+                    {
+                        failedRecords++;
+                        rowErrors.Add(new StudentImportRowError(rowNumber, rawControl, "completed_credits", $"Los créditos deben estar entre 0 y {career.TotalCredits}."));
+                        continue;
+                    }
+                }
+
+                var institutionalEmail = GetCell(rowCells, headerMap, "institutional_email")?.Trim().ToLowerInvariant();
+                var personalEmail = GetCell(rowCells, headerMap, "personal_email")?.Trim().ToLowerInvariant();
+                var phone = GetCell(rowCells, headerMap, "phone_number")?.Trim();
+                var hasDisability = ParseBool(GetCell(rowCells, headerMap, "has_disability"));
+                var disabilityDesc = hasDisability ? (GetCell(rowCells, headerMap, "disability_description")?.Trim() ?? "Reportada en padrón") : null;
+
+                dbContext.ChangeTracker.Clear();
+                try
+                {
+                    institutionalEmail = StudentAccountsService.NormalizeEmail(institutionalEmail);
+                    StudentsService.ValidateRequest(new StudentRequest(career.Id, rawControl, curp, firstName, firstSurname, secondSurname,
+                        gender, shift, hasDisability, disabilityDesc, institutionalEmail, personalEmail, phone, semester, credits), career.TotalCredits);
+                    if (successfulControls.Contains(rawControl) || successfulEmails.Contains(institutionalEmail))
+                        throw new ConflictException("student_imports.duplicate_row", "Matrícula o correo repetido en una fila guardada de este archivo.");
+                    await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+                    var progress = StudentsService.CalculateProgress(credits, career.TotalCredits);
+                    var student = await dbContext.Students.SingleOrDefaultAsync(s => s.ControlNumber == rawControl, cancellationToken);
+                    if (student is not null)
+                    {
+                        student.CareerId = career.Id;
+                        student.ImportBatchId = batch.Id;
+                        student.FirstSurname = firstSurname;
+                        student.SecondSurname = string.IsNullOrWhiteSpace(secondSurname) ? null : secondSurname;
+                        student.FirstName = firstName;
+                        student.Curp = string.IsNullOrWhiteSpace(curp) ? student.Curp : curp;
+                        student.Gender = gender ?? student.Gender;
+                        student.Shift = shift;
+                        student.CurrentSemester = semester;
+                        student.CompletedCredits = credits;
+                        student.CurriculumProgressPercentage = progress;
+                        student.InstitutionalEmail = string.IsNullOrWhiteSpace(institutionalEmail) ? student.InstitutionalEmail : institutionalEmail;
+                        student.PersonalEmail = string.IsNullOrWhiteSpace(personalEmail) ? student.PersonalEmail : personalEmail;
+                        student.PhoneNumber = string.IsNullOrWhiteSpace(phone) ? student.PhoneNumber : phone;
+                        student.HasDisability = hasDisability;
+                        student.DisabilityDescription = disabilityDesc;
+                        student.IsEnrolled = true;
+                    }
+                    else
+                    {
+                        student = new Student
+                        {
+                            CareerId = career.Id,
+                            ImportBatchId = batch.Id,
+                            ControlNumber = rawControl,
+                            Curp = string.IsNullOrWhiteSpace(curp) ? null : curp,
+                            FirstSurname = firstSurname,
+                            SecondSurname = string.IsNullOrWhiteSpace(secondSurname) ? null : secondSurname,
+                            FirstName = firstName,
+                            Gender = gender,
+                            Shift = shift,
+                            HasDisability = hasDisability,
+                            DisabilityDescription = disabilityDesc,
+                            InstitutionalEmail = string.IsNullOrWhiteSpace(institutionalEmail) ? null : institutionalEmail,
+                            PersonalEmail = string.IsNullOrWhiteSpace(personalEmail) ? null : personalEmail,
+                            PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone,
+                            CurrentSemester = semester,
+                            CompletedCredits = credits,
+                            CurriculumProgressPercentage = progress,
+                            IsEnrolled = true
+                        };
+
+                        dbContext.Students.Add(student);
+
+                    }
+
+                    var created = await accounts.EnsureAsync(student, cancellationToken);
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    if (created) createdAccounts++; else existingAccounts++;
+                    successfulControls.Add(rawControl);
+                    successfulEmails.Add(institutionalEmail);
+                    importedRecords++;
+                }
+                catch (Exception ex) when (ex is AppException or DbUpdateException)
+                {
+                    failedRecords++;
+                    var app = ex as AppException;
+                    rowErrors.Add(new StudentImportRowError(rowNumber, rawControl,
+                        app?.Errors?.Keys.FirstOrDefault(), app?.Errors?.Values.FirstOrDefault()?.FirstOrDefault()
+                        ?? app?.Message ?? "No se pudo guardar esta fila por un conflicto de datos. No se modificó su cuenta."));
+                    dbContext.ChangeTracker.Clear();
+                }
             }
-
-            importedRecords++;
+        }
+        catch (Exception)
+        {
+            fatal = true;
+            totalRecords = rawRows.Skip(1).Count(row => row.Values.Any(v => !string.IsNullOrWhiteSpace(v)));
+            failedRecords = totalRecords - importedRecords;
+            rowErrors.Add(new StudentImportRowError(0, null, null, "Importación interrumpida. Se conservaron únicamente las filas confirmadas."));
         }
 
+        dbContext.ChangeTracker.Clear();
+        batch = await dbContext.StudentImportBatches.SingleAsync(b => b.Id == batch.Id, CancellationToken.None);
+        batch.CreatedAccounts = createdAccounts;
+        batch.ExistingAccounts = existingAccounts;
         batch.TotalRecords = totalRecords;
         batch.ImportedRecords = importedRecords;
         batch.FailedRecords = failedRecords;
-        batch.Status = importedRecords > 0 ? "completed" : "failed";
+        batch.Status = !fatal && importedRecords > 0 ? "completed" : "failed";
         batch.Notes = rowErrors.Count > 0 ? JsonSerializer.Serialize(rowErrors) : null;
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        return await GetByIdAsync(batch.Id, cancellationToken);
+        return await GetByIdAsync(batch.Id, CancellationToken.None);
     }
 
     private static List<Dictionary<int, string>> ReadFirstWorksheetRows(byte[] xlsxBytes)
@@ -746,7 +789,7 @@ public partial class StudentImportsService(
             b.Status,
             b.Notes is not null && b.Notes.StartsWith('[') ? $"{b.FailedRecords} fila(s) con observaciones." : b.Notes,
             b.CreatedAt,
-            createdByName);
+            createdByName) { CreatedAccounts = b.CreatedAccounts, ExistingAccounts = b.ExistingAccounts };
 
     private static StudentImportResult ToResult(
         StudentImportBatch b,
@@ -764,6 +807,6 @@ public partial class StudentImportsService(
             rowErrors.Count > 0 ? $"{rowErrors.Count} fila(s) con error de validación." : b.Notes,
             b.CreatedAt,
             createdByName,
-            rowErrors);
+            rowErrors) { CreatedAccounts = b.CreatedAccounts, ExistingAccounts = b.ExistingAccounts };
 }
 

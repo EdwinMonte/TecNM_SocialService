@@ -18,7 +18,6 @@ const isUploadingImss = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 const selectedImssFile = ref<File | null>(null)
-const imssDeclaredDate = ref('')
 
 const contactForm = reactive<{
   phoneNumber: string
@@ -100,7 +99,7 @@ async function handleUploadImss(): Promise<void> {
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    const updated = await uploadMyImssFile(selectedImssFile.value, imssDeclaredDate.value)
+    const updated = await uploadMyImssFile(selectedImssFile.value)
     profile.value = updated
     selectedImssFile.value = null
     eligibility.value = await getMyEligibility().catch(() => null)
@@ -211,7 +210,7 @@ onMounted(() => {
             </p>
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               <UiBadge :tone="profile.hasValidImss ? 'success' : 'warning'">
-                {{ profile.hasValidImss ? 'Vigencia IMSS Validada' : 'Pendiente de Subir / Validar' }}
+                {{ profile.hasValidImss ? 'Vigencia IMSS aprobada' : profile.imssStatus === 'pending' ? 'Pendiente de revisión' : profile.imssStatus === 'rejected' ? 'Rechazado: consulta observaciones' : profile.imssStatus === 'approved' ? 'Constancia aprobada' : profile.hasImssFile ? 'Archivo histórico: requiere nueva carga' : 'Sin constancia IMSS' }}
               </UiBadge>
               <span v-if="profile.imssValidatedAt" style="font-size: 0.8rem; color: #6b7280;">
                 Actualizado: {{ new Date(profile.imssValidatedAt).toLocaleDateString() }}
@@ -228,16 +227,14 @@ onMounted(() => {
           style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1rem; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;"
         >
           <input type="file" accept="application/pdf" @change="handleFileChange" />
-          <UiField v-model="imssDeclaredDate" type="date" label="Fecha de expedición de la constancia IMSS" />
           <UiButton
             variant="primary"
-            :disabled="!selectedImssFile || !imssDeclaredDate || isUploadingImss"
+            :disabled="!selectedImssFile || isUploadingImss"
             @click="handleUploadImss"
           >
             {{ isUploadingImss ? 'Subiendo PDF...' : 'Subir Constancia IMSS (PDF)' }}
           </UiButton>
         </div>
-        <p v-if="profile.imssDocumentDate">Fecha de expedición registrada: {{ profile.imssDocumentDate }}. Vinculación confirma esta fecha al dictaminar.</p>
         <UiAlert v-if="profile.imssRejectionReason" tone="danger">{{ profile.imssRejectionReason }}</UiAlert>
       </UiCard>
 
@@ -250,13 +247,7 @@ onMounted(() => {
             <input v-model="contactForm.phoneNumber" type="text" placeholder="Ej. 8661458920" />
           </UiField>
 
-          <UiField label="Correo Institucional (@monclova.tecnm.mx)">
-            <input
-              v-model="contactForm.institutionalEmail"
-              type="email"
-              placeholder="L23050363@monclova.tecnm.mx"
-            />
-          </UiField>
+          <UiField v-model="contactForm.institutionalEmail" label="Correo Institucional (@monclova.tecnm.mx)" type="email" readonly hint="Administración gestiona el correo de acceso." />
 
           <UiField label="Correo Personal">
             <input v-model="contactForm.personalEmail" type="email" placeholder="alumno@gmail.com" />

@@ -7,7 +7,7 @@ namespace TecNM.Api.Modules.Students;
 
 [ApiController]
 [Route("api/students")]
-public class StudentsController(StudentsService studentsService) : ControllerBase
+public class StudentsController(StudentsService studentsService, StudentAccountsService accounts) : ControllerBase
 {
     private const string StaffAndDeptRoles = "admin,social_service_officer,internship_coordinator,department_head";
     private const string StaffRoles = "admin,social_service_officer,internship_coordinator";
@@ -144,6 +144,14 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
         return StatusCode(StatusCodes.Status201Created, account);
     }
 
+    [Authorize(Roles = "admin")]
+    [HttpPost("{id:long}/account/reset-password")]
+    public async Task<IActionResult> ResetPassword(long id, CancellationToken cancellationToken = default)
+    {
+        await accounts.ResetPasswordAsync(id, cancellationToken);
+        return NoContent();
+    }
+
     [Authorize(Roles = StaffRoles)]
     [HttpPut("{id:long}/imss")]
     [Consumes("multipart/form-data")]
@@ -167,7 +175,7 @@ public class StudentsController(StudentsService studentsService) : ControllerBas
 
     [Authorize(Roles = StaffRoles)]
     [HttpPost("{id:long}/imss/validation")]
-    public async Task<ActionResult<StudentDetail>> ValidateImss(
+    public async Task<ActionResult<TecNM.Api.Modules.Expedients.ExpedientDocumentResponse>> ValidateImss(
         long id,
         [FromBody] ValidateImssRequest request,
         CancellationToken cancellationToken = default)

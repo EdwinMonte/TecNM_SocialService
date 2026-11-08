@@ -6,11 +6,11 @@ Fuente canónica para backend y frontend. Cambiar este archivo antes de cambiar 
 
 ## Alcance
 
-- Login local contra PostgreSQL.
+- Login local contra PostgreSQL. Alumnos usan correo institucional normalizado; personal conserva su usuario.
 - Sesión JWT institucional en cookies.
 - Consulta de usuario actual.
 - Logout idempotente.
-- Sin OAuth/OIDC, refresh token, registro ni recuperación de contraseña.
+- Sin OAuth/OIDC, refresh token, registro ni recuperación de autoservicio. Admin restablece cuentas de alumno mediante el módulo Students.
 
 ## DTO
 
@@ -55,6 +55,7 @@ Respuesta `401` de login usa mensaje genérico. No confirma si cuenta existe, es
 - Firma: HMAC-SHA256.
 - Claims requeridos: `sub`, `username`, `email`, `name`, `roles`, `exp`, `iss`, `aud`.
 - `sub` contiene `UserResponse.id` en formato numérico textual.
+- Claim `sv` contiene `users.session_version`. La API exige coincidencia en cada petición; tokens anteriores sin `sv` requieren nuevo login. Restablecer contraseña o cambiar identidad incrementa la versión.
 - `roles` contiene los roles asignados: `admin`, `student`, `social_service_officer`, `internship_coordinator`, `department_head`.
 - Backend valida firma, emisor, audiencia y expiración en cada ruta protegida.
 - `Jwt__SecretKey` vive fuera de Git. API falla al iniciar si falta o tiene menos de 32 bytes UTF-8.
@@ -63,7 +64,7 @@ Respuesta `401` de login usa mensaje genérico. No confirma si cuenta existe, es
 
 - Usuarios activos de desarrollo:
   - `admin` (id: 1) con rol `admin`.
-  - `usuario` (id: 2) con rol `student`.
+  - `l23050363@monclova.tecnm.mx` (id: 2) con rol `student`.
 - Contraseña común exclusiva de desarrollo: `TecNM-Demo-2026!`.
 - PostgreSQL guarda solo hashes creados con `PasswordHasher<User>`.
 - Producción no incluye credenciales demo.

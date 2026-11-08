@@ -34,7 +34,6 @@ try {
     else if (endpoint === '/api/students/me') body = profile
     else if (endpoint === '/api/students/me/eligibility') body = { socialService: { eligible: false }, internship: { eligible: false } }
     else if (endpoint === '/api/students/me/imss' && route.request().method() === 'PUT') {
-      assert.ok(route.request().postDataBuffer().includes(Buffer.from('name="documentDate"\r\n\r\n2026-11-03')))
       uploadedImss = true
       body = { ...profile, hasValidImss: false, imssDocumentDate: '2026-11-03' }
     }
@@ -115,13 +114,11 @@ try {
   const imssUpload = page.getByRole('button', { name: 'Subir Constancia IMSS (PDF)', exact: true })
   await imssUpload.waitFor()
   await page.locator('input[type=file]').setInputFiles({ name: 'imss.pdf', mimeType: 'application/pdf', buffer: pdf })
-  assert.ok(await imssUpload.isDisabled(), 'IMSS date must be entered before upload')
-  await page.getByLabel('Fecha de expedición de la constancia IMSS', { exact: true }).fill('2026-11-03')
+  assert.ok(await imssUpload.isEnabled(), 'IMSS date is optional on upload')
   await imssUpload.click()
   await page.getByText('Constancia IMSS cargada. Vinculación debe revisarla y aprobarla.', { exact: true }).waitFor()
   assert.ok(uploadedImss)
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.getByLabel('Fecha de expedición de la constancia IMSS', { exact: true }).scrollIntoViewIfNeeded()
   await page.screenshot({ path: path.join(root, 'ui-imss-profile-mobile.png') })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'IMSS profile mobile overflow')
   assert.deepEqual(errors, [])

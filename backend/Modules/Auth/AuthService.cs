@@ -26,11 +26,13 @@ public sealed class AuthService(
         CancellationToken cancellationToken)
     {
         var normalizedUsername = username.Trim();
+        var emailLogin = normalizedUsername.Contains('@');
+        if (emailLogin) normalizedUsername = normalizedUsername.ToLowerInvariant();
         var user = await dbContext.Users
             .Include(item => item.UserRoles)
             .ThenInclude(item => item.Role)
             .SingleOrDefaultAsync(
-                item => item.Username == normalizedUsername,
+                item => emailLogin ? item.Username.ToLower() == normalizedUsername : item.Username == normalizedUsername,
                 cancellationToken);
 
         if (user is null || !user.IsActive)
@@ -55,6 +57,7 @@ public sealed class AuthService(
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString(CultureInfo.InvariantCulture)),
             new("username", user.Username),
+            new("sv", user.SessionVersion.ToString(CultureInfo.InvariantCulture)),
             new(JwtRegisteredClaimNames.Email, user.Email),
             new(JwtRegisteredClaimNames.Name, user.FullName)
         };

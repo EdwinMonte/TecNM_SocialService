@@ -1,8 +1,6 @@
 using TecNM.Api.Modules.Expedients;
-using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TecNM.Api.Core.Entities;
@@ -16,7 +14,7 @@ namespace TecNM.Api.Modules.Students;
 public partial class StudentsService(
     TecNMDbContext dbContext,
     ICurrentUser currentUser,
-    PasswordHasher<User> passwordHasher,
+    StudentAccountsService accounts,
     IConfiguration configuration,
     DocumentsService documents,
     ImssEligibilityService imss,
@@ -49,6 +47,7 @@ public partial class StudentsService(
         CancellationToken cancellationToken = default)
     {
         var query = currentUser.VisibleStudents(dbContext)
+            .Include(s => s.User).ThenInclude(u => u!.UserRoles).ThenInclude(r => r.Role)
             .Include(s => s.Career)
             .AsNoTracking();
 
@@ -81,11 +80,9 @@ public partial class StudentsService(
 
         if (hasValidImss.HasValue)
         {
-            var today = ImssEligibilityService.Today(clock);
-            var start = new DateOnly(today.Year, 1, 1);
             query = query.Where(s => dbContext.ExpedientDocuments.Any(d => d.StudentId == s.Id
                 && d.TramiteType == "general" && d.TramiteId == null && d.DocumentCode == "IMSS"
-                && d.Status == "approved" && d.DocumentDate >= start && d.DocumentDate <= today) == hasValidImss.Value);
+                && d.Status == "approved") == hasValidImss.Value);
         }
 
         if (hasDisability.HasValue)
@@ -128,6 +125,7 @@ public partial class StudentsService(
         CancellationToken cancellationToken = default)
     {
         var query = currentUser.VisibleStudents(dbContext)
+            .Include(s => s.User).ThenInclude(u => u!.UserRoles).ThenInclude(r => r.Role)
             .Include(s => s.Career)
             .AsNoTracking()
             .Where(s => s.IsEnrolled);
@@ -167,6 +165,7 @@ public partial class StudentsService(
     {
         await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
         var student = await dbContext.Students
+            .Include(s => s.User).ThenInclude(u => u!.UserRoles).ThenInclude(r => r.Role)
             .Include(s => s.Career)
             .Include(s => s.ImssValidator)
             .AsNoTracking()
@@ -286,6 +285,7 @@ public partial class StudentsService(
         student.CurriculumProgressPercentage = CalculateProgress(credits, career.TotalCredits);
         student.IsEnrolled = request.IsEnrolled;
 
+        if (student.UserId.HasValue) await accounts.EnsureAsync(student, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return await GetByIdAsync(student.Id, cancellationToken);
@@ -331,10 +331,8 @@ public partial class StudentsService(
         }
 
         student.PersonalEmail = NormalizeOptionalLower(request.PersonalEmail) ?? student.PersonalEmail;
-        if (request.InstitutionalEmail is not null)
-        {
-            student.InstitutionalEmail = NormalizeOptionalLower(request.InstitutionalEmail);
-        }
+        if (request.InstitutionalEmail is not null && NormalizeOptionalLower(request.InstitutionalEmail) != NormalizeOptionalLower(student.InstitutionalEmail))
+            throw new ValidationException(new Dictionary<string, string[]> { ["institutionalEmail"] = ["Solo administración puede cambiar el correo institucional."] });
 
         student.PhoneNumber = NormalizeOptional(request.PhoneNumber) ?? student.PhoneNumber;
         if (request.CurrentSemester.HasValue)
@@ -424,67 +422,11 @@ public partial class StudentsService(
             throw new ConflictException("students.account_exists", "El estudiante ya cuenta con un usuario vinculado.");
         }
 
-        var email = student.InstitutionalEmail ?? student.PersonalEmail;
-        if (string.IsNullOrWhiteSpace(email))
-        {
-            email = $"{student.ControlNumber.ToLowerInvariant()}@monclova.tecnm.mx";
-            student.InstitutionalEmail = email;
-        }
-
-        var username = student.ControlNumber.ToUpperInvariant();
-        var existingUser = await dbContext.Users
-            .SingleOrDefaultAsync(u => u.Username == username || u.Email == email, cancellationToken);
-
-        var tempPassword = $"TecNM-{student.ControlNumber}-{RandomNumberGenerator.GetInt32(100, 999)}!";
-
-        var studentRole = await dbContext.Roles
-            .SingleOrDefaultAsync(r => r.Name == "student", cancellationToken)
-            ?? throw new NotFoundException("roles.not_found", "El rol 'student' no existe en la base de datos.");
-
-        if (existingUser is null)
-        {
-            existingUser = new User
-            {
-                Username = username,
-                Email = email,
-                PasswordHash = string.Empty,
-                FirstName = student.FirstName,
-                FirstSurname = student.FirstSurname,
-                SecondSurname = student.SecondSurname,
-                IsActive = true
-            };
-            existingUser.PasswordHash = passwordHasher.HashPassword(existingUser, tempPassword);
-
-            dbContext.Users.Add(existingUser);
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            dbContext.UserRoles.Add(new UserRole
-            {
-                UserId = existingUser.Id,
-                RoleId = studentRole.Id
-            });
-        }
-        else
-        {
-            existingUser.PasswordHash = passwordHasher.HashPassword(existingUser, tempPassword);
-            existingUser.IsActive = true;
-
-            var hasRole = await dbContext.UserRoles
-                .AnyAsync(ur => ur.UserId == existingUser.Id && ur.RoleId == studentRole.Id, cancellationToken);
-            if (!hasRole)
-            {
-                dbContext.UserRoles.Add(new UserRole
-                {
-                    UserId = existingUser.Id,
-                    RoleId = studentRole.Id
-                });
-            }
-        }
-
-        student.UserId = existingUser.Id;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await accounts.EnsureAsync(student, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
-
-        return new CreateStudentAccountResponse(existingUser.Id, existingUser.Username, tempPassword);
+        await transaction.CommitAsync(cancellationToken);
+        return new CreateStudentAccountResponse(student.UserId!.Value, student.User!.Username, StudentAccountsService.Status(student));
     }
 
     public async Task<StudentDetail> UploadImssAsync(
@@ -550,18 +492,17 @@ public partial class StudentsService(
         return OpenImssStream(student);
     }
 
-    public async Task<StudentDetail> ValidateImssAsync(
+    public async Task<ExpedientDocumentResponse> ValidateImssAsync(
         long id,
         bool isValid,
         string? rejectionReason,
         DateOnly? documentDate,
         CancellationToken cancellationToken = default)
     {
-        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken);
+        await currentUser.RequireStudentAsync(dbContext, id, cancellationToken, true);
         var doc = await imss.GetLatestAsync(id, cancellationToken)
             ?? throw new BusinessRuleException("students.imss_file_missing", "Carga primero un PDF IMSS en el expediente.");
-        await documents.ReviewDocumentAsync(doc.Id, new ReviewDocumentRequest(isValid ? "approved" : "rejected", rejectionReason, documentDate), cancellationToken);
-        return await GetByIdAsync(id, cancellationToken);
+        return await documents.ReviewDocumentAsync(doc.Id, new ReviewDocumentRequest(isValid ? "approved" : "rejected", rejectionReason, documentDate), cancellationToken);
     }
 
     private async Task<StudentDetail> SaveImssFileAsync(Student student, IFormFile file, CancellationToken cancellationToken, DateOnly? documentDate)
@@ -603,6 +544,7 @@ public partial class StudentsService(
         }
 
         var query = currentUser.VisibleStudents(dbContext)
+            .Include(s => s.User).ThenInclude(u => u!.UserRoles).ThenInclude(r => r.Role)
             .Include(s => s.Career)
             .Include(s => s.ImssValidator)
             .AsQueryable();
@@ -631,7 +573,7 @@ public partial class StudentsService(
         var latest = await imss.GetLatestAsync(student.Id, cancellationToken);
         if (!ImssEligibilityService.IsCurrent(latest, ImssEligibilityService.Today(clock)))
         {
-            var reason = new EligibilityReason("students.imss_approval_required", "Requiere una constancia IMSS del año actual aprobada por Vinculación.");
+            var reason = new EligibilityReason("students.imss_approval_required", "Requiere una constancia IMSS con estado VIGENTE aprobada por Vinculación.");
             ssReasons.Add(reason);
             ppReasons.Add(reason);
         }
@@ -699,7 +641,7 @@ public partial class StudentsService(
         return career;
     }
 
-    private static void ValidateRequest(StudentRequest request, int totalCredits)
+    internal static void ValidateRequest(StudentRequest request, int totalCredits)
     {
         var errors = new Dictionary<string, string[]>();
 
@@ -815,11 +757,9 @@ public partial class StudentsService(
     private async Task ProjectImssAsync(IReadOnlyCollection<Student> students, CancellationToken ct)
     {
         var ids = students.Select(s => s.Id).ToArray();
-        var today = ImssEligibilityService.Today(clock);
-        var start = new DateOnly(today.Year, 1, 1);
         var approved = await dbContext.ExpedientDocuments.AsNoTracking().Where(d => ids.Contains(d.StudentId)
             && d.TramiteType == "general" && d.TramiteId == null && d.DocumentCode == "IMSS"
-            && d.Status == "approved" && d.DocumentDate >= start && d.DocumentDate <= today)
+            && d.Status == "approved")
             .Select(d => d.StudentId).ToListAsync(ct);
         var valid = approved.ToHashSet();
         foreach (var student in students) student.HasValidImss = valid.Contains(student.Id);
@@ -837,7 +777,7 @@ public partial class StudentsService(
             s.Shift,
             s.IsEnrolled,
             s.HasValidImss,
-            s.UserId.HasValue);
+            s.UserId.HasValue) { AccountUsername = s.User?.Username, AccountStatus = StudentAccountsService.Status(s) };
 
     private static StudentDetail ToDetail(Student s)
     {
@@ -879,7 +819,7 @@ public partial class StudentsService(
             s.ImssValidatedAt,
             validatorName,
             s.CreatedAt,
-            s.UpdatedAt);
+            s.UpdatedAt) { AccountUsername = s.User?.Username, AccountStatus = StudentAccountsService.Status(s) };
     }
 
     private static string? NormalizeOptional(string? value) =>

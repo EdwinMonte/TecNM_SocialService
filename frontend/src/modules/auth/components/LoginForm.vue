@@ -77,7 +77,7 @@ async function submit(): Promise<void> {
       id="username"
       ref="usernameField"
       v-model="username"
-      label="Usuario"
+      label="Correo institucional o usuario de personal"
       :error="usernameError"
       name="username"
       type="text"

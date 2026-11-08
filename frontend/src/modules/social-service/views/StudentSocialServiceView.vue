@@ -47,7 +47,6 @@ const programOptions = ref<OptionItem[]>([])
 const companyOptions = ref<OptionItem[]>([])
 const supervisorOptions = ref<OptionItem[]>([])
 const imssFileForApplication = ref<File | null>(null)
-const imssDeclaredDate = ref('')
 
 const openForm = reactive<CreateSocialServicePayload>({
   periodId: 0,
@@ -179,13 +178,29 @@ function handleImssFileSelect(event: Event): void {
   imssFileForApplication.value = input.files?.[0] ?? null
 }
 
+async function uploadAdmissionImss(): Promise<void> {
+  if (!imssFileForApplication.value || isSubmitting.value) return
+  isSubmitting.value = true; errorMessage.value = ''; successMessage.value = ''
+  try {
+    studentProfile.value = await uploadMyImssFile(imssFileForApplication.value)
+    imssFileForApplication.value = null
+    successMessage.value = 'Constancia cargada. Pendiente de revisión; la apertura se habilitará cuando Vinculación la apruebe.'
+  } catch (error: any) { errorMessage.value = error?.response?.data?.detail || 'No fue posible cargar la constancia.' }
+  finally { isSubmitting.value = false }
+}
+async function refreshImss(): Promise<void> {
+  try { studentProfile.value = await getMyStudentProfile() }
+  catch { errorMessage.value = 'No fue posible actualizar el estado de tu constancia.' }
+}
+
 async function handleSubmitApplication(): Promise<void> {
   isSubmitting.value = true
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    if (imssFileForApplication.value) {
-      await uploadMyImssFile(imssFileForApplication.value, imssDeclaredDate.value)
+    if (!studentProfile.value?.hasValidImss) {
+      errorMessage.value = 'Carga tu constancia y espera la aprobación de Vinculación antes de abrir el trámite.'
+      return
     }
     const created = await requestSocialService(openForm)
     service.value = created
@@ -397,11 +412,14 @@ onMounted(() => {
             </div>
           </div>
           <input type="file" accept="application/pdf" @change="handleImssFileSelect" />
-          <UiField v-if="imssFileForApplication" v-model="imssDeclaredDate" type="date" label="Fecha de expedición de la constancia IMSS" />
+          <UiButton variant="secondary" :disabled="!imssFileForApplication || isSubmitting" @click="uploadAdmissionImss">Subir constancia para revisión</UiButton>
+          <UiButton variant="secondary" :disabled="isSubmitting" @click="refreshImss">Actualizar estado IMSS</UiButton>
+          <p v-if="studentProfile?.imssStatus === 'pending'">Pendiente de revisión por Vinculación. Todavía no puedes abrir el trámite.</p>
+          <UiAlert v-if="studentProfile?.imssRejectionReason" tone="danger">{{ studentProfile.imssRejectionReason }}</UiAlert>
         </div>
 
         <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
-          <UiButton variant="primary" :disabled="isSubmitting" @click="handleSubmitApplication">
+          <UiButton variant="primary" :disabled="isSubmitting || !studentProfile?.hasValidImss || !!imssFileForApplication" @click="handleSubmitApplication">
             {{
               isSubmitting
                 ? 'Generando Solicitud...'

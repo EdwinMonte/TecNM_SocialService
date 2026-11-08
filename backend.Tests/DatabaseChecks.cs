@@ -29,8 +29,6 @@ internal static class DatabaseChecks
         var eligibility = new ImssEligibilityService(db, clock);
         try { await eligibility.RequireApprovedAsync(1); throw new Exception("Pending IMSS admitted"); }
         catch (BusinessRuleException) { }
-        try { await service.ReviewDocumentAsync(uploaded.Id, new("approved", null, new DateOnly(2025, 12, 31))); throw new Exception("Old year approved"); }
-        catch (ValidationException) { }
         var approved = await service.ReviewDocumentAsync(uploaded.Id, new("approved", null, new DateOnly(2026, 10, 1)));
         Ensure(approved.Status == "approved" && await eligibility.RequireApprovedAsync(1) == uploaded.Id, "Confirmed current IMSS admits");
         Ensure((await service.ReviewDocumentAsync(uploaded.Id, new("approved", null, new DateOnly(2026, 10, 1)))).Id == uploaded.Id, "Repeated review is idempotent");

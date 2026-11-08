@@ -1,5 +1,5 @@
 import { http } from '../../../shared/api/http'
-import type { ExpedientDocument, ReviewDocumentRequest, ReviewQueueItem } from '../types/expedients'
+import type { ExpedientDocument, ImssDateSuggestion, ReviewDocumentRequest, ReviewQueueItem } from '../types/expedients'
 
 export async function getStudentDocuments(
   studentId: number,
@@ -83,4 +83,8 @@ export async function deleteDocument(documentId: number): Promise<void> {
 
 export async function getReviewQueuePage(params: { page: number; pageSize: number; status: string; tramiteType?: string; documentCode?: string; search?: string; periodId?: number }) {
   return (await http.get<{ items: ReviewQueueItem[]; totalItems: number; totalPages: number }>('/documents/review-queue', { params })).data
+}
+
+export async function getImssDateSuggestion(id: number): Promise<ImssDateSuggestion> {
+  return (await http.get<ImssDateSuggestion>(`/documents/${id}/imss-date-suggestion`)).data
 }

@@ -7,6 +7,8 @@ public sealed class StudentImportBatch : AuditableEntity
     public string FileUrl { get; set; } = string.Empty;
     public int TotalRecords { get; set; }
     public int ImportedRecords { get; set; }
+    public int CreatedAccounts { get; set; }
+    public int ExistingAccounts { get; set; }
     public int FailedRecords { get; set; }
     public string Status { get; set; } = "pending";
     public string? Notes { get; set; }

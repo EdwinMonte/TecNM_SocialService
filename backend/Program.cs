@@ -104,6 +104,7 @@ builder.Services.AddScoped<SupervisorsService>();
 builder.Services.AddScoped<AgreementsService>();
 builder.Services.AddScoped<StudentsService>();
 builder.Services.AddScoped<StudentImportsService>();
+builder.Services.AddScoped<StudentAccountsService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<ImssEligibilityService>();
 builder.Services.AddSingleton<OfficialPdfService>();
@@ -149,7 +150,9 @@ builder.Services
                 var db = context.HttpContext.RequestServices.GetRequiredService<TecNMDbContext>();
                 var account = await db.Users.Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
                     .SingleOrDefaultAsync(u => u.Id == id, context.HttpContext.RequestAborted);
-                if (account is null || !account.IsActive) { context.Fail("Sesión inválida."); return; }
+                if (account is null || !account.IsActive
+                    || !int.TryParse(context.Principal?.FindFirst("sv")?.Value, out var sessionVersion)
+                    || sessionVersion != account.SessionVersion) { context.Fail("Sesión inválida."); return; }
                 var identity = (ClaimsIdentity)context.Principal!.Identity!;
                 foreach (var claim in identity.Claims.Where(c => c.Type is "role" or "roles" || c.Type == ClaimTypes.Role).ToArray())
                     identity.RemoveClaim(claim);

@@ -38,7 +38,8 @@ try {
       if (fail) return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
       const items = !url.searchParams.get('search') || item.studentFullName.includes(url.searchParams.get('search')) ? [item] : []
       body = { items, totalItems: items.length, totalPages: 1 }
-    } else if (endpoint.endsWith('/review')) {
+    } else if (endpoint.endsWith('/imss-date-suggestion')) body = { status: 'not_found', suggestedDate: null, pageNumber: null }
+    else if (endpoint.endsWith('/review')) {
       const payload = route.request().postDataJSON()
       reviews.push(payload); item.status = payload.status
       body = item
@@ -58,16 +59,16 @@ try {
   await dialog.waitFor({ state: 'hidden' })
   assert.ok(await page.evaluate(url => window.revokedPdfUrls.includes(url), blob))
   await row.getByRole('button', { name: 'Dictaminar', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Observar / Rechazar' }).click()
-  await dialog.getByText('Para observar o rechazar', { exact: false }).waitFor()
+  await dialog.getByRole('button', { name: 'Rechazar documento' }).click()
+  await dialog.getByText('Indica el motivo de rechazo.', { exact: false }).waitFor()
   await dialog.getByRole('button', { name: 'Aprobar documento' }).click()
-  await dialog.getByText('Confirma la fecha de expedición', { exact: false }).waitFor()
+  await dialog.getByText('Confirma que el PDF corresponde', { exact: false }).waitFor()
   assert.equal(reviews.length, 0)
-  await dialog.getByLabel('Fecha de expedición confirmada en el PDF').fill('2026-11-03')
+  await dialog.getByRole('checkbox').check()
   await page.screenshot({ path: path.join(root, 'ui-review-desktop.png') })
   await dialog.getByRole('button', { name: 'Aprobar documento' }).click()
   await dialog.waitFor({ state: 'hidden' })
-  assert.deepEqual(reviews[0], { status: 'approved', documentDate: '2026-11-03' })
+  assert.deepEqual(reviews[0], { status: 'approved' })
   await page.getByLabel('Buscar documento en cola de revisión').fill('Sin coincidencias')
   await row.waitFor({ state: 'hidden' })
   assert.equal(queries.at(-1).search, 'Sin coincidencias')
@@ -80,10 +81,10 @@ try {
   item.status = 'pending'
   await page.getByRole('button', { name: 'Actualizar bandeja', exact: true }).click()
   await row.getByRole('button', { name: 'Dictaminar', exact: true }).click()
-  await dialog.getByLabel('Observaciones técnicas', { exact: false }).fill('Texto ilegible; subir PDF completo.')
+  await dialog.getByLabel('Motivo de rechazo', { exact: false }).fill('Texto ilegible; subir PDF completo.')
   await page.screenshot({ path: path.join(root, 'ui-review-mobile.png') })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'Review mobile horizontal overflow')
-  await dialog.getByRole('button', { name: 'Observar / Rechazar' }).click()
+  await dialog.getByRole('button', { name: 'Rechazar documento' }).click()
   await dialog.waitFor({ state: 'hidden' })
   assert.deepEqual(reviews[1], { status: 'rejected', rejectionReason: 'Texto ilegible; subir PDF completo.' })
   fail = true

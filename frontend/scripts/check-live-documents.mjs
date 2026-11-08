@@ -8,16 +8,17 @@ const module = process.env.PLAYWRIGHT_MODULE || 'playwright'
 const { chromium } = await import(path.isAbsolute(module) ? pathToFileURL(module).href : module)
 const base = process.env.UI_TEST_URL || 'http://localhost:3000'
 const password = process.env.UI_TEST_PASSWORD || 'TecNM-Demo-2026!'
+const studentUsername = process.env.UI_TEST_STUDENT_USERNAME || 'l23050363@monclova.tecnm.mx'
 const root = path.resolve('tmp/pdf-qa')
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 try {
-  for (const username of ['admin', 'usuario']) {
+  for (const username of ['admin', studentUsername]) {
     const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1000 } })
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(base + '/login')
-    await page.getByLabel('Usuario', { exact: true }).fill(username)
+    await page.getByLabel('Correo institucional o usuario de personal', { exact: true }).fill(username)
     await page.getByLabel('Contraseña', { exact: true }).fill(password)
     const [login] = await Promise.all([
       page.waitForResponse(response => response.url().endsWith('/api/auth/login')),
@@ -51,7 +52,7 @@ try {
       await page.screenshot({ path: path.join(root, 'live-review.png') })
     } else {
       await page.goto(base + '/students/me')
-      await page.getByLabel('Fecha de expedición de la constancia IMSS', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Subir Constancia IMSS (PDF)', exact: true }).waitFor()
       assert.equal((await context.request.get(base + '/api/students/me')).status(), 200)
       await page.screenshot({ path: path.join(root, 'live-student-profile.png') })
     }

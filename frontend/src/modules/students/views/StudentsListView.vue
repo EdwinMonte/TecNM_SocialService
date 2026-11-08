@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import DocumentReviewDialog from '../../expedients/components/DocumentReviewDialog.vue'
+import { getReviewQueuePage, getStudentDocuments } from '../../expedients/api/expedientsApi'
+import type { ExpedientDocument, ReviewQueueItem } from '../../expedients/types/expedients'
+import { problemMessage } from '../../../shared/api/problemDetails'
 import { hasRole } from '../../../shared/composables/useSession'
 import {
   UiAlert,
@@ -22,7 +26,7 @@ import {
   getStudents,
   updateStudent,
   uploadStudentsExcel,
-  validateStudentImss,
+  resetStudentPassword,
 } from '../api/studentsApi'
 import type {
   CreateStudentAccountResponse,
@@ -80,8 +84,55 @@ const isEditing = ref(false)
 const editingId = ref<number | null>(null)
 const isSubmittingStudent = ref(false)
 const selectedDetail = ref<StudentDetail | null>(null)
-const imssDocumentDate = ref('')
-const imssRejectionReason = ref('')
+const imssError = ref('')
+const reviewOpen = ref(false)
+const reviewDocument = ref<ExpedientDocument | null>(null)
+const reviewStudentName = ref('')
+const preAdmission = ref<(ReviewQueueItem & { actions?: string })[]>([])
+const preAdmissionSearch = ref('')
+const preAdmissionPage = ref(1), preAdmissionPages = ref(0)
+const preAdmissionError = ref('')
+const resetCandidate = ref<StudentListItem | null>(null)
+const resetOpen = ref(false), resetting = ref(false)
+const resetError = ref('')
+const generatedControlNumber = ref('')
+
+async function loadPreAdmission() {
+  if (!canReview.value) return
+  preAdmissionError.value = ''
+  try {
+    const data = await getReviewQueuePage({ page: preAdmissionPage.value, pageSize: 20, status: 'all', tramiteType: 'general', documentCode: 'IMSS', search: preAdmissionSearch.value || undefined })
+    preAdmission.value = data.items
+    preAdmissionPages.value = data.totalPages
+  } catch (error) { preAdmissionError.value = problemMessage(error, 'No fue posible cargar los requisitos IMSS.'); preAdmission.value = [] }
+}
+function openDocumentReview(document: ExpedientDocument, name: string) {
+  reviewDocument.value = document
+  reviewStudentName.value = name
+  isStudentModalOpen.value = false
+  reviewOpen.value = true
+}
+async function reviewStudentImss() {
+  if (!selectedDetail.value) return
+  imssError.value = ''
+  try {
+    const docs = await getStudentDocuments(selectedDetail.value.id, { tramiteType: 'general' })
+    const document = docs.find(d => d.documentCode === 'IMSS' && d.status !== 'superseded')
+    if (!document) { imssError.value = 'El alumno debe cargar una constancia actual en su portal. Un archivo histórico no acredita revisión documental.'; return }
+    openDocumentReview(document, `${selectedDetail.value.firstName} ${selectedDetail.value.firstSurname}`)
+  } catch (error) { imssError.value = problemMessage(error, 'No se pudo consultar la constancia IMSS.') }
+}
+async function afterReview() { await Promise.all([loadData(), loadPreAdmission()]) }
+async function confirmReset() {
+  if (!resetCandidate.value || resetting.value) return
+  resetting.value = true; resetError.value = ''
+  try {
+    await resetStudentPassword(resetCandidate.value.id)
+    successMessage.value = 'Contraseña restablecida a la matrícula. Las sesiones anteriores fueron invalidadas.'
+    resetOpen.value = false
+  } catch (error) { resetError.value = problemMessage(error, 'No se pudo restablecer la contraseña.') }
+  finally { resetting.value = false }
+}
 
 const studentForm = reactive<StudentRequest>({
   careerId: 0,
@@ -195,7 +246,7 @@ async function loadData(): Promise<void> {
       allStudentsCache.value = [...students.value]
     }
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Error al cargar padrón de alumnos.'
+    errorMessage.value = err?.response?.data?.detail || err?.response?.data?.message || 'Error al cargar padrón de alumnos.'
   } finally {
     isLoading.value = false
   }
@@ -268,6 +319,7 @@ function openCreateModal(): void {
 
 async function openEditModal(row: StudentListItem): Promise<void> {
   errorMessage.value = ''
+  imssError.value = ''
   try {
     const detail = await getStudentById(row.id)
     isEditing.value = true
@@ -293,7 +345,7 @@ async function openEditModal(row: StudentListItem): Promise<void> {
     })
     isStudentModalOpen.value = true
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo cargar el detalle del estudiante.'
+    errorMessage.value = err?.response?.data?.detail || err?.response?.data?.message || 'No se pudo cargar el detalle del estudiante.'
   }
 }
 
@@ -331,26 +383,6 @@ async function handleSaveStudent(): Promise<void> {
   }
 }
 
-async function handleToggleImssValidation(id: number, isValid: boolean): Promise<void> {
-  try {
-    if (isValid && !imssDocumentDate.value) {
-      errorMessage.value = 'Confirma la fecha de expedición que aparece en el PDF.'
-      return
-    }
-    if (!isValid && !imssRejectionReason.value.trim()) {
-      errorMessage.value = 'Indica el motivo de rechazo.'
-      return
-    }
-    selectedDetail.value = await validateStudentImss(id, isValid, imssDocumentDate.value || undefined, imssRejectionReason.value || undefined)
-    successMessage.value = isValid
-      ? 'Vigencia de Derechos IMSS marcada como válida.'
-      : 'Constancia IMSS rechazada con observaciones.'
-    await loadData()
-  } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo actualizar la validación de IMSS.'
-  }
-}
-
 async function handleDownloadStudentImss(id: number, controlNumber: string): Promise<void> {
   try {
     const blob = await getStudentImssBlob(id)
@@ -366,11 +398,12 @@ async function handleCreateAccount(row: StudentListItem): Promise<void> {
   try {
     const res = await createStudentAccount(row.id)
     generatedAccount.value = res
+    generatedControlNumber.value = row.controlNumber
     isAccountModalOpen.value = true
     await loadData()
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.message || 'No se pudo generar la cuenta de usuario para el alumno.'
+      err?.response?.data?.detail || err?.response?.data?.message || 'No se pudo generar la cuenta de usuario para el alumno.'
   }
 }
 
@@ -401,16 +434,18 @@ async function handleRunImport(): Promise<void> {
   errorMessage.value = ''
   try {
     importResult.value = await uploadStudentsExcel(importPeriodId.value, importFile.value)
-    successMessage.value = `Importación finalizada: ${importResult.value.importedRecords} alumnos procesados.`
+    successMessage.value = `Importación finalizada: ${importResult.value.importedRecords} alumnos; ${importResult.value.createdAccounts} cuentas creadas; ${importResult.value.existingAccounts} existentes; ${importResult.value.failedRecords} filas rechazadas.`
     await loadData()
+    await loadPreAdmission()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Error al procesar el archivo Excel (.xlsx).'
+    errorMessage.value = err?.response?.data?.detail || err?.response?.data?.message || 'Error al procesar el archivo Excel (.xlsx).'
   } finally {
     isImporting.value = false
   }
 }
 
 onMounted(async () => {
+  void loadPreAdmission()
   await Promise.all([loadCatalogs(), loadData()])
 })
 </script>
@@ -429,7 +464,7 @@ onMounted(async () => {
         </p>
       </div>
 
-      <div class="actions-group">
+      <div v-if="canRegister" class="actions-group">
         <UiButton variant="secondary" class="action-btn" @click="handleDownloadTemplate">
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -471,6 +506,25 @@ onMounted(async () => {
     <UiAlert v-if="successMessage" tone="success" class="mb-4">
       {{ successMessage }}
     </UiAlert>
+
+    <UiCard v-if="canReview" class="mb-4">
+      <h2>IMSS de preingreso</h2>
+      <p>Revisa requisitos previos y constancias de tu proceso sin abrir el expediente académico.</p>
+      <UiAlert v-if="preAdmissionError" tone="danger">{{ preAdmissionError }}</UiAlert>
+      <div class="row-actions">
+        <UiField v-model="preAdmissionSearch" label="Buscar constancia por nombre o matrícula" type="search" />
+        <UiButton variant="secondary" @click="preAdmissionPage = 1; loadPreAdmission()">Buscar / Actualizar</UiButton>
+      </div>
+      <UiTable label="Constancias IMSS para revisión" :columns="[{ key: 'studentControlNumber', label: 'Matrícula' }, { key: 'studentFullName', label: 'Alumno' }, { key: 'status', label: 'Estado' }, { key: 'actions', label: 'Revisión' }]" :rows="preAdmission">
+        <template #cell-status="{ row }">{{ row.status === 'pending' ? 'Pendiente' : row.status === 'approved' ? 'Aprobado' : 'Rechazado' }}</template>
+        <template #cell-actions="{ row }"><UiButton variant="secondary" @click="openDocumentReview(row, row.studentFullName)">{{ row.status === 'pending' ? 'Revisar IMSS' : 'Ver dictamen' }}</UiButton></template>
+      </UiTable>
+      <div class="row-actions">
+        <UiButton variant="secondary" :disabled="preAdmissionPage <= 1" @click="preAdmissionPage--; loadPreAdmission()">Anterior</UiButton>
+        <span>Página {{ preAdmissionPage }} de {{ Math.max(1, preAdmissionPages) }}</span>
+        <UiButton variant="secondary" :disabled="preAdmissionPage >= preAdmissionPages" @click="preAdmissionPage++; loadPreAdmission()">Siguiente</UiButton>
+      </div>
+    </UiCard>
 
     <!-- Main Container -->
     <UiCard class="main-card">
@@ -630,8 +684,9 @@ onMounted(async () => {
 
         <template #cell-hasUserAccount="{ row }">
           <UiBadge :tone="row.hasUserAccount ? 'info' : 'warning'">
-            {{ row.hasUserAccount ? 'Activa' : 'Sin cuenta' }}
+            {{ ({ missing: 'Sin cuenta', active: 'Activa', inactive: 'Inactiva', inconsistent: 'Revisar cuenta' })[row.accountStatus] || 'Revisar cuenta' }}
           </UiBadge>
+          <small v-if="row.accountUsername">{{ row.accountUsername }}</small>
         </template>
 
         <template #cell-actions="{ row }">
@@ -653,6 +708,7 @@ onMounted(async () => {
             >
               Crear Cuenta
             </button>
+            <button v-if="canRegister && row.hasUserAccount" type="button" class="table-btn secondary" @click="resetCandidate = row; resetError = ''; resetOpen = true">Restablecer contraseña</button>
           </div>
         </template>
       </UiTable>
@@ -743,8 +799,8 @@ onMounted(async () => {
         </p>
         <p>El alumno debe cargar su constancia desde su portal.</p>
 
-        <label v-if="canReview">Fecha de expedición confirmada en el PDF <input v-model="imssDocumentDate" type="date" /></label>
-        <label v-if="canReview">Observaciones de rechazo <textarea v-model="imssRejectionReason" maxlength="1000" /></label>
+        <UiAlert v-if="imssError" tone="danger" role="alert">{{ imssError }}</UiAlert>
+        <p v-if="selectedDetail?.imssStatus === 'missing'">{{ selectedDetail.hasImssFile ? 'Archivo histórico: requiere nueva carga documental.' : 'Sin constancia documental: el alumno debe cargarla desde su perfil.' }}</p>
         <p v-if="selectedDetail?.imssRejectionReason">{{ selectedDetail.imssRejectionReason }}</p>
         <div
           v-if="isEditing && selectedDetail"
@@ -762,9 +818,10 @@ onMounted(async () => {
             v-if="canReview"
             variant="secondary"
             size="sm"
-            @click="handleToggleImssValidation(selectedDetail.id, !selectedDetail.hasValidImss)"
+            :disabled="!selectedDetail.imssDocumentId"
+            @click="reviewStudentImss"
           >
-            {{ selectedDetail.hasValidImss ? 'Rechazar IMSS' : 'Validar Vigencia IMSS' }}
+            {{ selectedDetail.imssStatus === 'pending' ? 'Revisar IMSS' : 'Ver dictamen IMSS' }}
           </UiButton>
         </div>
       </div>
@@ -782,6 +839,7 @@ onMounted(async () => {
     <!-- ================================================================== -->
     <UiDialog v-model="isImportModalOpen" size="md" title="Importar Padrón de Alumnos desde Excel (.xlsx)">
       <div class="import-modal-content">
+        <p>Las cuentas nuevas usarán el correo institucional y su matrícula como contraseña. Las cuentas existentes conservan su contraseña.</p>
         <p class="import-intro-text">
           Carga el archivo Excel con los alumnos que están en condiciones de realizar su Servicio
           Social o Prácticas Profesionales en el periodo seleccionado.
@@ -802,6 +860,8 @@ onMounted(async () => {
           <ul>
             <li>Total de filas leídas: <strong>{{ importResult.totalRecords }}</strong></li>
             <li>Alumnos importados/actualizados: <strong>{{ importResult.importedRecords }}</strong></li>
+            <li>Cuentas creadas: <strong>{{ importResult.createdAccounts }}</strong></li>
+            <li>Cuentas existentes: <strong>{{ importResult.existingAccounts }}</strong></li>
             <li>Filas con error: <strong>{{ importResult.failedRecords }}</strong></li>
           </ul>
           <div v-if="importResult.rowErrors?.length" class="import-errors-list">
@@ -844,12 +904,21 @@ onMounted(async () => {
           <strong class="cred-value">{{ generatedAccount.username }}</strong>
         </div>
         <div class="credential-item">
-          <span class="cred-label">Contraseña Temporal:</span>
-          <code class="cred-pass">{{ generatedAccount.temporaryPassword }}</code>
+          <span class="cred-label">Contraseña habitual:</span>
+          <code class="cred-pass">{{ generatedControlNumber }}</code>
         </div>
       </div>
       <template #footer>
         <UiButton variant="primary" @click="isAccountModalOpen = false">Entendido</UiButton>
+      </template>
+    </UiDialog>
+    <DocumentReviewDialog v-model="reviewOpen" :document="reviewDocument" :student-name="reviewStudentName" @reviewed="afterReview" />
+    <UiDialog v-model="resetOpen" title="Restablecer contraseña">
+      <UiAlert v-if="resetError" tone="danger" role="alert">{{ resetError }}</UiAlert>
+      <p>La contraseña de {{ resetCandidate?.accountUsername }} será su matrícula {{ resetCandidate?.controlNumber }}. Las sesiones actuales se cerrarán.</p>
+      <template #footer>
+        <UiButton variant="secondary" :disabled="resetting" @click="resetOpen = false">Cancelar</UiButton>
+        <UiButton :loading="resetting" :disabled="resetting" @click="confirmReset">Restablecer contraseña</UiButton>
       </template>
     </UiDialog>
   </UiBasePage>

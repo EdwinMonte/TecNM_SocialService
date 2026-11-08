@@ -13,20 +13,20 @@ static void Check(bool condition, string description)
 {
     if (!condition) throw new Exception(description);
 }
+DateExtractionChecks.TextChecks();
 var today = new DateOnly(2026, 12, 31);
 var doc = new ExpedientDocument { TramiteType = "general", DocumentCode = "IMSS", Status = "approved", DocumentDate = today };
 Check(ImssEligibilityService.IsCurrent(doc, today), "Approved current-year IMSS");
-Check(!ImssEligibilityService.IsCurrent(doc, today.AddDays(1)), "Year boundary must expire admission eligibility");
+Check(ImssEligibilityService.IsCurrent(doc, today.AddDays(1)), "Year boundary must preserve visual approval");
 doc.Status = "pending";
 Check(!ImssEligibilityService.IsCurrent(doc, today), "Pending cannot admit");
 doc.Status = "rejected";
 Check(!ImssEligibilityService.IsCurrent(doc, today), "Rejected cannot admit");
 doc.Status = "approved"; doc.DocumentDate = today.AddDays(1);
-Check(!ImssEligibilityService.IsCurrent(doc, today), "Future date cannot admit");
+doc.DocumentDate = null;
+Check(ImssEligibilityService.IsCurrent(doc, today), "Visual approval requires no document date");
 var clock = new FixedClock(new DateTimeOffset(2027, 1, 1, 5, 59, 59, TimeSpan.Zero));
 Check(ImssEligibilityService.Today(clock) == today, "Mexico year differs from UTC at midnight");
-try { ImssEligibilityService.ValidateApprovalDate(null, clock); throw new Exception("Missing date accepted"); }
-catch (ValidationException) { }
 Check(DocumentDefinitions.RequiredForSocialService(2).Contains("EV_ACT"), "V2 release requires activity assessment");
 Check(DocumentDefinitions.RequiredForSocialService(2).Contains("SOL"), "V2 release requires approved application");
 Check(!DocumentDefinitions.RequiredForSocialService(1).Contains("EV_ACT"), "Historic release remains compatible");
@@ -94,6 +94,7 @@ var fonts = Environment.GetEnvironmentVariable("DOCUMENT_TEST_FONTS") ?? "C:/Win
 if (Directory.Exists(fonts))
 {
     GlobalFontSettings.FontResolver = new OfficialFontResolver(fonts);
+    DateExtractionChecks.PdfChecks();
     var resources = Path.GetFullPath("backend/Resources/Documents");
     var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Documents:RootPath"] = resources }).Build();
     var generator = new OfficialPdfService(new TestEnvironment(), config);
@@ -206,6 +207,7 @@ if (Directory.Exists(fonts))
     catch (ConflictException) { }
 }
 else Console.WriteLine("PDF rendering checks skipped: set DOCUMENT_TEST_FONTS to authorized Arial/Century Gothic fonts.");
+await AccountMigrationChecks.RunAsync();
 await LinkageDatabaseChecks.RunAsync();
 await DatabaseChecks.RunAsync();
 await HttpChecks.RunAsync();

@@ -12,6 +12,7 @@ public sealed class User : AuditableEntity
         ? $"{FirstName} {FirstSurname}"
         : $"{FirstName} {FirstSurname} {SecondSurname}";
     public bool IsActive { get; set; }
+    public int SessionVersion { get; set; }
 
     public ICollection<UserRole> UserRoles { get; set; } = [];
 }

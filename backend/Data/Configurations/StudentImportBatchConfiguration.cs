@@ -20,6 +20,8 @@ public sealed class StudentImportBatchConfiguration : AuditableEntityConfigurati
         builder.Property(b => b.ImportedRecords).HasColumnName("imported_records").HasDefaultValue(0).IsRequired();
         builder.Property(b => b.FailedRecords).HasColumnName("failed_records").HasDefaultValue(0).IsRequired();
         builder.Property(b => b.Status).HasColumnName("status").HasMaxLength(32).HasDefaultValue("pending").IsRequired();
+        builder.Property(b => b.CreatedAccounts).HasColumnName("created_accounts");
+        builder.Property(b => b.ExistingAccounts).HasColumnName("existing_accounts");
         builder.Property(b => b.Notes).HasColumnName("notes");
 
         builder.HasOne(b => b.Period)

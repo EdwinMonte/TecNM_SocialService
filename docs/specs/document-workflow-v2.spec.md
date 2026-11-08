@@ -95,4 +95,16 @@ Identificar documentos generales como General / IMSS. Un dictamen aprobado no im
 
 ## Fecha declarada en cargas IMSS
 
-Las cargas documentales y adaptadores IMSS propagan `documentDate` multipart al expediente pendiente. Si se proporciona, no admite fechas futuras. Los clientes actuales solicitan la fecha al adjuntar; los adaptadores conservan compatibilidad con clientes anteriores que no la envían, dejando fecha nula y revisión pendiente. La fecha declarada nunca acredita vigencia ni sustituye la confirmación del encargado. Reenviar los mismos bytes no cambia la fecha ni el dictamen existentes; cambiar solo la fecha exige confirmación administrativa.
+Las cargas documentales y adaptadores IMSS propagan `documentDate` multipart opcional al expediente pendiente. Si se proporciona, no admite fechas futuras. La fecha declarada nunca acredita vigencia ni sustituye la confirmación del encargado. Reenviar los mismos bytes no cambia la fecha ni el dictamen existentes; cambiar solo la fecha exige confirmación administrativa.
+
+## Revisión manual IMSS
+
+- Padrón y bandeja comparten visor y dictamen. El encargado captura o confirma manualmente la fecha que aparece como «Fecha de Constancia» o fecha de expedición del PDF. La fecha declarada por el alumno se muestra como referencia y se precarga si existe.
+- No ejecutar extracción automática al abrir el diálogo ni mostrar sugerencias o avisos de extracción fallida. La constancia real contiene otras fechas (publicación del formato, nacimiento e inicio de vigencia); ninguna sustituye la fecha documental.
+- Mantener fecha del año actual de México, sin fechas futuras, y motivo obligatorio para rechazar. Reiniciar campos por documento y mostrar errores dentro del diálogo. Sin evidencia no hay dictamen.
+- El endpoint de sugerencia existente queda disponible por compatibilidad y diagnóstico, fuera del flujo de revisión. No modifica documentos ni se consulta desde la interfaz.
+- SS/PP separan carga opcional de fecha, revisión y apertura. No hay OCR ni aprobación automática.
+
+## Criterio vigente: estado IMSS revisado visualmente
+
+Este criterio sustituye las reglas anteriores de fecha/año IMSS. Para aprobar, el encargado verifica que el PDF corresponda al alumno y muestre estado VIGENTE. No se captura fecha, no se exige año actual y no caduca automáticamente al cambiar el año. El documento aprobado vigente (no sustituido ni borrado) habilita ingreso SS/PP; una nueva carga reinicia revisión. Rechazar exige motivo. Fechas históricas conservadas son metadatos, no autorización. Interfaz muestra confirmación explícita de estado VIGENTE y titular antes de aprobar, tanto en padrón como bandeja; cargas no solicitan fechas.

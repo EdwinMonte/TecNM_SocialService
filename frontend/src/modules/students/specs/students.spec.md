@@ -45,7 +45,7 @@
     - `actions`: Botón "Ver Expediente", "Editar Datos" y "Generar/Resetear Cuenta".
 - **Modales:**
   - `StudentFormDialog.vue`: Modal con pestañas o secciones claras para Datos Personales (CURP, Nombre, Apellidos, Sexo), Datos Escolares (Carrera, Semestre, Turno, Créditos) y Datos de Contacto (Emails, Teléfono).
-  - `ProvisionAccountDialog.vue`: Muestra usuario generado (`username`), contraseña temporal generada y botón de copiar al portapapeles.
+  - `ProvisionAccountDialog.vue`: Muestra usuario generado (`username`), estado real y matrícula como contraseña habitual inicial.
 
 ---
 

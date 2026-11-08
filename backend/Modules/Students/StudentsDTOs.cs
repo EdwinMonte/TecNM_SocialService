@@ -11,7 +11,11 @@ public sealed record StudentListItem(
     string Shift,
     bool IsEnrolled,
     bool HasValidImss,
-    bool HasUserAccount);
+    bool HasUserAccount)
+{
+    public string? AccountUsername { get; init; }
+    public string AccountStatus { get; init; } = "missing";
+}
 
 public sealed record StudentDetail(
     long Id,
@@ -42,6 +46,8 @@ public sealed record StudentDetail(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt)
 {
+    public string? AccountUsername { get; init; }
+    public string AccountStatus { get; init; } = "missing";
     public string ImssStatus { get; init; } = "missing";
     public long? ImssDocumentId { get; init; }
     public DateOnly? ImssDocumentDate { get; init; }
@@ -78,7 +84,7 @@ public sealed record ValidateImssRequest(bool IsValid, string? RejectionReason =
 public sealed record CreateStudentAccountResponse(
     long UserId,
     string Username,
-    string TemporaryPassword);
+    string AccountStatus);
 
 public sealed record EligibilityReason(string Code, string Message);
 
@@ -101,7 +107,7 @@ public sealed record StudentImportBatchDto(
     string Status,
     string? Notes,
     DateTimeOffset CreatedAt,
-    string? CreatedByName);
+    string? CreatedByName) { public int CreatedAccounts { get; init; } public int ExistingAccounts { get; init; } }
 
 public sealed record StudentImportRowError(
     int Row,
@@ -121,5 +127,5 @@ public sealed record StudentImportResult(
     string? Notes,
     DateTimeOffset CreatedAt,
     string? CreatedByName,
-    IReadOnlyList<StudentImportRowError> RowErrors);
+    IReadOnlyList<StudentImportRowError> RowErrors) { public int CreatedAccounts { get; init; } public int ExistingAccounts { get; init; } }
 

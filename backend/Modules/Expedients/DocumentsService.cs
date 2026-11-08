@@ -239,6 +239,16 @@ public sealed class DocumentsService(
         return (stream, downloadName);
     }
 
+    public async Task<ImssDateSuggestion> GetImssDateSuggestionAsync(long id, CancellationToken ct)
+    {
+        var doc = await currentUser.VisibleDocuments(dbContext, dbContext.ExpedientDocuments).AsNoTracking()
+            .SingleOrDefaultAsync(d => d.Id == id && d.TramiteType == "general" && d.DocumentCode == "IMSS" && d.TramiteId == null, ct)
+            ?? throw new NotFoundException("documents.not_found", "No existe una constancia IMSS accesible.");
+        EnsureCanReviewTramiteType(doc.TramiteType);
+        await using var stream = await fileStorage.OpenReadAsync(doc.StoragePath, ct);
+        return ImssDateExtractionService.Extract(stream, ct);
+    }
+
     public async Task<ExpedientDocumentResponse> ReviewDocumentAsync(
         long id,
         ReviewDocumentRequest request,
@@ -289,11 +299,6 @@ public sealed class DocumentsService(
             throw new ValidationException(errors);
         }
 
-        if (doc.TramiteType == "general" && doc.DocumentCode == "IMSS" && normalizedStatus == "approved")
-        {
-            ImssEligibilityService.ValidateApprovalDate(request.DocumentDate, clock);
-            doc.DocumentDate = request.DocumentDate;
-        }
         doc.Status = normalizedStatus;
         doc.RejectionReason = normalizedStatus == "rejected" ? trimmedReason : null;
         doc.ReviewedBy = currentUser.Id;

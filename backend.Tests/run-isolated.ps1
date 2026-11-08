@@ -27,6 +27,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falló la migración incremental.' }
     Get-Content database/migrations/20261106_company_type_finalize.sql -Raw | docker exec -i $containerName psql -U postgres -d document_checks -q -v ON_ERROR_STOP=1
     if ($LASTEXITCODE -ne 0) { throw 'Falló la clasificación final.' }
+    Get-Content database/migrations/20261107_student_accounts.sql -Raw | docker exec -i $containerName psql -U postgres -d document_checks -q -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) { throw "Falló la migración de cuentas." }
     $mapping = docker port $containerName 5432
     $port = ($mapping -split ':')[-1]
     $env:DOCUMENT_TEST_CONNECTION = "Host=127.0.0.1;Port=$port;Database=document_checks;Username=postgres;Password=document-checks-local;Timeout=3"

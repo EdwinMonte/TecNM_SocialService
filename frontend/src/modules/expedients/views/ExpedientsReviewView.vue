@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import DocumentReviewDialog from '../components/DocumentReviewDialog.vue'
 import { canReadProcess } from '../../../shared/composables/useSession'
 import {
   UiAlert,
@@ -11,7 +12,7 @@ import {
   UiField,
   UiToast,
 } from '../../../shared/components'
-import { getDocumentBlob, getReviewQueuePage, reviewDocument } from '../api/expedientsApi'
+import { getDocumentBlob, getReviewQueuePage } from '../api/expedientsApi'
 import type { ExpedientDocumentStatus, ReviewQueueItem } from '../types/expedients'
 
 // Catálogo descriptivo de códigos normativos de documentos
@@ -176,23 +177,8 @@ function proceedFromViewerToReview(): void {
 // Modal de Dictamen Técnico
 const selectedItem = ref<ReviewQueueItem | null>(null)
 const isDialogOpen = ref(false)
-const rejectionReason = ref('')
-const imssReviewDate = ref('')
-const reviewError = ref('')
-const isSubmitting = ref(false)
-
-const quickObservations = [
-  'Falta sello oficial de la dependencia receptora.',
-  'Rúbrica del asesor externo incompleta o ausente.',
-  'Periodo de fechas no coincide con el trámite.',
-  'Escaneo con baja resolución; texto no legible.',
-]
-
 function openReview(item: ReviewQueueItem): void {
-  imssReviewDate.value = item.documentDate || ''
   selectedItem.value = item
-  rejectionReason.value = item.rejectionReason ?? ''
-  reviewError.value = ''
   isDialogOpen.value = true
 }
 
@@ -202,41 +188,6 @@ function openNextPending(): void {
     openReview(nextDoc)
   } else {
     toast.value?.show('No hay documentos pendientes de dictamen en la cola.')
-  }
-}
-
-async function submitReview(status: 'approved' | 'rejected'): Promise<void> {
-  if (!selectedItem.value) return
-  reviewError.value = ''
-
-  if (status === 'rejected' && !rejectionReason.value.trim()) {
-    reviewError.value =
-      'Para observar o rechazar un documento debes indicar el motivo técnico de corrección.'
-    return
-  }
-
-  if (status === 'approved' && selectedItem.value.documentCode === 'IMSS' && !imssReviewDate.value) {
-    reviewError.value = 'Confirma la fecha de expedición del PDF IMSS.'
-    return
-  }
-  isSubmitting.value = true
-  try {
-    await reviewDocument(selectedItem.value.id, {
-      status,
-      rejectionReason: status === 'rejected' ? rejectionReason.value.trim() : undefined,
-      documentDate: selectedItem.value.documentCode === 'IMSS' && status === 'approved' ? imssReviewDate.value : undefined,
-    })
-    await loadQueue()
-
-    const actionWord = status === 'approved' ? 'aprobado' : 'observado para corrección'
-    toast.value?.show(
-      `Documento ${selectedItem.value.documentCode} de ${selectedItem.value.studentFullName} ${actionWord}.`,
-    )
-    isDialogOpen.value = false
-  } catch {
-    reviewError.value = 'No fue posible registrar el dictamen del documento.'
-  } finally {
-    isSubmitting.value = false
   }
 }
 
@@ -722,78 +673,7 @@ onMounted(() => {
     </UiDialog>
 
     <!-- Modal 2: Dictamen Técnico de Documento -->
-    <UiDialog
-      v-model="isDialogOpen"
-      :title="
-        selectedItem
-          ? `Dictaminar ${selectedItem.documentCode} · ${selectedItem.studentFullName}`
-          : 'Dictaminar Documento'
-      "
-    >
-      <div v-if="selectedItem" class="review-modal-body">
-        <UiAlert v-if="reviewError" tone="danger" title="Atención requerida">
-          {{ reviewError }}
-        </UiAlert>
-
-        <div class="review-summary-box">
-          <div class="review-summary-box__row">
-            <span class="doc-code-badge">{{ selectedItem.documentCode }}</span>
-            <strong>{{ getDocMeta(selectedItem.documentCode).title }}</strong>
-          </div>
-          <p class="review-summary-box__meta">
-            Presentado por <strong>{{ selectedItem.studentFullName }}</strong> ({{
-              selectedItem.studentControlNumber
-            }}
-            · {{ selectedItem.careerCode }}) · Archivo:
-            <code>{{ selectedItem.originalFileName }}</code>
-          </p>
-        </div>
-
-        <div class="preset-observations">
-          <span class="preset-label">Motivos frecuentes de observación (clic para insertar):</span>
-          <div class="preset-chips">
-            <button
-              v-for="obs in quickObservations"
-              :key="obs"
-              type="button"
-              class="preset-chip"
-              @click="rejectionReason = obs"
-            >
-              {{ obs }}
-            </button>
-          </div>
-        </div>
-
-        <UiField v-if="selectedItem?.documentCode === 'IMSS'" v-model="imssReviewDate" type="date" label="Fecha de expedición confirmada en el PDF" />
-        <UiField
-          v-model="rejectionReason"
-          as="textarea"
-          rows="3"
-          label="Observaciones técnicas / Motivo de rechazo (obligatorio si se observa)"
-          placeholder="Especifica qué sello, firma o dato debe corregir el estudiante antes de volver a subir su PDF..."
-        />
-      </div>
-
-      <template #actions>
-        <UiButton variant="secondary" :disabled="isSubmitting" @click="isDialogOpen = false">
-          Cancelar
-        </UiButton>
-        <UiButton
-          variant="danger"
-          :disabled="isSubmitting"
-          @click="submitReview('rejected')"
-        >
-          Observar / Rechazar
-        </UiButton>
-        <UiButton
-          variant="primary"
-          :loading="isSubmitting"
-          @click="submitReview('approved')"
-        >
-          Aprobar documento
-        </UiButton>
-      </template>
-    </UiDialog>
+    <DocumentReviewDialog v-model="isDialogOpen" :document="selectedItem" :student-name="selectedItem?.studentFullName" @reviewed="loadQueue" />
 
     <UiToast ref="toast" />
   <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:1rem">

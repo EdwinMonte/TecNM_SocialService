@@ -65,7 +65,7 @@ VALUES
     -- Cuentas de Estudiantes en distintas etapas del flujo (SS y Prácticas)
     (
         2,
-        'usuario',
+        'l23050363@monclova.tecnm.mx',
         'L23050363@monclova.tecnm.mx',
         'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
         'Héctor Gabriel',
@@ -75,7 +75,7 @@ VALUES
     ),
     (
         6,
-        'alumno.ss.local',
+        'l22050114@monclova.tecnm.mx',
         'L22050114@monclova.tecnm.mx',
         'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
         'Ana Carolina',
@@ -85,7 +85,7 @@ VALUES
     ),
     (
         7,
-        'alumno.ss.activo',
+        'l23050412@monclova.tecnm.mx',
         'L23050412@monclova.tecnm.mx',
         'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
         'Valeria Sofía',
@@ -95,7 +95,7 @@ VALUES
     ),
     (
         8,
-        'alumno.pp.solicitud',
+        'l22050289@monclova.tecnm.mx',
         'L22050289@monclova.tecnm.mx',
         'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
         'Luis Fernando',
@@ -105,7 +105,7 @@ VALUES
     ),
     (
         9,
-        'alumno.pp.activo',
+        'l22050501@monclova.tecnm.mx',
         'L22050501@monclova.tecnm.mx',
         'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
         'Miguel Ángel',
@@ -115,7 +115,7 @@ VALUES
     ),
     (
         10,
-        'alumno.liberado',
+        'l23050618@monclova.tecnm.mx',
         'L23050618@monclova.tecnm.mx',
         'AQAAAAIAAYagAAAAEIr5sN4qIlQg9nbMvyG/Ber0Le6W9Gg8Bt2Ej4uha46Bx7kn/1vJ0MbMx84IKWUhTQ==',
         'Daniela Fernanda',
@@ -146,12 +146,12 @@ WHERE (u.username = 'admin' AND r.name = 'admin')
    OR (u.username = 'coord.practicas' AND r.name = 'internship_coordinator')
    OR (u.username = 'jefa.vinculacion' AND r.name = 'department_head')
    OR (u.username IN (
-        'usuario',
-        'alumno.ss.local',
-        'alumno.ss.activo',
-        'alumno.pp.solicitud',
-        'alumno.pp.activo',
-        'alumno.liberado'
+        'l23050363@monclova.tecnm.mx',
+        'l22050114@monclova.tecnm.mx',
+        'l23050412@monclova.tecnm.mx',
+        'l22050289@monclova.tecnm.mx',
+        'l22050501@monclova.tecnm.mx',
+        'l23050618@monclova.tecnm.mx'
       ) AND r.name = 'student')
 ON CONFLICT (user_id, role_id) WHERE deleted_at IS NULL DO NOTHING;
 

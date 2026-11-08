@@ -51,7 +51,7 @@ internal static class HttpChecks
         using var admin = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
         using var student = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
         await Login(admin, "admin");
-        await Login(student, "usuario");
+        await Login(student, "l23050363@monclova.tecnm.mx");
         Expect(await student.GetAsync("/api/documents/review-queue"), HttpStatusCode.Forbidden);
         Expect(await student.GetAsync("/api/students/2/documents"), HttpStatusCode.NotFound);
         Expect(await student.PutAsJsonAsync("/api/internships/1/evaluation", new { }), HttpStatusCode.Forbidden);
@@ -83,7 +83,7 @@ internal static class HttpChecks
         if (profile.GetProperty("hasValidImss").GetBoolean()) throw new Exception("Upload incorrectly approved IMSS");
         if (profile.GetProperty("imssDocumentDate").GetString() != today.AddDays(-1).ToString("yyyy-MM-dd")) throw new Exception("Declared IMSS date was discarded.");
         Expect(await admin.PostAsJsonAsync("/api/students/1/imss/validation", new { isValid = false }), HttpStatusCode.BadRequest);
-        Expect(await admin.PostAsJsonAsync("/api/students/1/imss/validation", new { isValid = true }), HttpStatusCode.BadRequest);
+        Expect(await admin.PostAsJsonAsync("/api/students/1/imss/validation", new { isValid = true }), HttpStatusCode.OK);
         Expect(await admin.PostAsJsonAsync("/api/students/1/imss/validation", new { isValid = true, documentDate = today }), HttpStatusCode.OK);
         var approvedProfile = await student.GetFromJsonAsync<JsonElement>("/api/students/me");
         if (!approvedProfile.GetProperty("hasValidImss").GetBoolean()) throw new Exception("Approval projection missing");
@@ -92,7 +92,7 @@ internal static class HttpChecks
             var repeated = await student.PutAsync("/api/students/me/imss", sameFile);
             Expect(repeated, HttpStatusCode.OK);
             var unchanged = await repeated.Content.ReadFromJsonAsync<JsonElement>();
-            if (unchanged.GetProperty("imssDocumentDate").GetString() != today.ToString("yyyy-MM-dd") || !unchanged.GetProperty("hasValidImss").GetBoolean())
+            if (unchanged.GetProperty("imssDocumentDate").GetString() != today.AddDays(-1).ToString("yyyy-MM-dd") || !unchanged.GetProperty("hasValidImss").GetBoolean())
                 throw new Exception("Identical upload changed confirmed date or approval.");
         }
         Expect(await student.GetAsync("/api/students/me/imss"), HttpStatusCode.OK);
@@ -181,7 +181,7 @@ internal static class HttpChecks
                 if (!beforeMidnight.GetProperty("hasValidImss").GetBoolean()) throw new Exception("IMSS expired before Mexican midnight.");
                 testClock.UtcNow = testClock.UtcNow.AddSeconds(1);
                 var afterMidnight = await student.GetFromJsonAsync<JsonElement>("/api/students/me");
-                if (afterMidnight.GetProperty("hasValidImss").GetBoolean()) throw new Exception("IMSS stayed eligible after Mexican midnight.");
+                if (!afterMidnight.GetProperty("hasValidImss").GetBoolean()) throw new Exception("Visual IMSS approval expired at the year boundary.");
                 Expect(await student.GetAsync($"/api/social-services/{ss.Id}/pdf/commitment"), HttpStatusCode.OK);
                 var admittedPp = await db.Internships.AsNoTracking().SingleAsync(t => t.StudentId == 1);
                 if (admittedPp.AdmissionImssDocumentId is null) throw new Exception("PP admission evidence missing.");
@@ -195,7 +195,7 @@ internal static class HttpChecks
                 {
                     var blocked = await client.PostAsJsonAsync("/api/internships", newPp);
                     Expect(blocked, HttpStatusCode.UnprocessableEntity);
-                    if (!(await blocked.Content.ReadAsStringAsync()).Contains("students.imss_approval_required")) throw new Exception("New PP was not blocked by expired IMSS.");
+                    if ((await blocked.Content.ReadAsStringAsync()).Contains("students.imss_approval_required")) throw new Exception("Year boundary incorrectly blocked PP due to IMSS.");
                     var blockedSs = await client.PostAsJsonAsync("/api/social-services", new {
                         studentId = 1, periodId = ss.PeriodId, programId = ss.ProgramId, companyId = ss.CompanyId, supervisorId = ss.SupervisorId,
                         modality = "external", startDate = today, endDate = today.AddMonths(6),
@@ -203,14 +203,15 @@ internal static class HttpChecks
                             dependencyName = "Dependencia", dependencyHeadName = "Responsable", dependencyHeadPosition = "Director", activitiesOutline = "Actividades" }
                     });
                     Expect(blockedSs, HttpStatusCode.UnprocessableEntity);
-                    if (!(await blockedSs.Content.ReadAsStringAsync()).Contains("students.imss_approval_required")) throw new Exception("New SS was not blocked by expired IMSS.");
+                    if ((await blockedSs.Content.ReadAsStringAsync()).Contains("students.imss_approval_required")) throw new Exception("Year boundary incorrectly blocked SS due to IMSS.");
                 }
-                Console.WriteLine("HTTP Mexican midnight rollover preserves admitted downloads and blocks new SS/PP for student/staff.");
+                Console.WriteLine("HTTP year rollover preserves visual IMSS approval; duplicate SS/PP remain blocked.");
                 await ClosingChecks.RunAsync(student, admin, db, ss.Id, admittedPp.Id, bytes, today);
             }
             finally { testClock.UtcNow = originalTime; }
         }
         await AccessChecks.RunAsync(factory);
+        await AccountImportChecks.RunAsync(factory, bytes);
         async Task<HttpResponseMessage> Replace(byte suffix)
         {
             using var form = new MultipartFormDataContent();

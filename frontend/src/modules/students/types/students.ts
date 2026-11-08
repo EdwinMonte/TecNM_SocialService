@@ -12,11 +12,15 @@ export interface StudentListItem {
   isEnrolled: boolean
   hasValidImss: boolean
   hasUserAccount: boolean
+  accountUsername: string | null
+  accountStatus: 'missing' | 'active' | 'inactive' | 'inconsistent'
 }
 
 export interface StudentDetail {
   id: number
   userId: number | null
+  accountUsername: string | null
+  accountStatus: 'missing' | 'active' | 'inactive' | 'inconsistent'
   careerId: number
   careerName: string
   importBatchId: number | null
@@ -117,7 +121,7 @@ export interface StudentEligibility {
 export interface CreateStudentAccountResponse {
   userId: number
   username: string
-  temporaryPassword: string
+  accountStatus: string
 }
 
 export interface StudentImportRowError {
@@ -133,6 +137,8 @@ export interface StudentImportResult {
   periodCode: string
   fileName: string
   totalRecords: number
+  createdAccounts: number
+  existingAccounts: number
   importedRecords: number
   failedRecords: number
   status: string

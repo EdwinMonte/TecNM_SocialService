@@ -1,5 +1,19 @@
 # Migración de tipología y métricas
 
+## Cuentas de alumnos — 7 de noviembre de 2026
+
+Después de las migraciones documental y de tipología, aplicar `20261107_student_accounts.sql` una sola vez en instalaciones existentes. Las bases nuevas creadas con el diseño actual ya incluyen sus columnas e índices.
+
+1. Crear respaldo PostgreSQL en formato custom y verificarlo con `pg_restore --list`. Conservar también las imágenes anteriores de API y frontend.
+2. Ensayar el archivo reemplazando `COMMIT;` por `ROLLBACK;`. El preflight bloquea correos ausentes/duplicados, cuentas compartidas, colisiones y roles incompatibles. Corregir los conflictos antes del despliegue.
+3. Detener API y frontend para impedir escrituras; ejecutar la migración con `ON_ERROR_STOP=1`. Nunca ejecutar seeds ni `schema.sql` sobre la instalación.
+4. Desplegar API y frontend juntos. Las cuentas vinculadas de alumnos usarán su correo institucional; contraseñas existentes conservadas. Personal conserva usuario. Todos deben iniciar sesión de nuevo.
+5. Verificar login, padrón e IMSS; comparar huellas de alumnos, credenciales, roles, trámites, documentos y archivos. Restablecer cuentas solo mediante la acción administrativa explícita.
+
+La transacción revierte por completo si falla. Si falla antes de desplegar, reiniciar los contenedores anteriores. Si se requiere restaurar el respaldo, mantener escrituras detenidas y restaurar junto a las imágenes compatibles; no continuar con versiones mezcladas.
+
+Aceptación aislada: suite nativa/Docker incluye preservación de credenciales, rollback de migración y de filas Excel, cuentas por correo, revocación, adaptación IMSS de preingreso y extracción digital. Interfaz: `node frontend/scripts/check-accounts-imss-ui.mjs`, con Vite activo y `PLAYWRIGHT_MODULE` configurado si hace falta.
+
 Aplicar sobre PostgreSQL con respaldo, después de `20261103_document_workflow_v2.sql`.
 No ejecutar `database/design/schema.sql` sobre una instalación existente.
 

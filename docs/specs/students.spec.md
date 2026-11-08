@@ -27,6 +27,8 @@ interface StudentListItem {
   isEnrolled: boolean;
   hasValidImss: boolean;
   hasUserAccount: boolean;
+  accountUsername: string | null;
+  accountStatus: "missing" | "active" | "inactive" | "inconsistent";
 }
 
 interface StudentDetail {
@@ -129,7 +131,7 @@ interface StudentEligibility {
 | `PUT /api/students/{id}` | `StudentRequest` | `200 StudentDetail` | `400`, `404`, `409`, `422` |
 | `DELETE /api/students/{id}` | — | `204` | `409 students.in_use` (tiene trámites) |
 | `GET /api/students/{id}/eligibility` | — | `200 StudentEligibility` | `404` |
-| `POST /api/students/{id}/account` | — | `201 { userId, username, temporaryPassword }` | `409 students.account_exists`, `422 students.email_required` |
+| `POST /api/students/{id}/account` | — | `201 { userId, username, accountStatus }` | `409 students.account_exists`, `400 validation.failed` |
 | `PUT /api/students/{id}/imss` | `multipart/form-data` `file` (PDF/JPG/PNG ≤ 5 MB) | `200 StudentDetail` (reinicia `hasValidImss=false`) | `413`, `415` |
 | `GET /api/students/{id}/imss` | — | Stream archivo | `404` |
 | `POST /api/students/{id}/imss/validation` | `{ isValid: boolean }` | `200 StudentDetail` | `422 students.imss_file_missing` |
@@ -138,7 +140,9 @@ interface StudentEligibility {
 | `PUT /api/students/me/imss` | Igual que staff | `200 StudentDetail` | `413`, `415` |
 | `GET /api/students/me/eligibility` | — | `200 StudentEligibility` | `404` |
 
-Cuenta de estudiante: `username = controlNumber`, `email = institutionalEmail` (fallback `personalEmail`), rol `student`. `temporaryPassword` se muestra una sola vez.
+Cuenta de estudiante: `username = email = institutionalEmail`, normalizado a minúsculas, válido y máximo 254 caracteres; rol exclusivo `student`. Contraseña habitual inicial: matrícula en mayúsculas, almacenada mediante hash; sin cambio obligatorio. No fabricar correos ni reutilizar cuentas por coincidencia.
+
+`POST /api/students/{id}/account` devuelve `{ userId, username, accountStatus }`. `POST /api/students/{id}/account/reset-password`, exclusivo admin, restablece a matrícula y devuelve 204; invalida sesiones. Crear cuenta, rol y vínculo es atómico. El padrón añade `accountUsername` y `accountStatus`: `missing`, `active`, `inactive`, `inconsistent`. Solo admin modifica correo institucional; corrección sincroniza identidad y revoca sesiones. Las contraseñas existentes se conservan salvo restablecimiento explícito.
 
 ## Elegibilidad
 
@@ -164,6 +168,8 @@ interface StudentImportBatch {
   fileName: string;
   totalRecords: number;
   importedRecords: number;
+  createdAccounts: number;
+  existingAccounts: number;
   failedRecords: number;
   status: "pending" | "processing" | "completed" | "failed";
   notes: string | null;
@@ -185,7 +191,7 @@ interface StudentImportResult extends StudentImportBatch {
 
 Columnas de plantilla: `control_number`*, `first_surname`*, `second_surname`, `first_name`*, `career_code`*, `curp`, `gender`, `shift`, `current_semester`, `completed_credits`, `institutional_email`, `personal_email`, `phone_number`, `has_disability`, `disability_description`. (`*` requeridas; `current_semester` default `7`, `completed_credits` default `156`).
 
-Reglas: procesamiento síncrono en v1. Upsert por `control_number` (actualiza datos académicos; no toca `user_id` ni IMSS). Si el alumno no tenía cuenta de usuario y cuenta con correo (o usando matrícula), permite habilitar su acceso. Fila inválida no aborta el lote; se reporta en `rowErrors` y se cuenta en `failedRecords`. Estado final `completed` si ≥ 1 fila importada; `failed` si ninguna.
+Reglas: procesamiento síncrono. Upsert por matrícula; cada fila guarda alumno y cuenta en una transacción. `institutional_email` es obligatorio. Si ya tiene cuenta, conserva contraseña, roles y actividad; correo actualizado sincroniza identidad. Una colisión no modifica ninguna cuenta ajena. Primera fila guardada por matrícula/correo prevalece; duplicados posteriores fallan. Respuesta y lote agregan `createdAccounts` y `existingAccounts`. Fila inválida no aborta el lote; se reporta en `rowErrors`. Errores generales finalizan lote como `failed` con contadores reales; éxito parcial normal usa `completed`. IMSS e historial se conservan.
 
 ## Flujos UI esperados
 

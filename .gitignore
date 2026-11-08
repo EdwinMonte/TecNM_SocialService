@@ -63,7 +63,6 @@ Thumbs.db
 # ==========================================
 docs/sources/
 
-# Local PDF verification renders
-tmp/pdf-qa/
-tmp/document-checks/
+# Archivos temporales, diagnósticos y pruebas locales
+tmp/
 local-data/

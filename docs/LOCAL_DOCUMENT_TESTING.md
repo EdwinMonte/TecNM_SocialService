@@ -2,7 +2,7 @@
 
 Acceso: http://localhost:3000. Frontend, API y PostgreSQL se ejecutan en Docker.
 
-Cuentas demo verificadas: `usuario` (alumno) y `admin` (administración). Contraseña demo: `TecNM-Demo-2026!`.
+Cuentas demo verificadas: `i23050363@monclova.tecnm.mx` (alumno) y `admin` (administración). Contraseña demo: `TecNM-Demo-2026!`.
 
 ## Entorno preparado
 
@@ -47,3 +47,22 @@ No ejecutar nuevamente la migración ya aplicada ni el archivo de diseño sobre 
 - Pasan ambos recorridos reales: acceso con cinco roles, tipología, área inicial, alternancia estadística, bloqueo de expedientes cruzados, comparación de métricas SQL/HTTP y descargas documentales. Capturas en `tmp/pdf-qa/live-process-access/`.
 
 Estas migraciones ya están aplicadas en esta base local. No volver a ejecutarlas; para otras instalaciones seguir `database/migrations/README.md` y clasificar sus registros individualmente.
+
+## Cuentas e IMSS desplegados — 7 de noviembre de 2026
+
+- Aplicada `20261107_student_accounts.sql` tras ensayo con rollback y respaldo verificado `tmp/pdf-qa/backups/tecnm-before-student-accounts-20261107-190923.dump`.
+- Nueve cuentas vinculadas migradas a correo institucional. Huellas de credenciales, alumnos, roles, lotes, SS/PP y 47 documentos conservadas antes del restablecimiento explícito; cinco archivos del volumen conservan sus hashes.
+- Restablecida exclusivamente la cuenta de `I23050348` mediante endpoint admin. Usuario `i23050348@monclova.tecnm.mx`; contraseña su matrícula en mayúsculas. Login y perfil correctos. Aún no hay constancia IMSS para este alumno: debe cargar su PDF real.
+- API y frontend actualizados en http://localhost:3000. Sesiones anteriores requieren nuevo login. No se ejecutaron seeds ni scripts de diseño/legacy en esta base.
+- Pasan suite aislada y tres recorridos de UI: cuentas/IMSS, bandeja y expedientes. Comprobaciones reales verifican cinco roles, aislamiento de procesos, catálogo y descargas oficiales sin cambiar evidencias.
+- Imágenes de reversión reconstruidas desde HEAD anterior: `tecnm-sspp-backend:before-accounts-20261107` y `tecnm-sspp-frontend:before-accounts-20261107`. Docker no conservaba los manifiestos originales; no se alteraron volúmenes para resolverlo.
+- Para recorridos reales, definir `UI_TEST_STUDENT_USERNAME=i23050363@monclova.tecnm.mx`; las bases nuevas con seeds usan `l23050363@monclova.tecnm.mx`. Ambas conservan su contraseña demo. Capturas en `tmp/pdf-qa/accounts-imss/`.
+- IMSS: carga con fecha opcional, revisión de preingreso desde padrón y bandeja, sugerencia digital con confirmación. No hay OCR ni dictamen automático.
+
+## Ajuste: fecha IMSS manual
+
+La revisión del documento 49 confirmó que el PDF es digital y usa «Fecha de Constancia», mientras el extractor reconocía expedición/emisión; la API devolvía `not_found`. El PDF contiene otras fechas que no deben confundirse con la documental. La revisión ahora captura/confirma manualmente esa fecha y no consulta sugerencias. Se conserva fecha declarada como referencia, validación anual y rechazo con motivo. No se modificó el documento ni su dictamen.
+
+## Criterio final IMSS: confirmación visual de VIGENTE
+
+Por decisión del usuario se retiraron captura de fecha y restricción del año actual. Alumno carga PDF sin fechas; encargado comprueba titular y estado VIGENTE mediante confirmación explícita en el visor antes de aprobar. Un documento aprobado sigue habilitando ingreso al cambiar de año. Reemplazo requiere nuevo dictamen; rechazo bloquea ingreso. Fechas históricas se conservan como metadatos. No se aprobaron documentos reales durante este ajuste.

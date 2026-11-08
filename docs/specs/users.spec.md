@@ -49,7 +49,7 @@ interface RoleItem { id: number; name: string; description: string | null; }
 
 | Campo | Regla |
 | --- | --- |
-| `username` | Requerido, 3–64, `^[a-zA-Z0-9._-]+$`, único (`users.duplicated_username`) |
+| `username` | Requerido, 3–254, único sin distinguir mayúsculas; alumnos usan correo institucional. Personal conserva su identificador. |
 | `email` | Requerido, email, máx. 254, único (`users.duplicated_email`) |
 | `password` / `newPassword` | Requerido, 8–128 caracteres. Se guarda con `PasswordHasher<User>` |
 | `firstName` | Requerido, 1–100 |
@@ -74,6 +74,6 @@ interface RoleItem { id: number; name: string; description: string | null; }
 ## Reglas
 
 - Roles se sincronizan reemplazando el conjunto completo en `user_roles`.
-- Desactivar usuario no invalida JWT emitido (sin revocación; expira en ≤ 8 h). Documentado como limitación conocida.
+- Cada petición revalida cuenta activa y roles; `session_version` revoca JWT al cambiar contraseña o identidad. Usuarios de alumno usan correo institucional (máximo 254), sin distinción de mayúsculas en unicidad. La migración conserva contraseñas y bloquea vínculos ambiguos o roles incompatibles.
 - Un admin no puede desactivarse ni borrarse a sí mismo.
 - Borrado lógico de usuario no borra `students`; `students.user_id` queda intacto (FK `SET NULL` solo aplica a borrado físico).

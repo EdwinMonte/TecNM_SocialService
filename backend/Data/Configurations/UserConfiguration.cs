@@ -12,7 +12,7 @@ public sealed class UserConfiguration : AuditableEntityConfiguration<User>
 
         builder.ToTable("users");
         builder.HasKey(u => u.Id).HasName("pk_users");
-        builder.Property(u => u.Username).HasColumnName("username").HasMaxLength(64).IsRequired();
+        builder.Property(u => u.Username).HasColumnName("username").HasMaxLength(254).IsRequired();
         builder.Property(u => u.Email).HasColumnName("email").HasMaxLength(254).IsRequired();
         builder.Property(u => u.PasswordHash).HasColumnName("password_hash").HasMaxLength(512).IsRequired();
         builder.Property(u => u.FirstName).HasColumnName("first_name").HasMaxLength(100).IsRequired();
@@ -20,6 +20,7 @@ public sealed class UserConfiguration : AuditableEntityConfiguration<User>
         builder.Property(u => u.SecondSurname).HasColumnName("second_surname").HasMaxLength(70);
         builder.Property(u => u.IsActive).HasColumnName("is_active").IsRequired();
 
+        builder.Property(u => u.SessionVersion).HasColumnName("session_version").HasDefaultValue(0).IsConcurrencyToken();
         builder.Ignore(u => u.FullName);
 
         builder.HasIndex(u => u.Username)

@@ -1,5 +1,7 @@
 # Comprobaciones documentales
 
+Cuentas e IMSS: la suite incluye migración por correo institucional con credenciales conservadas, rechazo de identidades/roles ambiguos, Excel atómico por fila, colisiones sin efectos, reimportación sin reset, alta manual, cambio administrativo de correo y revocación de sesiones. IMSS prueba revisión SS de preingreso sin exponer perfil completo, fechas digitales contextuales, ambigüedad y captura manual de respaldo. `node frontend/scripts/check-accounts-imss-ui.mjs` cubre diálogo compartido, conflictos de fecha, mensajes de API, restablecimiento y carga opcional de fecha en escritorio/móvil. Los runners aplican la migración de cuentas únicamente a su base temporal.
+
 Acceso por proceso y empresas: la suite incluye `AccessChecks` y `LinkageDatabaseChecks`: roles por petición, listados administrativos, documentos ajenos, preingreso mínimo, gestión compartida, clasificación incompleta, esquema nuevo, `EXPLAIN`, agregados SS/PP y paginación. El padrón global queda reservado a admin.
 
 Sin Docker: `pwsh -File backend.Tests/run-native-isolated.ps1`. Usa PostgreSQL 18 instalado, puerto local libre y un clúster temporal; lo detiene y elimina al terminar. Puede requerir ejecución fuera del aislamiento de procesos del agente para iniciar PostgreSQL.
@@ -22,7 +24,7 @@ Después de la suite aislada, iniciar Vite con `pnpm --prefix frontend run dev`.
 
 El mismo script comprueba PP: editor de dos fechas sin criterios, aceptación sin carga para alumno y carga multipart CA para staff. `node frontend/scripts/check-review-ui.mjs` verifica bandeja administrativa con estados sintéticos: fecha IMSS, rechazo obligatorio, payloads, filtros enviados al servidor, limpieza de blob, error sin ejemplos y reintento. Ambos guardan capturas en tmp/pdf-qa. Estas pruebas de interfaz interceptan API; la integración HTTP/PostgreSQL se ejecuta por separado en la suite aislada.
 
-Perfil IMSS: el recorrido comprueba que falta de fecha deshabilita carga, que multipart incluye documentDate y que se muestra revisión pendiente. La suite HTTP verifica fecha declarada persistida, fechas futuras rechazadas y que reenviar mismos bytes no cambia fecha confirmada ni aprobación.
+Perfil IMSS: el recorrido comprueba que fecha opcional permite carga, que multipart incluye documentDate cuando se declara y que se muestra revisión pendiente. La suite HTTP verifica fecha declarada persistida, fechas futuras rechazadas y que reenviar mismos bytes no cambia fecha confirmada ni aprobación.
 
 Ciclo SS por HTTP: Compromiso solo acredita firma tras aprobar evidencia; reporte no admite dictamen sin PDF. Rechazo, reemplazo y aprobación sincronizan datos y PDF, bloquean edición posterior y conservan versiones/observaciones históricas.
 

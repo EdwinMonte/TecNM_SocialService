@@ -8,6 +8,7 @@ const module = process.env.PLAYWRIGHT_MODULE || 'playwright'
 const { chromium } = await import(path.isAbsolute(module) ? pathToFileURL(module).href : module)
 const base = process.env.UI_TEST_URL || 'http://localhost:3000'
 const password = process.env.UI_TEST_PASSWORD || 'TecNM-Demo-2026!'
+const studentUsername = process.env.UI_TEST_STUDENT_USERNAME || 'l23050363@monclova.tecnm.mx'
 const output = path.resolve('tmp/pdf-qa/live-process-access')
 fs.mkdirSync(output, { recursive: true })
 const snapshotPath = process.env.LINKAGE_SQL_SNAPSHOT
@@ -29,7 +30,7 @@ try {
     ['encargado.ss','social_service_officer','social_service'],
     ['coord.practicas','internship_coordinator','internship'],
     ['jefa.vinculacion','department_head','social_service'],
-    ['usuario','student',null],
+    [studentUsername,'student',null],
   ]) {
     const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width:1440,height:1000 } })
     const page = await context.newPage()
@@ -37,7 +38,7 @@ try {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(base + '/login')
-    await page.getByLabel('Usuario', { exact:true }).fill(username)
+    await page.getByLabel('Correo institucional o usuario de personal', { exact:true }).fill(username)
     await page.getByLabel('Contraseña', { exact:true }).fill(password)
     const [login] = await Promise.all([
       page.waitForResponse(response => response.url().endsWith('/api/auth/login')),
