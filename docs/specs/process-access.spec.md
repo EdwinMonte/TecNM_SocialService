@@ -2,6 +2,8 @@
 
 Contrato vigente; prevalece sobre permisos contradictorios de contratos anteriores.
 
+Padrón: admin, encargado SS, coordinador PP y jefe de Vinculación (`department_head`) pueden registrar alumnos manualmente y descargar la plantilla vacía. La importación masiva, edición global y administración de cuentas siguen exclusivas de admin. La exportación del listado usa exclusivamente los datos autorizados por `GET /api/students`, aplicando filtros y todas las páginas.
+
 - SS consulta y aprueba únicamente expedientes y documentos SS; PP únicamente PP. Aplicar alcance a listados, detalles, PDF, historial, seguimiento y PNC antes de paginar.
 - Alumno consulta y carga exclusivamente sus propias evidencias. Personal, incluido admin, no carga formatos del alumno. Aceptación PP admite coordinador PP y admin; alumno solo consulta. Eliminación y reemplazo exigen el mismo permiso.
 - Requisitos generales de preingreso: revisión compartida con datos mínimos. Después del ingreso, vincular su consulta al proceso propio.

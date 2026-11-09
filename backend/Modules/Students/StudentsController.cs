@@ -101,7 +101,7 @@ public class StudentsController(StudentsService studentsService, StudentAccounts
         return Ok(detail);
     }
 
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,social_service_officer,internship_coordinator,department_head")]
     [HttpPost]
     public async Task<ActionResult<StudentDetail>> Create(
         [FromBody] StudentRequest request,

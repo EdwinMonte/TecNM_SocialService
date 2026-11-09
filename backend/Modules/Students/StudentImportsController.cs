@@ -10,7 +10,7 @@ namespace TecNM.Api.Modules.Students;
 public class StudentImportsController(StudentImportsService studentImportsService) : ControllerBase
 {
 
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,social_service_officer,internship_coordinator,department_head")]
     [HttpGet("template")]
     public IActionResult DownloadTemplate()
     {

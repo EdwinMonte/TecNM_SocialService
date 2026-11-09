@@ -251,7 +251,9 @@ public partial class StudentsService(
         dbContext.Students.Add(student);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return await GetByIdAsync(student.Id, cancellationToken);
+        return currentUser.IsInRole("admin")
+            ? await GetByIdAsync(student.Id, cancellationToken)
+            : ToDetail(student) with { CareerName = career.Name };
     }
 
     public async Task<StudentDetail> UpdateAsync(long id, StudentRequest request, CancellationToken cancellationToken = default)

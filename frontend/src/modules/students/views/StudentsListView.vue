@@ -5,6 +5,7 @@ import { getStudentDocuments } from '../../expedients/api/expedientsApi'
 import type { ExpedientDocument } from '../../expedients/types/expedients'
 import { problemMessage } from '../../../shared/api/problemDetails'
 import { hasRole } from '../../../shared/composables/useSession'
+import { getStudentsCsv } from '../utils/exportStudents'
 import {
   UiAlert,
   UiBadge,
@@ -57,6 +58,9 @@ async function saveAssessment() {
  catch (error) { assessmentError.value = problemMessage(error, 'No se pudo guardar la valoración.') }
  finally {savingAssessment.value = false}
 }
+const canCreate = computed(() => hasRole('admin', 'social_service_officer', 'internship_coordinator', 'department_head'))
+const isExporting = ref(false)
+const isDownloadingTemplate = ref(false)
 const canRegister = computed(() => hasRole('admin'))
 const canReview = computed(() => hasRole('admin', 'social_service_officer', 'internship_coordinator'))
 
@@ -355,6 +359,7 @@ async function openEditModal(row: StudentListItem): Promise<void> {
 }
 
 async function handleSaveStudent(): Promise<void> {
+  if (isSubmittingStudent.value || (isEditing.value ? !canRegister.value : !canCreate.value)) return
   isSubmittingStudent.value = true
   errorMessage.value = ''
   successMessage.value = ''
@@ -412,7 +417,35 @@ async function handleCreateAccount(row: StudentListItem): Promise<void> {
   }
 }
 
+async function handleExportStudents(): Promise<void> {
+  if (isExporting.value || isLoading.value) return
+  isExporting.value = true
+  errorMessage.value = ''
+  try {
+    const csv = await getStudentsCsv({
+      search: searchQuery.value.trim() || undefined,
+      careerId: Number(selectedCareerId.value) || undefined,
+      shift: selectedShift.value || undefined,
+      hasValidImss: selectedImssFilter.value === '' ? undefined : selectedImssFilter.value === 'true',
+      followUpStatus: followUpStatus.value || undefined,
+      followUpProgress: followUpProgress.value || undefined,
+    })
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'Alumnos_TecNM.csv'
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    errorMessage.value = problemMessage(error, 'No se pudo exportar el listado de alumnos. Vuelve a intentar.')
+  } finally {
+    isExporting.value = false
+  }
+}
+
 async function handleDownloadTemplate(): Promise<void> {
+  if (isDownloadingTemplate.value || !canCreate.value) return
+  isDownloadingTemplate.value = true
   try {
     const blob = await downloadImportTemplate()
     const url = window.URL.createObjectURL(blob)
@@ -423,6 +456,8 @@ async function handleDownloadTemplate(): Promise<void> {
     window.URL.revokeObjectURL(url)
   } catch {
     errorMessage.value = 'No se pudo descargar la plantilla oficial de Excel.'
+  } finally {
+    isDownloadingTemplate.value = false
   }
 }
 
@@ -471,8 +506,9 @@ onMounted(async () => {
         </p>
       </div>
 
-      <div v-if="canRegister" class="actions-group">
-        <UiButton variant="secondary" class="action-btn" @click="handleDownloadTemplate">
+      <div class="actions-group" role="group" aria-label="Acciones del padrón">
+        <UiButton variant="secondary" class="action-btn" :loading="isExporting" :disabled="isLoading || !totalItems" @click="handleExportStudents">{{ isExporting ? 'Exportando…' : 'Exportar alumnos (.csv)' }}</UiButton>
+        <UiButton v-if="canCreate" variant="secondary" class="action-btn" :loading="isDownloadingTemplate" @click="handleDownloadTemplate">
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
             <polyline points="7 10 12 15 17 10" />
@@ -483,6 +519,7 @@ onMounted(async () => {
         <UiButton
           variant="secondary"
           class="action-btn"
+          v-if="canRegister"
           @click="
             importResult = null;
             importFile = null;
@@ -496,12 +533,12 @@ onMounted(async () => {
           </svg>
           Importar Padrón Excel
         </UiButton>
-        <UiButton variant="primary" class="action-btn primary" @click="openCreateModal">
+        <UiButton v-if="canCreate" variant="primary" class="action-btn primary" @click="openCreateModal">
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.2" fill="none">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          Agregar Alumno (Caso Específico)
+          Agregar alumno manualmente
         </UiButton>
       </div>
     </div>
@@ -602,7 +639,7 @@ onMounted(async () => {
       size="lg"
       :title="isEditing ? `Expediente · ${studentForm.controlNumber}` : 'Agregar Alumno (Caso Específico)'"
     >
-      <fieldset class="modal-form-grid" :disabled="!canRegister" style="border:0;padding:0;margin:0">
+      <fieldset class="modal-form-grid" :disabled="isEditing ? !canRegister : !canCreate" style="border:0;padding:0;margin:0">
         <UiField id="ss-eligible-period" label="Primer periodo de aptitud SS" hint="Primer semestre como candidato"><select id="ss-eligible-period" v-model="studentForm.socialServiceEligiblePeriodId" class="modern-select"><option :value="undefined">Activo al crear / conservar al editar</option><option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option></select></UiField>
         <UiField label="No. de Control *" hint="Ej. I23050363">
           <input v-model="studentForm.controlNumber" type="text" class="modern-input" placeholder="I23050999" />
@@ -709,7 +746,7 @@ onMounted(async () => {
 
       <template #footer>
         <UiButton variant="secondary" @click="isStudentModalOpen = false">Cancelar</UiButton>
-        <UiButton v-if="canRegister" variant="primary" :disabled="isSubmittingStudent" @click="handleSaveStudent">
+        <UiButton v-if="isEditing ? canRegister : canCreate" variant="primary" :disabled="isSubmittingStudent" @click="handleSaveStudent">
           {{ isSubmittingStudent ? 'Guardando...' : isEditing ? 'Guardar Cambios' : 'Registrar Alumno' }}
         </UiButton>
       </template>
@@ -816,12 +853,14 @@ onMounted(async () => {
 }
 
 .title-block {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
 .title-row {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -865,7 +904,11 @@ onMounted(async () => {
   gap: 0.45rem;
   font-size: 0.85rem;
   font-weight: 500;
-  height: 38px;
+  min-height: 44px;
+  height: auto;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
   padding: 0 1rem;
 }
 
@@ -1369,6 +1412,8 @@ onMounted(async () => {
 .detail-fields dt { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 4px; }
 .detail-fields dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--color-text-primary); }
 @media(max-width:800px) {
+ .actions-group { width: 100%; }
+ .action-btn { flex: 1 1 220px; justify-content: center; padding: 10px 12px; }
  .roster-filters, .extra-filter-fields { grid-template-columns: 1fr; }
  .roster-toolbar { padding: 16px; }
  .roster-table :deep(thead) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
