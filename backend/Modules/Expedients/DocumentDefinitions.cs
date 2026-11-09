@@ -25,24 +25,25 @@ public static class DocumentDefinitions
 
         var docs = new List<DocumentRequirement>
         {
-            new("SOL", "Anexo XVIII · Solicitud", "application"),
-            new("CP", "Carta de Presentación firmada", BlockedReason: "Adjunta el PDF firmado. Vinculación debe revisarlo y aprobarlo."),
-            new("CA", "Carta de Aceptación", TemplateKey: "ss-acceptance-example"),
-            new("CC", "Anexo XX · Carta Compromiso", "commitment")
+            new("SOL", SocialServiceDocumentCatalog.Title("SOL"), "application"),
+            new("CP", SocialServiceDocumentCatalog.Title("CP"), BlockedReason: "Adjunta el PDF firmado. Vinculación debe revisarlo y aprobarlo."),
+            new("CA", SocialServiceDocumentCatalog.Title("CA"), TemplateKey: "ss-acceptance-example"),
+            new("CC", SocialServiceDocumentCatalog.Title("CC"), "commitment")
         };
         for (var period = 1; period <= 3; period++)
         {
-            docs.Add(new($"R{period}", $"Anexo XXII · Reporte bimestral {period}", $"report_{period}"));
+            docs.Add(new($"R{period}", SocialServiceDocumentCatalog.Title($"R{period}"), $"report_{period}"));
             if (version >= 2)
             {
-                docs.Add(new($"EV_SUP{period}", $"Anexo XXIII · Evaluación {period}", TemplateKey: "ss-supervisor-evaluation"));
-                docs.Add(new($"EV_SELF{period}", $"Anexo XXIV · Autoevaluación {period}", TemplateKey: "ss-self-evaluation"));
+                docs.Add(new($"EV_SUP{period}", SocialServiceDocumentCatalog.Title($"EV_SUP{period}"), TemplateKey: "ss-supervisor-evaluation"));
+                docs.Add(new($"EV_SELF{period}", SocialServiceDocumentCatalog.Title($"EV_SELF{period}"), TemplateKey: "ss-self-evaluation"));
             }
-            else docs.Add(new($"EV{period}", $"Paquete de evaluaciones {period}", TemplateKey: "ss-supervisor-evaluation"));
+            else docs.Add(new($"EV{period}", SocialServiceDocumentCatalog.Title($"EV{period}"), TemplateKey: "ss-supervisor-evaluation"));
         }
-        if (version >= 2) docs.Add(new("EV_ACT", "Anexo XXV · Evaluación de actividades", "activity_assessment"));
-        docs.Add(new("CT", "Anexo XIX · Carta de Terminación", TemplateKey: "ss-termination"));
-        return docs.Select(d => d with { CanUpload = d.CanUpload && user.IsInRole("student") }).ToList();
+        if (version >= 2) docs.Add(new("EV_ACT", SocialServiceDocumentCatalog.Title("EV_ACT"), "activity_assessment"));
+        docs.Add(new("CT", SocialServiceDocumentCatalog.Title("CT"), TemplateKey: "ss-termination"));
+        return docs.OrderBy(d => SocialServiceDocumentCatalog.Order(d.Code))
+            .Select(d => d with { Title = SocialServiceDocumentCatalog.Title(d.Code), CanUpload = d.CanUpload && user.IsInRole("student") }).ToList();
     }
 
     public static bool CanUpload(string type, string code, int version, ICurrentUser user)

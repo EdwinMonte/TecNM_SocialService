@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { socialDocumentLabel } from '../../../shared/utils/socialServiceDocuments'
 import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
 import { http } from '../../../shared/api/http'
 import { onMounted, reactive, ref } from 'vue'
@@ -205,7 +206,7 @@ async function handleSubmitApplication(): Promise<void> {
     const created = await requestSocialService(openForm)
     service.value = created
     successMessage.value =
-      'Solicitud de Servicio Social (Anexo XVIII) generada y enviada a Vinculación exitosamente.'
+      `${socialDocumentLabel('SOL')} generada y enviada a Vinculación.`
     await handlePrintFormat('application')
     await loadData()
   } catch (err: any) {
@@ -258,7 +259,7 @@ async function handleSaveAndPrintCommitment(): Promise<void> {
   try {
     service.value = await upsertCommitment(service.value.id, commitmentForm)
     isCommitmentModalOpen.value = false
-    successMessage.value = 'Datos de Carta Compromiso (Anexo XX) guardados.'
+    successMessage.value = `${socialDocumentLabel('CC')}: datos guardados.`
     await handlePrintFormat('commitment')
   } catch (err: any) {
     errorMessage.value = err?.response?.data?.message || 'Error al guardar la Carta Compromiso.'
@@ -280,7 +281,7 @@ async function handleSaveAndPrintReport(): Promise<void> {
       evaluatorSupervisorId: service.value.supervisor?.id ?? null,
     })
     isReportModalOpen.value = false
-    successMessage.value = `Reporte Bimestral #${activeReportNumber.value} (Anexo XXII) guardado y listo para imprimir.`
+    successMessage.value = `${socialDocumentLabel(`R${activeReportNumber.value}`)} guardado y listo para imprimir.`
     await handlePrintFormat(`report_${activeReportNumber.value}`)
     await loadData()
   } catch (err: any) {
@@ -318,10 +319,10 @@ onMounted(() => {
     <!-- CASO 1: ALUMNO SIN TRÁMITE -> ASISTENTE DE APERTURA (ANEXO XVIII)    -->
     <!-- ==================================================================== -->
     <div v-else-if="!service" style="display: flex; flex-direction: column; gap: 1.5rem;">
-      <UiCard title="Solicitud Automatizada de Apertura de Servicio Social (Anexo XVIII + Vigencia IMSS)">
+      <UiCard :title="socialDocumentLabel('SOL')">
         <p style="margin: 0 0 1rem; color: #4b5563; font-size: 0.92rem;">
           Llena tus datos y adjunta tu <strong>Constancia de Vigencia de Derechos del IMSS</strong>.
-          El sistema generará automáticamente tu formato oficial <strong>Anexo XVIII</strong> y
+          El sistema generará automáticamente tu formato oficial <strong>{{ socialDocumentLabel('SOL') }}</strong> y
           enviará tu solicitud al departamento de Vinculación. Después podrás adjuntar tu Carta de Presentación firmada.
         </p>
 
@@ -423,7 +424,7 @@ onMounted(() => {
             {{
               isSubmitting
                 ? 'Generando Solicitud...'
-                : 'Enviar Solicitud a Vinculación y Generar Anexo XVIII'
+                : `Enviar ${socialDocumentLabel('SOL')} a Vinculación`
             }}
           </UiButton>
         </div>
@@ -452,7 +453,7 @@ onMounted(() => {
             </UiBadge>
           </div>
           <div>
-            <span class="label">Folio Carta de Presentación (CP)</span>
+            <span class="label">Folio {{ socialDocumentLabel('CP') }}</span>
             <strong>{{ service.presentationLetterFolio || 'Consultar carga y dictamen en el expediente' }}</strong>
           </div>
           <div>
@@ -465,7 +466,7 @@ onMounted(() => {
 
         <div class="templates-toolbar">
           <UiButton variant="secondary" size="sm" @click="handlePrintFormat('application')">
-            Imprimir Solicitud Anexo XVIII
+            Imprimir {{ socialDocumentLabel('SOL') }}
           </UiButton>
 
           <UiButton
@@ -474,7 +475,7 @@ onMounted(() => {
             size="sm"
             @click="handlePrintFormat('presentation_letter')"
           >
-            Descargar Carta de Presentación ({{ service.presentationLetterFolio }})
+            Descargar {{ socialDocumentLabel('CP') }} ({{ service.presentationLetterFolio }})
           </UiButton>
 
 
@@ -500,7 +501,7 @@ onMounted(() => {
     <UiDialog
       v-model="isCommitmentModalOpen"
       size="lg"
-      title="Llenar e Imprimir Carta Compromiso (Anexo XX)"
+      :title="socialDocumentLabel('CC')"
     >
       <div style="display: flex; flex-direction: column; gap: 0.85rem;">
         <UiField label="Domicilio del Estudiante *">
@@ -524,7 +525,7 @@ onMounted(() => {
             :disabled="isSubmitting"
             @click="handleSaveAndPrintCommitment"
           >
-            Guardar e Imprimir Anexo XX
+            Guardar e imprimir {{ socialDocumentLabel('CC') }}
           </UiButton>
         </div>
       </template>
@@ -536,7 +537,7 @@ onMounted(() => {
     <UiDialog
       v-model="isReportModalOpen"
       size="lg"
-      :title="`Llenar e Imprimir Reporte Bimestral #${activeReportNumber} (Anexo XXII)`"
+      :title="socialDocumentLabel(`R${activeReportNumber}`)"
     >
       <div style="display: flex; flex-direction: column; gap: 0.85rem;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">

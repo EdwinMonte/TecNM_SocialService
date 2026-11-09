@@ -13,6 +13,24 @@ Aprobar la solicitud exige SOL aprobado e IMSS vigente, pero no emite CP ni asig
 ## Flujo y permisos
 
 - Solicitudes nuevas: `documentWorkflowVersion=2`; expedientes existentes: `1`. No convertir paquetes históricos ni inferir dictámenes individuales.
+
+### Catálogo único de presentación SS
+
+El catálogo JSON compartido por API y frontend define estos nombres y orden en todas las vistas, formularios y exportaciones:
+0. Carta de Presentación
+1. Solicitud
+2. Carta Compromiso
+3. Carta de Aceptación
+4. Reportes Bimestrales
+   - 4.1 Reporte Bimestral 1
+   - 4.2 Reporte Bimestral 2
+   - 4.3 Reporte Bimestral 3
+5. Formato de Evaluación Cualitativa
+6. Formato de Autoevaluación Cualitativa
+7. Formato de evaluación de las actividades por el prestador de s.s.
+8. Carta de Terminación
+
+Los bimestres de evaluaciones son metadatos separados del nombre. IMSS queda fuera de la numeración SS. Los paquetes históricos no acreditan dictámenes individuales. La matriz agrega los tres bimestres por tipo de evaluación sin cambiar las reglas de avance ni los códigos de almacenamiento.
 - SS v2: `SOL`, `CP`, `CA`, `CC`, `R1..R3`, `EV_SUP1..EV_SUP3`, `EV_SELF1..EV_SELF3`, `EV_ACT`, `CT`. Bimestre 3 es final.
 - SS v1 conserva `EV1..EV3`. Evaluaciones XXIII/XXIV solo descargan plantilla vacía. XXV solo prellena nombre, programa, periodo y marca final.
 - `CA` SS nunca se autogenera, tampoco para modalidad interna. Descargar ejemplo; cargar carta de la dependencia.

@@ -1269,7 +1269,7 @@ public sealed class SocialServiceService(
         switch (normDoc)
         {
             case "application":
-                data["anexo"] = "ANEXO XVIII — Solicitud de Servicio Social";
+                data["anexo"] = SocialServiceDocumentCatalog.Title("SOL");
                 data["periodType"] = entity.Application?.PeriodType ?? "february_july";
                 data["dependencyName"] = entity.Application?.DependencyName ?? entity.Company?.Name;
                 data["dependencyHeadName"] = entity.Application?.DependencyHeadName ?? entity.Supervisor?.FullName;
@@ -1280,7 +1280,7 @@ public sealed class SocialServiceService(
                 break;
 
             case "presentation_letter":
-                data["anexo"] = "Carta de Presentación de Servicio Social";
+                data["anexo"] = SocialServiceDocumentCatalog.Title("CP");
                 data["folio"] = entity.PresentationLetterFolio ?? "PENDIENTE";
                 data["issueDate"] = entity.PresentationLetterDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
                 break;
@@ -1293,13 +1293,13 @@ public sealed class SocialServiceService(
                         "La plantilla automática de Carta de Aceptación solo está disponible cuando el Servicio Social se realiza de manera local en el TecNM ('internal').");
                 }
 
-                data["anexo"] = "Carta de Aceptación de Servicio Social (Interno TecNM)";
+                data["anexo"] = SocialServiceDocumentCatalog.Title("CA");
                 data["issueDate"] = entity.AcceptanceLetterDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
                 data["activitiesOutline"] = entity.Application?.ActivitiesOutline ?? "Apoyo técnico y administrativo en el departamento.";
                 break;
 
             case "commitment":
-                data["anexo"] = "ANEXO XX — Carta Compromiso de Servicio Social";
+                data["anexo"] = SocialServiceDocumentCatalog.Title("CC");
                 data["studentAddress"] = entity.Commitment?.StudentAddress ?? entity.Application?.StudentAddress ?? string.Empty;
                 data["studentPhone"] = entity.Commitment?.StudentPhone ?? entity.Application?.StudentPhone ?? student.PhoneNumber;
                 data["dependencyAddress"] = entity.Commitment?.DependencyAddress ?? entity.Company?.Address;
@@ -1310,7 +1310,7 @@ public sealed class SocialServiceService(
             case "report_1" or "report_2" or "report_3":
                 var repNum = int.Parse(normDoc.Split('_')[1]);
                 var rep = entity.Reports.SingleOrDefault(r => r.ReportNumber == repNum);
-                data["anexo"] = $"ANEXO XXII — Reporte Bimestral #{repNum} de Servicio Social";
+                data["anexo"] = SocialServiceDocumentCatalog.Title($"R{repNum}");
                 data["reportNumber"] = repNum;
                 data["periodStartDate"] = rep?.PeriodStartDate ?? entity.StartDate;
                 data["periodEndDate"] = rep?.PeriodEndDate ?? entity.EndDate;
@@ -1327,7 +1327,7 @@ public sealed class SocialServiceService(
                     ? ["excellent", "excellent", "excellent", "excellent", "excellent", "excellent", "excellent"]
                     : new[] { supEval.Criterion1, supEval.Criterion2, supEval.Criterion3, supEval.Criterion4, supEval.Criterion5, supEval.Criterion6, supEval.Criterion7 };
 
-                data["anexo"] = $"ANEXO XXIII — Formato de Evaluación Cualitativa del Prestador (Bimestre {evalPeriod})";
+                data["anexo"] = SocialServiceDocumentCatalog.Title("EV_SUP1");
                 data["bimonthlyPeriod"] = evalPeriod;
                 data["evaluatorType"] = "external_supervisor";
                 data["criteria"] = AnexoXXIIICriteriaLabels
@@ -1344,7 +1344,7 @@ public sealed class SocialServiceService(
                     ? ["excellent", "excellent", "excellent", "excellent", "excellent", "excellent", "excellent"]
                     : new[] { selfEval.Criterion1, selfEval.Criterion2, selfEval.Criterion3, selfEval.Criterion4, selfEval.Criterion5, selfEval.Criterion6, selfEval.Criterion7 };
 
-                data["anexo"] = $"ANEXO XXIV — Formato de Autoevaluación Cualitativa del Prestador (Bimestre {selfPeriod})";
+                data["anexo"] = SocialServiceDocumentCatalog.Title("EV_SELF1");
                 data["bimonthlyPeriod"] = selfPeriod;
                 data["evaluatorType"] = "student_self";
                 data["criteria"] = AnexoXXIVCriteriaLabels
@@ -1359,7 +1359,7 @@ public sealed class SocialServiceService(
                     ? ["excellent", "excellent", "excellent", "excellent", "excellent", "excellent", "excellent", "excellent"]
                     : new[] { act.Question1, act.Question2, act.Question3, act.Question4, act.Question5, act.Question6, act.Question7, act.Question8 };
 
-                data["anexo"] = "ANEXO XXV — Formato de Evaluación de las Actividades por el Prestador de Servicio Social";
+                data["anexo"] = SocialServiceDocumentCatalog.Title("EV_ACT");
                 data["questions"] = AnexoXXVQuestionsLabels
                     .Select((label, idx) => new { index = idx + 1, label, grade = actAnswers[idx] })
                     .ToList();
@@ -1778,37 +1778,37 @@ public sealed class SocialServiceService(
             new("imss_uploaded", "Constancia de Vigencia de Derechos IMSS",
                 student.HasValidImss || !string.IsNullOrWhiteSpace(student.ImssValidityFileUrl),
                 student.HasValidImss ? "Validada" : (!string.IsNullOrWhiteSpace(student.ImssValidityFileUrl) ? "Subida (en revisión)" : "Pendiente")),
-            new("document_SOL", "Anexo XVIII — Solicitud de Servicio Social",
+            new("document_SOL", SocialServiceDocumentCatalog.Title("SOL"),
                 s.Application?.IsAcceptedByOffice == true || approvedCodes.Contains("SOL"),
                 s.Application?.IsAcceptedByOffice == true ? "Aprobada (SI)" : DocStatusDetail("SOL")),
-            new("presentation_letter", "Carta de Presentación firmada (CP)",
+            new("presentation_letter", SocialServiceDocumentCatalog.Title("CP"),
                 DocumentProgressCalculator.DocumentDone(s, approvedCodes, "CP"),
                 s.PresentationLetterFolio ?? DocStatusDetail("CP")),
-            new("document_CA", "Carta de Aceptación firmada y sellada",
+            new("document_CA", SocialServiceDocumentCatalog.Title("CA"),
                 s.AcceptanceLetterDate.HasValue || approvedCodes.Contains("CA"),
                 DocStatusDetail("CA")),
-            new("document_CC", "Anexo XX — Carta Compromiso firmada",
+            new("document_CC", SocialServiceDocumentCatalog.Title("CC"),
                 approvedCodes.Contains("CC"),
                 DocStatusDetail("CC")),
-            new("document_R1", "Anexo XXII — Reporte Bimestral 1 firmado y sellado",
+            new("document_R1", SocialServiceDocumentCatalog.Title("R1"),
                 approvedCodes.Contains("R1"),
                 DocStatusDetail("R1")),
-            new("document_EV1", "Anexos XXIII/XXIV — Evaluación Cualitativa 1 firmada y sellada",
+            new("document_EV1", SocialServiceDocumentCatalog.Title("EV1"),
                 approvedCodes.Contains("EV1"),
                 DocStatusDetail("EV1")),
-            new("document_R2", "Anexo XXII — Reporte Bimestral 2 firmado y sellado",
+            new("document_R2", SocialServiceDocumentCatalog.Title("R2"),
                 approvedCodes.Contains("R2"),
                 DocStatusDetail("R2")),
-            new("document_EV2", "Anexos XXIII/XXIV — Evaluación Cualitativa 2 firmada y sellada",
+            new("document_EV2", SocialServiceDocumentCatalog.Title("EV2"),
                 approvedCodes.Contains("EV2"),
                 DocStatusDetail("EV2")),
-            new("document_R3", "Anexo XXII — Reporte Bimestral 3 firmado y sellado",
+            new("document_R3", SocialServiceDocumentCatalog.Title("R3"),
                 approvedCodes.Contains("R3"),
                 DocStatusDetail("R3")),
-            new("document_EV3", "Anexos XXIII/XXIV/XXV — Evaluación Cualitativa 3 y Actividades firmadas y selladas",
+            new("document_EV3", SocialServiceDocumentCatalog.Title("EV3"),
                 approvedCodes.Contains("EV3"),
                 DocStatusDetail("EV3")),
-            new("document_CT", "Anexo XIX — Carta de Terminación firmada y sellada",
+            new("document_CT", SocialServiceDocumentCatalog.Title("CT"),
                 s.TerminationLetterDate.HasValue || approvedCodes.Contains("CT"),
                 DocStatusDetail("CT")),
             new("release_certificate", "Constancia de Terminación emitida por Vinculación (SSC...)",
@@ -1819,6 +1819,16 @@ public sealed class SocialServiceService(
                 s.SchoolServicesActFolio ?? "Pendiente")
         };
 
+        var operationalItems = checklist.Where(item => !item.Key.StartsWith("document_") && item.Key != "presentation_letter").ToList();
+        checklist = DocumentDefinitions.For("social_service", s.DocumentWorkflowVersion, currentUser)
+            .Select(requirement => new TramiteChecklistItem(
+                requirement.Code == "CP" ? "presentation_letter" : $"document_{requirement.Code}",
+                requirement.Title,
+                requirement.Code is "CP" or "CA" or "SOL" or "CT"
+                    ? DocumentProgressCalculator.DocumentDone(s, approvedCodes, requirement.Code)
+                    : approvedCodes.Contains(requirement.Code),
+                DocStatusDetail(requirement.Code)))
+            .Concat(operationalItems).ToList();
         var allowedActions = BuildAllowedActions(s);
         var progress = CalculateDocumentProgressPercentage(s, docs);
 

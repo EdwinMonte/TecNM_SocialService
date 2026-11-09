@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { socialDocumentLabel, socialDocumentOrder, socialDocumentPeriod } from '../../../shared/utils/socialServiceDocuments'
 import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
 import { http } from '../../../shared/api/http'
 import { computed, onMounted, ref } from 'vue'
@@ -526,7 +527,7 @@ onMounted(() => {
         <!-- Botones de Impresión de Plantillas -->
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
           <UiButton variant="secondary" size="sm" @click="handlePrint('application')">
-            Ver Anexo XVIII
+            Ver {{ socialDocumentLabel('SOL') }}
           </UiButton>
           <UiButton
             v-if="selectedDetail.presentationLetterFolio"
@@ -592,12 +593,12 @@ onMounted(() => {
           </div>
           <div v-else style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 240px; overflow-y: auto;">
             <div
-              v-for="doc in studentDocs"
+              v-for="doc in [...studentDocs].sort((a,b) => socialDocumentOrder(a.documentCode) - socialDocumentOrder(b.documentCode))"
               :key="doc.id"
               style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0.8rem; border: 1px solid #e5e7eb; border-radius: 6px; gap: 0.5rem; flex-wrap: wrap;"
             >
               <div>
-                <strong>{{ doc.documentCode }}</strong> — {{ doc.originalFileName }}
+                <strong>{{ socialDocumentLabel(doc.documentCode) }} {{ socialDocumentPeriod(doc.documentCode) }}</strong> — {{ doc.originalFileName }}
                 <UiBadge
                   :tone="
                     doc.status === 'approved'

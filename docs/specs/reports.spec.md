@@ -48,6 +48,9 @@ interface TrackingRow {
   progressPercentage: number;        // 0..100 (10% por doc en SS, 20% por doc en PP, igual a PRINCIPAL CONSULTA)
   // Checklist documental en vivo (true = "SI" en Excel):
   documents: {
+    qualitative?: boolean | null;    // SS: tres EV_SUP aprobados; null en flujo histórico
+    selfAssessment?: boolean | null; // SS: tres EV_SELF aprobados; null en flujo histórico
+    activityAssessment?: boolean | null; // SS: EV_ACT aprobado; null en flujo histórico
     cp: boolean;                     // Carta de Presentación emitida/aprobada
     ca: boolean;                     // Carta / Oficio de Aceptación aprobado
     sol?: boolean;                   // Solicitud Anexo XVIII aprobada (SS)
@@ -182,6 +185,8 @@ interface CycleTimesResponse {
 ```
 
 ## Flujos UI esperados
+
+La matriz y su exportación SS toman orden y títulos del catálogo `backend/Modules/Expedients/social-service-documents.json`, según [flujo documental](./document-workflow-v2.spec.md). `ev1..3` se conservan por compatibilidad, pero no sustituyen los tres tipos de evaluación en la presentación. Un valor nulo indica ausencia de dictamen individual histórico; exportar como «SIN DICTAMEN INDIVIDUAL».
 
 - Dashboard inicial de staff con tarjetas y gráficas en vivo.
 - Vista **"Seguimiento Vinculación"** con buscador tipo `PRINCIPAL CONSULTA` (barra de 0% a 100% por alumno) y tabla general con columnas `CP, CA, SOL, CC, R1, R2, R3, EV1, EV2, EV3, CT`.

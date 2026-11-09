@@ -6,6 +6,7 @@ import { getCareerOptions, getPeriodOptions } from '../../catalogs/api/careersAp
 import type { OptionItem } from '../../catalogs/types/careers'
 import { getTrackingData } from '../api/reportsApi'
 import type { TrackingItem } from '../types/reports'
+import { socialServiceDocuments, socialDocumentLabel } from '../../../shared/utils/socialServiceDocuments'
 import TrackingExpedient from '../components/TrackingExpedient.vue'
 
 const items = ref<TrackingItem[]>([])
@@ -30,19 +31,7 @@ function openExpedient(row: TrackingItem): void {
   isExpedientOpen.value = true
 }
 
-const ssDocKeys = [
-  { key: 'cp', label: 'CP' },
-  { key: 'ca', label: 'CA' },
-  { key: 'sol', label: 'SOL' },
-  { key: 'cc', label: 'CC' },
-  { key: 'r1', label: 'R1' },
-  { key: 'ev1', label: 'EV1' },
-  { key: 'r2', label: 'R2' },
-  { key: 'ev2', label: 'EV2' },
-  { key: 'r3', label: 'R3' },
-  { key: 'ev3', label: 'EV3' },
-  { key: 'ct', label: 'CT' },
-] as const
+const ssDocKeys = socialServiceDocuments.filter(item => item.trackingKey).map(item => ({ key: item.trackingKey!, label: socialDocumentLabel(item.codes[0]!) }))
 
 const ppDocKeys = [
   { key: 'cp', label: 'CP' },
@@ -113,8 +102,8 @@ function handleExportCsv(): void {
   ]
 
   const rows = items.value.map((r) => {
-    const docs = (r.documents || {}) as Record<string, boolean | undefined>
-    const docVals = activeDocKeys.value.map((d) => (docs[d.key] ? 'SI' : 'NO'))
+    const docs = (r.documents || {}) as Record<string, boolean | null | undefined>
+    const docVals = activeDocKeys.value.map((d) => (docs[d.key] === null ? 'SIN DICTAMEN INDIVIDUAL' : docs[d.key] ? 'SI' : 'NO'))
     return [
       r.controlNumber,
       `"${(r.studentFullName || '').replace(/"/g, '""')}"`,
@@ -235,6 +224,11 @@ onMounted(async () => {
       <div style="overflow-x: auto;">
         <table class="excel-table">
           <thead>
+            <tr v-if="tramiteType === 'social_service'">
+              <th colspan="9" />
+              <th colspan="3" scope="colgroup">4. {{ socialServiceDocuments.find(item => item.number === '4')?.title }}</th>
+              <th colspan="7" />
+            </tr>
             <tr>
               <th>No. Control</th>
               <th>Nombre del Alumno</th>

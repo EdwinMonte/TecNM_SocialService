@@ -27,7 +27,10 @@ public sealed record TrackingDocumentsChecklist(
     bool? Ev2,
     bool? Ev3,
     bool? Ev,
-    bool Ct
+    bool Ct,
+    bool? Qualitative = null,
+    bool? SelfAssessment = null,
+    bool? ActivityAssessment = null
 );
 
 public sealed record TrackingRowResponse(

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { socialDocumentLabel, socialDocumentPeriod, socialServiceDocuments } from '../../../shared/utils/socialServiceDocuments'
 import DocumentReviewDialog from '../components/DocumentReviewDialog.vue'
 import { canReadProcess } from '../../../shared/composables/useSession'
 import {
@@ -17,12 +18,8 @@ import type { ExpedientDocumentStatus, ReviewQueueItem } from '../types/expedien
 
 // Catálogo descriptivo de códigos normativos de documentos
 const documentCatalog: Record<string, { title: string; anexo: string }> = {
-  SOL: { title: 'Solicitud de Apertura', anexo: 'Anexo XVIII' },
   CP: { title: 'Carta de Presentación', anexo: 'Oficio Vinculación' },
   CA: { title: 'Carta de Aceptación Oficial', anexo: 'Membrete Empresa' },
-  R1: { title: '1er Reporte Bimestral', anexo: 'Anexo XXII · Bim. 1' },
-  R2: { title: '2do Reporte Bimestral', anexo: 'Anexo XXII · Bim. 2' },
-  R3: { title: '3er Reporte Bimestral', anexo: 'Anexo XXII · Bim. 3' },
   EV: { title: 'Evaluación Final de Desempeño', anexo: 'Anexo XVII' },
   IMSS: { title: 'Vigencia de Derechos IMSS', anexo: 'Requisito de admisión' },
   CC: { title: 'Carta Compromiso', anexo: 'Anexo XX' },
@@ -192,8 +189,8 @@ function openNextPending(): void {
 }
 
 // Códigos rápidos en panel lateral
-const documentCodeChips = computed(() => ['SOL','CA','CC','R1','R2','R3','EV','EV_ACT','CT','IMSS'].map(code => ({
-  code, label: documentCatalog[code]?.title || code, count: queue.value.filter(d => d.documentCode === code).length,
+const documentCodeChips = computed(() => [...socialServiceDocuments.flatMap(item => item.codes), 'EV', 'IMSS'].map(code => ({
+  code, period: socialDocumentPeriod(code), label: socialServiceDocuments.some(item => item.codes.includes(code)) ? socialDocumentLabel(code) : documentCatalog[code]?.title || code, count: queue.value.filter(d => d.documentCode === code).length,
 })))
 
 onMounted(() => {
@@ -452,7 +449,7 @@ onMounted(() => {
                   <div class="cell-doc">
                     <div class="doc-head-line">
                       <span class="doc-code-badge">{{ row.documentCode }}</span>
-                      <strong>{{ getDocMeta(row.documentCode).title }}</strong>
+                      <strong>{{ row.tramiteType === 'social_service' ? socialDocumentLabel(row.documentCode) : getDocMeta(row.documentCode).title }}</strong>
                     </div>
                     <span
                       :class="
@@ -466,7 +463,7 @@ onMounted(() => {
                           ? 'Servicio Social (480h)'
                           : row.tramiteType === 'general' ? 'General / IMSS' : 'Prácticas Profesionales'
                       }}
-                      · {{ getDocMeta(row.documentCode).anexo }}
+                      · {{ row.tramiteType === 'social_service' ? socialDocumentPeriod(row.documentCode) : getDocMeta(row.documentCode).anexo }}
                     </span>
                   </div>
                 </td>
@@ -571,7 +568,7 @@ onMounted(() => {
               @click="docCodeFilter = docCodeFilter === item.code ? null : item.code"
             >
               <span class="doc-chip-btn__code">{{ item.code }}</span>
-              <span class="doc-chip-btn__label">{{ item.label }}</span>
+              <span class="doc-chip-btn__label">{{ item.label }} <small v-if="item.period">{{ item.period }}</small></span>
               <span class="doc-chip-btn__count">{{ item.count }}</span>
             </button>
           </div>

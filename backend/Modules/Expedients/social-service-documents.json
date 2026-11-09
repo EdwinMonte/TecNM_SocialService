@@ -1,0 +1,103 @@
+[
+  {
+    "number": "0",
+    "title": "Carta de Presentación",
+    "codes": [
+      "CP"
+    ],
+    "trackingKey": "cp"
+  },
+  {
+    "number": "1",
+    "title": "Solicitud",
+    "codes": [
+      "SOL"
+    ],
+    "trackingKey": "sol"
+  },
+  {
+    "number": "2",
+    "title": "Carta Compromiso",
+    "codes": [
+      "CC"
+    ],
+    "trackingKey": "cc"
+  },
+  {
+    "number": "3",
+    "title": "Carta de Aceptación",
+    "codes": [
+      "CA"
+    ],
+    "trackingKey": "ca"
+  },
+  {
+    "number": "4",
+    "title": "Reportes Bimestrales",
+    "codes": [],
+    "trackingKey": null
+  },
+  {
+    "number": "4.1",
+    "title": "Reporte Bimestral 1",
+    "codes": [
+      "R1"
+    ],
+    "trackingKey": "r1"
+  },
+  {
+    "number": "4.2",
+    "title": "Reporte Bimestral 2",
+    "codes": [
+      "R2"
+    ],
+    "trackingKey": "r2"
+  },
+  {
+    "number": "4.3",
+    "title": "Reporte Bimestral 3",
+    "codes": [
+      "R3"
+    ],
+    "trackingKey": "r3"
+  },
+  {
+    "number": "5",
+    "title": "Formato de Evaluación Cualitativa",
+    "codes": [
+      "EV_SUP1",
+      "EV_SUP2",
+      "EV_SUP3",
+      "EV1",
+      "EV2",
+      "EV3"
+    ],
+    "trackingKey": "qualitative"
+  },
+  {
+    "number": "6",
+    "title": "Formato de Autoevaluación Cualitativa",
+    "codes": [
+      "EV_SELF1",
+      "EV_SELF2",
+      "EV_SELF3"
+    ],
+    "trackingKey": "selfAssessment"
+  },
+  {
+    "number": "7",
+    "title": "Formato de evaluación de las actividades por el prestador de s.s.",
+    "codes": [
+      "EV_ACT"
+    ],
+    "trackingKey": "activityAssessment"
+  },
+  {
+    "number": "8",
+    "title": "Carta de Terminación",
+    "codes": [
+      "CT"
+    ],
+    "trackingKey": "ct"
+  }
+]

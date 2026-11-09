@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { UiCard, UiBadge, UiButton, UiAlert } from '../../../shared/components'
 import { http } from '../../../shared/api/http'
 import { getDocumentBlob, uploadMyDocument, uploadStudentDocument } from '../api/expedientsApi'
 import type { ExpedientDocument, DocumentRequirement } from '../types/expedients'
+import { socialServiceDocuments, socialDocumentLabel, socialDocumentOrder, socialDocumentPeriod } from '../../../shared/utils/socialServiceDocuments'
 import DocumentViewerModal from './DocumentViewerModal.vue'
 const props = defineProps<{ requirements: DocumentRequirement[]; documents: ExpedientDocument[]; tramiteType: 'social_service' | 'internship'; tramiteId: number; studentId?: number; canEdit?: boolean }>()
+const orderedRequirements = computed(() => props.tramiteType === 'social_service' ? [...props.requirements].sort((a,b) => socialDocumentOrder(a.code) - socialDocumentOrder(b.code)) : props.requirements)
 const emit = defineEmits<{ changed: []; edit: [key: string] }>()
 const error = ref(''), busy = ref(''), title = ref(''), blob = ref<Blob | null>(null), open = ref(false)
 function current(code: string) { return props.documents.find(d => d.documentCode === code && d.status !== 'superseded') }
@@ -15,7 +17,7 @@ async function view(item: DocumentRequirement, uploaded = false) {
     const doc = current(item.code)
     blob.value = uploaded && doc ? await getDocumentBlob(doc.id) : (await http.get(
       item.templateKey ? `/document-templates/${item.templateKey}/file` : `/${props.tramiteType === 'internship' ? 'internships' : 'social-services'}/${props.tramiteId}/pdf/${item.pdfKey}`, { responseType: 'blob' })).data
-    title.value = item.title; open.value = true
+    title.value = props.tramiteType === 'social_service' ? socialDocumentLabel(item.code) : item.title; open.value = true
   } catch { error.value = 'El PDF no está disponible. Revisa los datos guardados y vuelve a intentar.' }
   finally { busy.value = '' }
 }
@@ -37,8 +39,11 @@ async function upload(item: DocumentRequirement, event: Event) {
 <template>
   <UiCard title="Expediente documental">
     <UiAlert v-if="error">{{ error }}</UiAlert>
-    <article v-for="item in requirements" :key="item.code" style="padding:1rem 0;border-bottom:1px solid var(--color-border)">
-      <strong>{{ item.title }}</strong> <UiBadge>{{ current(item.code)?.status === 'approved' ? 'Aprobado' : current(item.code)?.status === 'rejected' ? 'Rechazado' : current(item.code) ? 'En revisión' : 'Pendiente' }}</UiBadge>
+    <template v-for="item in orderedRequirements" :key="item.code">
+    <h3 v-if="tramiteType === 'social_service' && item.code === 'R1'">4. {{ socialServiceDocuments.find(item => item.number === '4')?.title }}</h3>
+    <article style="padding:1rem 0;border-bottom:1px solid var(--color-border)">
+      <strong>{{ tramiteType === 'social_service' ? socialDocumentLabel(item.code) : item.title }}</strong> <UiBadge>{{ current(item.code)?.status === 'approved' ? 'Aprobado' : current(item.code)?.status === 'rejected' ? 'Rechazado' : current(item.code) ? 'En revisión' : 'Pendiente' }}</UiBadge>
+      <p v-if="tramiteType === 'social_service' && socialDocumentPeriod(item.code)">{{ socialDocumentPeriod(item.code) }}</p>
       <p v-if="current(item.code)?.rejectionReason">{{ current(item.code)?.rejectionReason }}</p>
       <p v-if="item.blockedReason">{{ item.blockedReason }}</p>
       <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem">
@@ -48,6 +53,7 @@ async function upload(item: DocumentRequirement, event: Event) {
         <label v-if="item.canUpload && current(item.code)?.status !== 'approved'">Subir PDF firmado <input type="file" accept="application/pdf" :disabled="!!busy" @change="upload(item, $event)" /></label>
       </div>
     </article>
+    </template>
     <DocumentViewerModal v-model="open" :title="title" :blob="blob" />
   </UiCard>
 </template>

@@ -1,0 +1,9 @@
+**/node_modules
+**/bin
+**/obj
+**/dist
+**/.env*
+.git
+.agents
+.codex
+database

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { socialDocumentLabel } from '../../../shared/utils/socialServiceDocuments'
 import { computed, onMounted, ref } from 'vue'
 import { canReadProcess, hasRole } from '../../../shared/composables/useSession'
 import { useRouter } from 'vue-router'
@@ -386,7 +387,7 @@ onMounted(() => {
                   <UiBadge :tone="doc.tramiteType === 'social_service' ? 'info' : 'purple'">
                     {{ doc.tramiteType === 'social_service' ? 'Servicio Social' : 'Prácticas' }}
                   </UiBadge>
-                  <span>Clave: <strong>{{ doc.documentCode }}</strong> ({{ doc.originalFileName }})</span>
+                  <span>Clave: <strong>{{ doc.tramiteType === 'social_service' ? socialDocumentLabel(doc.documentCode) : doc.documentCode }}</strong> ({{ doc.originalFileName }})</span>
                 </div>
               </div>
               <UiButton variant="primary" size="sm" @click="router.push('/expedients/review')">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { UiAlert, UiButton, UiDialog, UiField } from '../../../shared/components'
+import { socialDocumentLabel } from '../../../shared/utils/socialServiceDocuments'
 import { problemMessage } from '../../../shared/api/problemDetails'
 import { getDocumentBlob, reviewDocument } from '../api/expedientsApi'
 import type { ExpedientDocument } from '../types/expedients'
@@ -55,7 +56,7 @@ async function submit(status: 'approved' | 'rejected') {
 </script>
 
 <template>
-  <UiDialog v-model="open" :title="`Revisar ${document?.documentCode || 'documento'}${studentName ? ` · ${studentName}` : ''}`" size="xl">
+  <UiDialog v-model="open" :title="`Revisar ${document?.tramiteType === 'social_service' ? socialDocumentLabel(document.documentCode) : document?.documentCode || 'documento'}${studentName ? ` · ${studentName}` : ''}`" size="xl">
     <div class="review-content" :aria-busy="loading || submitting">
       <UiAlert v-if="error" tone="danger" role="alert">{{ error }}</UiAlert>
       <p v-if="loading" role="status">Cargando documento…</p>

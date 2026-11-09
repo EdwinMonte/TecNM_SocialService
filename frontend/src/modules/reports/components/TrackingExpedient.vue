@@ -6,6 +6,7 @@ import { getStudentById, type StudentDetail } from '../../students'
 import { getSocialServiceById, type SocialServiceDetail } from '../../social-service'
 import { getInternshipById, type InternshipDetail } from '../../internships'
 import { getDocumentBlob, getStudentDocuments, type ExpedientDocument } from '../../expedients'
+import { socialDocumentLabel, socialDocumentOrder, socialDocumentPeriod } from '../../../shared/utils/socialServiceDocuments'
 import DocumentViewerModal from '../../expedients/components/DocumentViewerModal.vue'
 
 const props = defineProps<{ tramiteId: number; tramiteType: 'social_service' | 'internship' }>()
@@ -91,7 +92,7 @@ async function load(): Promise<void> {
     if (!active) return
     student.value = profile
     detail.value = process
-    documents.value = [...generalDocs, ...processDocs]
+    documents.value = [...(props.tramiteType === 'social_service' ? [...processDocs].sort((a,b) => socialDocumentOrder(a.documentCode) - socialDocumentOrder(b.documentCode)) : processDocs), ...generalDocs]
   } catch (err) {
     if (active) error.value = problemMessage(err, 'No se pudo cargar el expediente. Vuelve a intentar.')
   } finally {
@@ -106,7 +107,7 @@ async function viewDocument(document: ExpedientDocument): Promise<void> {
     const blob = await getDocumentBlob(document.id)
     if (!active) return
     pdfBlob.value = blob
-    pdfTitle.value = `${document.documentCode} · ${document.originalFileName}`
+    pdfTitle.value = `${document.tramiteType === 'social_service' ? socialDocumentLabel(document.documentCode) : document.documentCode} · ${document.originalFileName}`
     pdfOpen.value = true
   } catch (err) {
     if (active) pdfError.value = problemMessage(err, 'No se pudo abrir el PDF. Vuelve a intentar.')
@@ -142,7 +143,8 @@ onBeforeUnmount(() => { active = false })
       <ul v-else class="expedient-documents">
         <li v-for="document in documents" :key="document.id">
           <div>
-            <strong>{{ detail.documentRequirements?.find(item => item.code === document.documentCode)?.title || document.documentCode }}</strong>
+            <strong>{{ document.tramiteType === 'social_service' ? socialDocumentLabel(document.documentCode) : detail.documentRequirements?.find(item => item.code === document.documentCode)?.title || document.documentCode }}</strong>
+            <p v-if="document.tramiteType === 'social_service'">{{ socialDocumentPeriod(document.documentCode) }}</p>
             <p>{{ document.originalFileName }}</p>
             <UiBadge :tone="document.status === 'approved' ? 'success' : document.status === 'rejected' ? 'danger' : 'info'">
               {{ statusLabels[document.status] || document.status }}

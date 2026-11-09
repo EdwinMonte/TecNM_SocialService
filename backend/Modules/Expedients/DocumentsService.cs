@@ -87,7 +87,8 @@ public sealed class DocumentsService(
         }
 
         var items = await query
-            .OrderByDescending(d => d.CreatedAt)
+            .OrderBy(SocialServiceDocumentCatalog.SortExpression())
+            .ThenByDescending(d => d.CreatedAt)
             .ThenByDescending(d => d.Id)
             .ToListAsync(cancellationToken);
 
@@ -431,7 +432,8 @@ public sealed class DocumentsService(
         var totalPages = (int)Math.Ceiling(totalItems / (double)normalizedSize);
 
         var items = await query
-            .OrderBy(d => d.CreatedAt)
+            .OrderBy(SocialServiceDocumentCatalog.SortExpression())
+            .ThenBy(d => d.CreatedAt)
             .ThenBy(d => d.Id)
             .Skip((normalizedPage - 1) * normalizedSize)
             .Take(normalizedSize)

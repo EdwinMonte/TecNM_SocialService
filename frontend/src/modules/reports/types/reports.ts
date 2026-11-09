@@ -12,6 +12,9 @@ export interface DashboardMetrics {
 }
 
 export interface TrackingDocumentsChecklist {
+  qualitative?: boolean | null
+  selfAssessment?: boolean | null
+  activityAssessment?: boolean | null
   cp: boolean
   ca: boolean
   sol?: boolean
