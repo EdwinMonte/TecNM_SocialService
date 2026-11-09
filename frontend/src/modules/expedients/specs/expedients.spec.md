@@ -71,3 +71,14 @@ Este componente se incrusta en el detalle de Servicio Social y Prácticas Profes
     - Botón "Aprobar": Consume `POST /api/documents/{id}/review` con `{ status: "approved" }`.
     - Botón "Rechazar": Abre modal solicitando el `rejectionReason` obligatorio (máx. 1000 caracteres).
 
+
+## Prellenado SS
+
+Aplicar la matriz de prellenado del contrato documental v2: reportes con evaluador propio o supervisor general; XXIII con alumno, programa y supervisor del trámite; XXIV con alumno y programa; XXV conserva su prellenado. Firmas y sellos manuales vacíos. Evaluaciones se descargan mediante pdfKey, conservando códigos históricos y sin registrar calificaciones.
+
+
+## Carta de Terminación SS
+
+CT descarga el Anexo XIX prellenado mediante pdfKey termination_letter. Reutiliza alumno, programa, actividades, fechas, horas registradas, ciudad y supervisor según el contrato documental v2. Conserva destinatarios impresos, firmas/sello manuales vacíos y carga/revisión del PDF firmado; descargar no altera el trámite.
+
+Carta Compromiso: descarga directa con domicilio de solicitud, teléfono del perfil y domicilio de la dependencia, usando respaldos registrados cuando falten. La fecha impresa se calcula al descargar en America/Mexico_City, sin reutilizar la fecha guardada. No exige captura previa de CC; firma del alumno vacía y ninguna escritura al descargar.

@@ -36,7 +36,7 @@ def verify():
     application = (RESOURCES / manifest['ss-application']['file']).read_bytes()
     for secret in [b'Hector Gabriel', b'8662584004', b'I23050363', b'Heroes del 47']:
         assert secret not in application, 'Original field data leaked'
-    for key in ['ss-application', 'ss-commitment', 'ss-report', 'ss-activity']:
+    for key in ['ss-application', 'ss-commitment', 'ss-report', 'ss-activity', 'ss-supervisor-evaluation', 'ss-self-evaluation', 'ss-termination']:
         sample = ROOT / 'tmp/pdf-qa' / f'{key}.pdf'
         if not sample.exists(): continue
         entry = manifest[key]
@@ -48,6 +48,14 @@ def verify():
                 x, y, w, h = [field[k] for k in ['x', 'y', 'width', 'height']]
                 mask[max(0,int(y)-3):int(y+h)+4, max(0,int(x)-3):int(x+w)+4] = True
             assert np.array_equal(actual[~mask], expected[~mask]), f'{key}: changes outside authorized fields'
+            text = PdfReader(sample).pages[0].extract_text()
+            if key in ['ss-report', 'ss-supervisor-evaluation']:
+                assert 'Ana Gómez Díaz' in text and 'Coordinadora' in text, key
+            if key in ['ss-supervisor-evaluation', 'ss-self-evaluation', 'ss-termination']:
+                assert 'María José Muñoz Peña' in text and 'Apoyo tecnológico' in text, key
+            if key == 'ss-termination':
+                assert '480' in text and 'noviembre' in text and 'Ana Gómez Díaz' in text, key
+            result[0].render(scale=1.5).to_pil().save(sample.with_suffix('.png'))
     if len(sys.argv) > 1:
         generated = Path(sys.argv[1])
         reference = RESOURCES / manifest['pp-evaluation']['file']

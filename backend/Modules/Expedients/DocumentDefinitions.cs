@@ -35,13 +35,13 @@ public static class DocumentDefinitions
             docs.Add(new($"R{period}", SocialServiceDocumentCatalog.Title($"R{period}"), $"report_{period}"));
             if (version >= 2)
             {
-                docs.Add(new($"EV_SUP{period}", SocialServiceDocumentCatalog.Title($"EV_SUP{period}"), TemplateKey: "ss-supervisor-evaluation"));
-                docs.Add(new($"EV_SELF{period}", SocialServiceDocumentCatalog.Title($"EV_SELF{period}"), TemplateKey: "ss-self-evaluation"));
+                docs.Add(new($"EV_SUP{period}", SocialServiceDocumentCatalog.Title($"EV_SUP{period}"), $"evaluation_{period}"));
+                docs.Add(new($"EV_SELF{period}", SocialServiceDocumentCatalog.Title($"EV_SELF{period}"), $"self_evaluation_{period}"));
             }
-            else docs.Add(new($"EV{period}", SocialServiceDocumentCatalog.Title($"EV{period}"), TemplateKey: "ss-supervisor-evaluation"));
+            else docs.Add(new($"EV{period}", SocialServiceDocumentCatalog.Title($"EV{period}"), $"evaluation_{period}"));
         }
         if (version >= 2) docs.Add(new("EV_ACT", SocialServiceDocumentCatalog.Title("EV_ACT"), "activity_assessment"));
-        docs.Add(new("CT", SocialServiceDocumentCatalog.Title("CT"), TemplateKey: "ss-termination"));
+        docs.Add(new("CT", SocialServiceDocumentCatalog.Title("CT"), "termination_letter"));
         return docs.OrderBy(d => SocialServiceDocumentCatalog.Order(d.Code))
             .Select(d => d with { Title = SocialServiceDocumentCatalog.Title(d.Code), CanUpload = d.CanUpload && user.IsInRole("student") }).ToList();
     }

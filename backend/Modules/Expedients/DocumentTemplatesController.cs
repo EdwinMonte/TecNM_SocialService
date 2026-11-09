@@ -37,11 +37,12 @@ public sealed class DocumentTemplatesController(OfficialPdfService pdf, SocialSe
             "application" => "ss-application",
             "commitment" => "ss-commitment",
             "report_1" or "report_2" or "report_3" => "ss-report",
+            "evaluation_1" or "evaluation_2" or "evaluation_3" => "ss-supervisor-evaluation",
+            "self_evaluation_1" or "self_evaluation_2" or "self_evaluation_3" => "ss-self-evaluation",
             "activity_assessment" => "ss-activity",
+            "termination_letter" => "ss-termination",
             _ => throw new ConflictException("documents.template_unavailable", "La plantilla oficial aún no está disponible.")
         };
-        if (document == "commitment" && detail.Commitment is null)
-            throw new BusinessRuleException("documents.data_missing", "Guarda primero los datos de Carta Compromiso.");
         if (document.StartsWith("report_") && !detail.Reports.Any(r => r.ReportNumber == int.Parse(document[^1..])))
             throw new BusinessRuleException("documents.data_missing", "Guarda primero las fechas, horas y actividades del reporte.");
         var data = await socialService.GetPrintDataAsync(id, document, ct);

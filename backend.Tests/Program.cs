@@ -116,18 +116,28 @@ if (Directory.Exists(fonts))
         ["studentPhone"] = "8661234567", ["studentAddress"] = "Calle Hidalgo 120, Monclova",
         ["studentSemester"] = 7, ["dependencyName"] = "Instituto Tecnológico Superior de Monclova",
         ["dependencyHeadName"] = "Juan Pérez López", ["dependencyHeadPosition"] = "Director",
-        ["supervisorFullName"] = "Ana Gómez Díaz", ["dependencyAddress"] = "Carretera 57 km 4.5, Monclova",
+        ["supervisorPosition"] = "Coordinadora de Servicio Social", ["supervisorFullName"] = "Ana Gómez Díaz", ["dependencyAddress"] = "Carretera 57 km 4.5, Monclova",
         ["careerName"] = "Ingeniería Informática", ["careerCode"] = "INF", ["programName"] = "Apoyo tecnológico",
         ["programCategory"] = "institutional_programs", ["periodCode"] = "Agosto - Enero", ["studentGender"] = "Mujer",
         ["modality"] = "Interno", ["generatedAt"] = clock.GetUtcNow(), ["startDate"] = new DateOnly(2026, 8, 1),
         ["endDate"] = new DateOnly(2027, 1, 31), ["commitmentDate"] = new DateOnly(2026, 7, 20), ["city"] = "Monclova",
         ["activitiesOutline"] = "Soporte a equipos y capacitación de usuarios.", ["activitiesSummary"] = "Mantenimiento de equipos. Apoyo a usuarios y revisión de inventarios.",
-        ["reportNumber"] = 1, ["reportedHours"] = 160, ["reportAccumulatedHours"] = 160,
+        ["issueDate"] = new DateOnly(2026, 11, 9), ["accumulatedHours"] = 480, ["reportNumber"] = 1, ["reportedHours"] = 160, ["reportAccumulatedHours"] = 160,
         ["periodStartDate"] = new DateOnly(2026, 8, 1), ["periodEndDate"] = new DateOnly(2026, 9, 30),
         ["companyName"] = "Instituto Tecnológico Superior de Monclova", ["realizationPeriod"] = "01/08/2026 - 31/01/2027", ["finalMark"] = "X"
     };
-    foreach (var template in new[] { "ss-application", "ss-commitment", "ss-report", "ss-activity" })
+    foreach (var template in new[] { "ss-application", "ss-commitment", "ss-report", "ss-activity", "ss-supervisor-evaluation", "ss-self-evaluation", "ss-termination" })
         File.WriteAllBytes($"tmp/pdf-qa/{template}.pdf", generator.Generate(template, ssData));
+    foreach (var key in new[] { "ss-report", "ss-supervisor-evaluation", "ss-self-evaluation", "ss-termination" })
+    {
+        var missing = new Dictionary<string, object?>(ssData);
+        missing.Remove("studentFirstName"); missing.Remove("studentFullName");
+        try { generator.Generate(key, missing); throw new Exception("Missing student accepted"); }
+        catch (BusinessRuleException ex) { Check(ex.Code == "documents.data_missing", "Missing data error"); }
+        var overflow = new Dictionary<string, object?>(ssData) { ["programName"] = new string('W', 2000) };
+        try { generator.Generate(key, overflow); throw new Exception("Overflow accepted"); }
+        catch (BusinessRuleException ex) { Check(ex.Code == "documents.text_overflow", "Overflow error"); }
+    }
     ssData["careerCode"] = "UNKNOWN";
     try { generator.Generate("ss-report", ssData); throw new Exception("Unmapped career accepted"); }
     catch (BusinessRuleException) { }

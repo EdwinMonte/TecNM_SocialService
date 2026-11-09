@@ -131,6 +131,65 @@ internal static class HttpChecks
             db.SocialServices.Add(ss); await db.SaveChangesAsync();
             db.SocialServiceApplications.Add(new SocialServiceApplication { SocialServiceId = ss.Id, CurrentSemester = 7, StudentAddress = "Calle de prueba", StudentPhone = "8661234567", DependencyName = "Dependencia", DependencyHeadName = "Responsable", DependencyHeadPosition = "Director", ActivitiesOutline = "Actividades de prueba" });
             await db.SaveChangesAsync();
+            var commitmentCount = await db.SocialServiceCommitments.CountAsync();
+            var clockBefore = testClock.UtcNow;
+            try
+            {
+                foreach (var instant in new[] { new DateTimeOffset(2027, 1, 1, 5, 59, 59, TimeSpan.Zero), new DateTimeOffset(2027, 1, 1, 6, 0, 0, TimeSpan.Zero) })
+                {
+                    testClock.UtcNow = instant;
+                    var printed = await student.GetFromJsonAsync<JsonElement>($"/api/social-services/{ss.Id}/print-data/commitment");
+                    if (printed.GetProperty("commitmentDate").GetString() != TecNM.Api.Modules.Expedients.ImssEligibilityService.Today(testClock).ToString("yyyy-MM-dd")
+                        || printed.GetProperty("studentAddress").GetString() != "Calle de prueba")
+                        throw new Exception("Commitment must reuse student data and the current Mexico download date.");
+                    Expect(await student.GetAsync($"/api/social-services/{ss.Id}/pdf/commitment"), HttpStatusCode.OK);
+                }
+                if (commitmentCount != await db.SocialServiceCommitments.CountAsync()) throw new Exception("Commitment download persisted a draft.");
+            }
+            finally { testClock.UtcNow = clockBefore; }
+            var alternate = new CompanySupervisor { CompanyId = ss.CompanyId, FullName = "Evaluador específico Ñ", Position = "Coordinador bimestral" };
+            db.CompanySupervisors.Add(alternate); await db.SaveChangesAsync();
+            var supervisor = await db.CompanySupervisors.SingleAsync(s => s.Id == ss.SupervisorId);
+            for (var period = 1; period <= 3; period++)
+                db.SocialServiceBiMonthlyReports.Add(new SocialServiceBiMonthlyReport { SocialServiceId = ss.Id, ReportNumber = period, PeriodStartDate = today, PeriodEndDate = today.AddMonths(2), ActivitiesSummary = "Apoyo comunitario", ReportedHours = 160, AccumulatedHours = period * 160 });
+            await db.SaveChangesAsync();
+            var evaluationsBefore = await db.SocialServiceEvaluations.CountAsync();
+            var documentsBefore = await db.ExpedientDocuments.CountAsync();
+            for (var period = 1; period <= 3; period++)
+            {
+                var report = await db.SocialServiceBiMonthlyReports.SingleAsync(r => r.SocialServiceId == ss.Id && r.ReportNumber == period);
+                foreach (var evaluator in new long?[] { null, alternate.Id })
+                {
+                    report.EvaluatorSupervisorId = evaluator; await db.SaveChangesAsync();
+                    var data = await student.GetFromJsonAsync<JsonElement>($"/api/social-services/{ss.Id}/print-data/report_{period}");
+                    if (data.GetProperty("supervisorFullName").GetString() != (evaluator is null ? supervisor.FullName : alternate.FullName)
+                        || data.GetProperty("supervisorPosition").GetString() != (evaluator is null ? supervisor.Position : alternate.Position))
+                        throw new Exception("Report evaluator precedence failed.");
+                    Expect(await student.GetAsync($"/api/social-services/{ss.Id}/pdf/report_{period}"), HttpStatusCode.OK);
+                }
+                foreach (var key in new[] { $"evaluation_{period}", $"self_evaluation_{period}" })
+                {
+                    var data = await student.GetFromJsonAsync<JsonElement>($"/api/social-services/{ss.Id}/print-data/{key}");
+                    if (data.GetProperty("supervisorFullName").GetString() != supervisor.FullName) throw new Exception("Evaluation changed responsible supervisor.");
+                    Expect(await student.GetAsync($"/api/social-services/{ss.Id}/pdf/{key}"), HttpStatusCode.OK);
+                }
+            }
+            Expect(await student.GetAsync($"/api/social-services/{ss.Id}/pdf/activity_assessment"), HttpStatusCode.OK);
+            var terminationBefore = await db.SocialServices.AsNoTracking().SingleAsync(t => t.Id == ss.Id);
+            Expect(await student.GetAsync($"/api/social-services/{ss.Id}/pdf/termination_letter"), HttpStatusCode.OK);
+            var terminationData = await student.GetFromJsonAsync<JsonElement>($"/api/social-services/{ss.Id}/print-data/termination_letter");
+            if (terminationData.GetProperty("accumulatedHours").GetInt32() != 480)
+                throw new Exception("Termination must always print 480 hours.");
+            if (terminationData.GetProperty("activitiesOutline").GetString() != "Apoyo comunitario"
+                || terminationData.GetProperty("supervisorFullName").GetString() != supervisor.FullName)
+                throw new Exception("Termination did not reuse report activities and service supervisor.");
+            var terminationAfter = await db.SocialServices.AsNoTracking().SingleAsync(t => t.Id == ss.Id);
+            if (terminationAfter.TerminationLetterDate != terminationBefore.TerminationLetterDate || terminationAfter.Status != terminationBefore.Status)
+                throw new Exception("Termination prefill changed service state.");
+            if (evaluationsBefore != await db.SocialServiceEvaluations.CountAsync() || documentsBefore != await db.ExpedientDocuments.CountAsync())
+                throw new Exception("PDF download wrote evaluations or evidence.");
+            db.SocialServiceBiMonthlyReports.RemoveRange(await db.SocialServiceBiMonthlyReports.Where(r => r.SocialServiceId == ss.Id).ToListAsync());
+            await db.SaveChangesAsync();
             var tracking = await admin.GetFromJsonAsync<JsonElement>($"/api/reports/tracking?tramiteType=social_service&periodId={ss.PeriodId}");
             var initialRow = tracking.EnumerateArray().Single(row => row.GetProperty("tramiteId").GetInt64() == ss.Id);
             if (initialRow.GetProperty("documents").GetProperty("cp").GetBoolean() || initialRow.GetProperty("progressPercentage").GetInt32() != 0)

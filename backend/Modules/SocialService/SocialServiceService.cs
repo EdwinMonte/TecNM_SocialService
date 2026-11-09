@@ -20,7 +20,8 @@ public sealed class SocialServiceService(
     ImssEligibilityService imss,
     DocumentsService documents,
     OfficialPdfService pdf,
-    IFileStorage storage)
+    IFileStorage storage,
+    TimeProvider timeProvider)
 {
     private static readonly HashSet<string> TerminalStatuses =
     [
@@ -1195,6 +1196,7 @@ public sealed class SocialServiceService(
         CancellationToken cancellationToken = default)
     {
         var entity = await BuildDetailQuery()
+            .Include(s => s.Reports).ThenInclude(r => r.EvaluatorSupervisor)
             .AsNoTracking()
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken)
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
@@ -1300,16 +1302,24 @@ public sealed class SocialServiceService(
 
             case "commitment":
                 data["anexo"] = SocialServiceDocumentCatalog.Title("CC");
-                data["studentAddress"] = entity.Commitment?.StudentAddress ?? entity.Application?.StudentAddress ?? string.Empty;
-                data["studentPhone"] = entity.Commitment?.StudentPhone ?? entity.Application?.StudentPhone ?? student.PhoneNumber;
-                data["dependencyAddress"] = entity.Commitment?.DependencyAddress ?? entity.Company?.Address;
-                data["commitmentDate"] = entity.Commitment?.CommitmentDate ?? entity.StartDate;
-                data["city"] = entity.Commitment?.City ?? "Monclova";
+                data["studentAddress"] = new[] { entity.Application?.StudentAddress, entity.Commitment?.StudentAddress }
+                    .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+                data["studentPhone"] = new[] { student.PhoneNumber, entity.Application?.StudentPhone, entity.Commitment?.StudentPhone }
+                    .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+                data["dependencyAddress"] = new[] { entity.Company?.Address, entity.Commitment?.DependencyAddress }
+                    .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+                data["commitmentDate"] = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(
+                    timeProvider.GetUtcNow(), "America/Mexico_City").DateTime);
+                data["city"] = new[] { entity.Commitment?.City, entity.Company?.City }
+                    .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
                 break;
 
             case "report_1" or "report_2" or "report_3":
                 var repNum = int.Parse(normDoc.Split('_')[1]);
                 var rep = entity.Reports.SingleOrDefault(r => r.ReportNumber == repNum);
+                var reportSupervisor = rep?.EvaluatorSupervisor ?? entity.Supervisor;
+                data["supervisorFullName"] = reportSupervisor?.FullName;
+                data["supervisorPosition"] = reportSupervisor?.Position;
                 data["anexo"] = SocialServiceDocumentCatalog.Title($"R{repNum}");
                 data["reportNumber"] = repNum;
                 data["periodStartDate"] = rep?.PeriodStartDate ?? entity.StartDate;
@@ -1364,6 +1374,18 @@ public sealed class SocialServiceService(
                     .Select((label, idx) => new { index = idx + 1, label, grade = actAnswers[idx] })
                     .ToList();
                 data["observations"] = act?.Observations;
+                break;
+
+            case "termination_letter":
+                data["accumulatedHours"] = 480;
+                data["anexo"] = "Anexo XIX — Carta de Terminación de Servicio Social";
+                data["activitiesOutline"] = entity.Reports.Count > 0
+                    ? string.Join("; ", entity.Reports.OrderBy(r => r.ReportNumber).Select(r => r.ActivitiesSummary).Distinct())
+                    : entity.Application?.ActivitiesOutline;
+                data["city"] = !string.IsNullOrWhiteSpace(entity.Company?.City)
+                    ? entity.Company.City : entity.Commitment?.City;
+                data["issueDate"] = entity.TerminationLetterDate ?? DateOnly.FromDateTime(
+                    TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTimeOffset.UtcNow, "America/Mexico_City").DateTime);
                 break;
 
             case "release_certificate":

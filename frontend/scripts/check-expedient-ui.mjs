@@ -25,9 +25,11 @@ try {
   await context.addCookies([{ name: 'session_exp', value: String(Math.floor(Date.now()/1000)+3600), url: base, secure: true }])
   const page = await context.newPage()
   const errors = []
+  const pdfRequests = []
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url()), endpoint = url.pathname
+    if (endpoint.includes('/pdf/')) pdfRequests.push(endpoint)
     if (!endpoint.startsWith('/api/')) return route.continue()
     let body = []
     if (endpoint === '/api/auth/me') body = { id: admin ? 1 : 2, username: admin ? 'admin' : 'usuario', name: 'Usuario de prueba', email: 'test@monclova.tecnm.mx', roles: [admin ? 'admin' : 'student'] }
@@ -55,8 +57,9 @@ try {
   await page.getByText('Expediente documental', { exact: true }).waitFor({timeout:10000})
   assert.equal(await page.getByText('Calificación por Criterio', { exact: false }).count(), 0)
   assert.ok(await page.locator('input[type=file]').count() > 0)
-  const row = page.locator('article').filter({ hasText: 'Anexo XXIII' }).first()
-  await row.getByRole('button', { name: 'Descargar plantilla' }).click()
+  const row = page.locator('article').filter({ hasText: 'Formato de Evaluación Cualitativa' }).first()
+  await row.getByRole('button', { name: 'Descargar prellenado' }).click()
+  assert.ok(pdfRequests.includes(`/api/social-services/${detail.id}/pdf/evaluation_1`))
   const dialog = page.getByRole('dialog')
   await dialog.waitFor({ state: 'visible' })
   assert.match(await dialog.locator('iframe').getAttribute('src'), /^blob:/)
@@ -65,12 +68,18 @@ try {
   await page.keyboard.press('Escape')
   await dialog.waitFor({ state: 'hidden' })
   assert.equal(await page.locator('iframe').count(), 0)
+  const termination = page.locator('article').filter({ hasText: '8. Carta de Terminación' })
+  await termination.getByRole('button', { name: 'Descargar prellenado' }).click()
+  await dialog.waitFor({ state: 'visible' })
+  assert.ok(pdfRequests.includes(`/api/social-services/${detail.id}/pdf/termination_letter`))
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: path.join(root, 'ui-mobile.png'), fullPage: false })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'Mobile horizontal overflow')
   presentationMissing = true
   await page.reload()
-  const presentation = page.locator('article').filter({ hasText: 'Carta de Presentación firmada' })
+  const presentation = page.locator('article').filter({ hasText: '0. Carta de Presentación' })
   await presentation.waitFor()
   assert.equal(await presentation.locator('input[type=file]').count(), 1)
   assert.equal(await presentation.getByRole('button', { name: 'Descargar prellenado' }).count(), 0)

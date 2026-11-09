@@ -485,7 +485,7 @@
   "ss-report": {
     "file": "templates/ss-report.pdf",
     "sha256": "a9c8f9b78f34f06da3e0061d1a1ef7ecd646cad809d75f54f4c33aa36325ac01",
-    "version": "1",
+    "version": "3",
     "font": "Century Gothic",
     "fields": [
       {
@@ -698,6 +698,24 @@
         "fontSize": 9,
         "minFontSize": 7,
         "format": "yyyy"
+      },
+      {
+        "key": "supervisorFullName",
+        "x": 67,
+        "y": 568,
+        "width": 139,
+        "height": 22,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "supervisorPosition",
+        "x": 67,
+        "y": 592,
+        "width": 139,
+        "height": 22,
+        "fontSize": 9,
+        "minFontSize": 7
       }
     ],
     "pages": 1,
@@ -711,9 +729,46 @@
   "ss-supervisor-evaluation": {
     "file": "templates/ss-supervisor-evaluation.pdf",
     "sha256": "f8d5dfea1f52aa57ec863072145b49516ba5032f113d5d6efa88c62fef59b364",
-    "version": "1",
+    "version": "3",
     "font": "Century Gothic",
-    "fields": [],
+    "fields": [
+      {
+        "key": "studentFullName",
+        "x": 277,
+        "y": 184,
+        "width": 269,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "programName",
+        "x": 120,
+        "y": 204,
+        "width": 426,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "supervisorFullName",
+        "x": 72,
+        "y": 649,
+        "width": 195,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "supervisorPosition",
+        "x": 72,
+        "y": 662,
+        "width": 195,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      }
+    ],
     "pages": 1,
     "pageSizes": [
       {
@@ -725,9 +780,28 @@
   "ss-self-evaluation": {
     "file": "templates/ss-self-evaluation.pdf",
     "sha256": "0b8b2acee4bda1fa04008b796853083d229178c81cc039275fb15dbcc238d14a",
-    "version": "1",
+    "version": "2",
     "font": "Century Gothic",
-    "fields": [],
+    "fields": [
+      {
+        "key": "studentFullName",
+        "x": 277,
+        "y": 198,
+        "width": 269,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "programName",
+        "x": 120,
+        "y": 218,
+        "width": 426,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      }
+    ],
     "pages": 1,
     "pageSizes": [
       {
@@ -739,9 +813,121 @@
   "ss-termination": {
     "file": "templates/ss-termination.pdf",
     "sha256": "c231aa94b9822eaa9c580b926439a6a5f0fea937119f96dd33f7508b8b15f0a4",
-    "version": "1",
+    "version": "2",
     "font": "Century Gothic",
-    "fields": [],
+    "fields": [
+      {
+        "key": "studentFullName",
+        "x": 341,
+        "y": 293,
+        "width": 218,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "programName",
+        "x": 64,
+        "y": 321,
+        "width": 482,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "activitiesOutline",
+        "x": 262,
+        "y": 335,
+        "width": 285,
+        "height": 26,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "startDate",
+        "x": 278,
+        "y": 363,
+        "width": 118,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "endDate",
+        "x": 425,
+        "y": 363,
+        "width": 120,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "accumulatedHours",
+        "x": 200,
+        "y": 377,
+        "width": 77,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "city",
+        "x": 155,
+        "y": 431,
+        "width": 140,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "issueDate",
+        "x": 331,
+        "y": 431,
+        "width": 41,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7,
+        "format": "dd"
+      },
+      {
+        "key": "issueDate",
+        "x": 465,
+        "y": 431,
+        "width": 75,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7,
+        "format": "MMMM"
+      },
+      {
+        "key": "issueDate",
+        "x": 114,
+        "y": 445,
+        "width": 57,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7,
+        "format": "yyyy"
+      },
+      {
+        "key": "supervisorFullName",
+        "x": 216,
+        "y": 588,
+        "width": 178,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      },
+      {
+        "key": "supervisorPosition",
+        "x": 216,
+        "y": 602,
+        "width": 178,
+        "height": 13,
+        "fontSize": 9,
+        "minFontSize": 7
+      }
+    ],
     "pages": 1,
     "pageSizes": [
       {

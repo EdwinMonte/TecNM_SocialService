@@ -32,7 +32,11 @@ El catálogo JSON compartido por API y frontend define estos nombres y orden en 
 
 Los bimestres de evaluaciones son metadatos separados del nombre. IMSS queda fuera de la numeración SS. Los paquetes históricos no acreditan dictámenes individuales. La matriz agrega los tres bimestres por tipo de evaluación sin cambiar las reglas de avance ni los códigos de almacenamiento.
 - SS v2: `SOL`, `CP`, `CA`, `CC`, `R1..R3`, `EV_SUP1..EV_SUP3`, `EV_SELF1..EV_SELF3`, `EV_ACT`, `CT`. Bimestre 3 es final.
-- SS v1 conserva `EV1..EV3`. Evaluaciones XXIII/XXIV solo descargan plantilla vacía. XXV solo prellena nombre, programa, periodo y marca final.
+- SS v1 conserva `EV1..EV3` y sus paquetes históricos; su descarga de formato usa XXIII prellenado. XXIII prellena alumno, programa y nombre/cargo del supervisor del trámite. XXIV prellena alumno y programa. XXV conserva nombre, programa, periodo y marca final. XXIV/XXV no agregan bloques del responsable.
+- R1..R3 añaden nombre y puesto del evaluador registrado en cada reporte; sin evaluador usan el supervisor del trámite. Todas las firmas, sellos, criterios y observaciones permanecen vacíos. Descargar no registra calificaciones ni acredita entrega o aprobación.
+- Nombre y cargo del supervisor/responsable se colocan juntos, próximos a la línea inferior de su bloque, con el cargo inmediatamente encima. El espacio superior queda libre para la firma manual.
+- CT SS (Anexo XIX) ofrece prellenado `termination_letter` en ambas versiones del expediente: alumno y programa del trámite, actividades de reportes ordenados (o solicitud si no hay reportes), fechas del trámite, total fijo de 480 horas, ciudad de la dependencia (o Carta Compromiso) y supervisor del trámite como responsable. Fecha de expedición: fecha documental existente o día actual de México. El total impreso siempre es 480, independientemente de las horas capturadas en reportes; no modifica las horas persistidas. No inventar ciudad/actividades. Datos faltantes y desbordamiento conservan errores 422.
+- CT conserva la base oficial y sus destinatarios impresos, firma/sello manuales vacíos y nombre/cargo próximos a la línea. Descargar no registra terminación ni modifica evidencias, dictámenes o estado; se conserva carga y revisión del PDF firmado y el endpoint de plantilla vacía.
 - `CA` SS nunca se autogenera, tampoco para modalidad interna. Descargar ejemplo; cargar carta de la dependencia.
 - PP: `CA` solo lo carga/revisa `admin` o `internship_coordinator`; alumno solo consulta. UI informa envío empresarial a `arturo.martinez@monclova.tecnm.mx`.
 - Alumno no carga documentos institucionales (`CP`, `COT`, liberación PP `CC`). Staff solo modifica su dominio; `department_head` solo consulta.
@@ -55,7 +59,9 @@ Los bimestres de evaluaciones son metadatos separados del nombre. IMSS queda fue
 
 ## PDF oficial
 
-- `GET /api/social-services/{id}/pdf/{document}`: `application`, `commitment`, `report_1..3`, `activity_assessment`, `presentation_letter`.
+- Carta Compromiso: descarga directa con datos registrados, sin exigir guardar previamente el formulario CC. Domicilio del alumno desde solicitud (respaldo CC), teléfono del perfil (respaldos solicitud/CC), domicilio de la dependencia vinculada (respaldo CC); omitir valores vacíos al resolver respaldos. Ciudad desde CC o dependencia. La fecha impresa se calcula en cada petición de descarga con TimeProvider y zona America/Mexico_City; nunca reutiliza fecha guardada ni inicio del servicio. Solo firma del alumno vacía; conservar los demás campos prellenados. Descargar no persiste datos ni acredita firma. Datos ausentes/desbordamiento mantienen errores 422.
+
+- `GET /api/social-services/{id}/pdf/{document}`: `application`, `commitment`, `report_1..3`, `evaluation_1..3`, `self_evaluation_1..3`, `activity_assessment`, `termination_letter`, `presentation_letter`. Evaluaciones y CT usan `pdfKey` en el checklist; las plantillas vacías siguen disponibles por su endpoint existente.
 - `GET /api/internships/{id}/pdf/evaluation`: solo datos del estudiante y fechas; ambas páginas; criterios, resultados, observaciones y firmas vacíos.
 - `PUT /api/internships/{id}/evaluation-format`: `{ evaluationStartDate, evaluationEndDate }`; no crea calificaciones. Captura calificada existente queda exclusiva para staff, con siete valores explícitos.
 - El alumno propietario puede guardar fechas del formato PP incluso cuando IMSS deje de habilitar nuevas solicitudes; otro alumno recibe 404. La evidencia aprobada y los estados terminales bloquean edición.
