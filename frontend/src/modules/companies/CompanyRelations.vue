@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { problemMessage } from '../../shared/api/problemDetails'
+import { watch as watchValidation } from 'vue'
+import { useFormValidation } from '../../shared/composables/useFormValidation'
+import { validateFields, optionalEmail, dateOrder } from '../../shared/utils/validationRules'
+import UiFormErrors from '../../shared/components/UiFormErrors.vue'
 import { onBeforeUnmount, ref, reactive } from 'vue'
 import { http } from '../../shared/api/http'
 import { UiAlert, UiBadge, UiButton, UiCard, UiDialog, UiField } from '../../shared/components'
@@ -21,41 +26,48 @@ async function load() {
   try {
     const [s, a] = await Promise.all([http.get<Supervisor[]>(path('supervisor'), { signal: controller.signal }), http.get<Page<Agreement>>(path('agreement'), { params: {companyId: props.companyId, page: page.value, pageSize: 20}, signal: controller.signal })])
     supervisors.value = s.data; agreements.value = a.data.items; pages.value = a.data.totalPages
-  } catch(e: any) { if (e.code !== 'ERR_CANCELED') error.value = e.response?.data?.detail || 'No se pudieron cargar supervisores y convenios.' }
+  } catch(e: any) { if (e.code !== 'ERR_CANCELED') error.value = problemMessage(e, 'No se pudieron cargar supervisores y convenios.') }
   finally { loading.value = false }
 }
 void load()
 function editSupervisor(item?: Supervisor) { kind.value = 'supervisor'; editingId.value = item?.id ?? null; Object.assign(supervisorForm, item ?? {fullName:'',position:'',department:'',email:'',phoneNumber:'',isSignatory:true}); formError.value=''; open.value=true }
 function editAgreement(item?: Agreement) { kind.value = 'agreement'; editingId.value = item?.id ?? null; Object.assign(agreementForm, item ?? {agreementNumber:'',agreementType:'general_framework',description:'',signedDate:'',expirationDate:''}); formError.value=''; open.value=true }
 async function save() {
+  if (!(kind.value === 'supervisor' ? supervisorValidation : agreementValidation).validate()) return
+
   if (busy.value) return
   busy.value=true; formError.value=''
   try {
     const payload = kind.value === 'supervisor' ? supervisorForm : {...agreementForm,companyId:props.companyId}
     if (editingId.value) await http.put(path(kind.value,editingId.value),payload); else await http.post(path(kind.value),payload)
     open.value=false; await load()
-  } catch(e:any) { formError.value=Object.values(e.response?.data?.errors ?? {}).flat().join(' ') || e.response?.data?.detail || 'No se pudo guardar el registro.' }
+  } catch(e:any) {
+    (kind.value === 'supervisor' ? supervisorValidation : agreementValidation).apply(e, 'No se pudo guardar el formulario.');
+    formError.value=Object.values(e.response?.data?.errors ?? {}).flat().join(' ') || problemMessage(e, 'No se pudo guardar el registro.') }
   finally {busy.value=false}
 }
 async function mutate(entity:'supervisor'|'agreement',id:number,active?:boolean) {
   if (busy.value) return
   busy.value=true;error.value=''
   try { if(active === undefined) await http.delete(path(entity,id)); else await http.patch(`${path(entity,id)}/status`,{isActive:active}); deleting.value=null; await load() }
-  catch(e:any){error.value=e.response?.data?.detail || 'No se pudo modificar el registro.';deleting.value=null}
+  catch(e:any){error.value=problemMessage(e, 'No se pudo modificar el registro.');deleting.value=null}
   finally {busy.value=false}
 }
 async function upload(id:number,event:Event) {
   const input=event.target as HTMLInputElement, file=input.files?.[0]; if(!file || busy.value)return
   busy.value=true;error.value=''
   try {if(file.size>10*1024*1024 || !file.name.toLowerCase().endsWith('.pdf'))throw new Error('Adjunta un PDF de hasta 10 MiB.');const body=new FormData();body.append('file',file);await http.put(`${path('agreement',id)}/document`,body);await load()}
-  catch(e:any){error.value=e.response?.data?.detail || e.message || 'No se pudo incorporar el convenio.'}
+  catch(e:any){error.value=problemMessage(e, 'No se pudo incorporar el convenio.')}
   finally{busy.value=false;input.value=''}
 }
 async function download(item:Agreement) {
   error.value=''
   try {const {data}=await http.get<Blob>(`${path('agreement',item.id)}/document`,{responseType:'blob'});const url=URL.createObjectURL(data);const link=document.createElement('a');link.href=url;link.download=`Convenio_${item.id}.pdf`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-  catch(e:any){error.value=e.response?.data?.detail || 'No se pudo descargar el convenio.'}
+  catch(e:any){error.value=problemMessage(e, 'No se pudo descargar el convenio.')}
 }
+const supervisorValidation = useFormValidation(() => validateFields(supervisorForm,{fullName:{required:true,max:180},position:{required:true,max:150},department:{max:150},email:optionalEmail,phoneNumber:{max:30}}))
+const agreementValidation = useFormValidation(() => dateOrder(validateFields(agreementForm,{agreementNumber:{required:true,max:64}}),agreementForm,'signedDate','expirationDate'))
+watchValidation(() => [open.value,kind.value,editingId.value], () => { supervisorValidation.reset(); agreementValidation.reset() })
 </script>
 <template>
   <UiAlert v-if="error" tone="danger">{{ error }} <UiButton @click="load">Reintentar</UiButton></UiAlert>
@@ -71,9 +83,11 @@ async function download(item:Agreement) {
     </UiCard>
   </div>
   <UiDialog v-model="open" :title="kind==='supervisor' ? 'Datos del supervisor' : 'Datos del convenio'">
-    <form @submit.prevent="save"><UiAlert v-if="formError" tone="danger">{{ formError }}</UiAlert>
-      <template v-if="kind==='supervisor'"><UiField v-model="supervisorForm.fullName" label="Nombre completo" required maxlength="180" /><UiField v-model="supervisorForm.position" label="Puesto" required maxlength="150" /><UiField v-model="supervisorForm.department" label="Departamento" maxlength="150" /><UiField v-model="supervisorForm.email" label="Correo electrónico" type="email" /><UiField v-model="supervisorForm.phoneNumber" label="Teléfono" type="tel" /><label><input v-model="supervisorForm.isSignatory" type="checkbox" /> Puede firmar documentos</label></template>
-      <template v-else><UiField v-model="agreementForm.agreementNumber" label="Número de convenio" required maxlength="64" /><UiField v-model="agreementForm.agreementType" label="Tipo de convenio" as="select" :options="agreementTypes" /><UiField v-model="agreementForm.description" label="Descripción" as="textarea" /><UiField v-model="agreementForm.signedDate" label="Fecha de firma" type="date" required /><UiField v-model="agreementForm.expirationDate" label="Vencimiento" type="date" :min="agreementForm.signedDate" required /></template>
+    <form novalidate @submit.prevent="save"><UiAlert v-if="formError && !(supervisorValidation.hasErrors.value || agreementValidation.hasErrors.value)" tone="danger">{{ formError }}</UiAlert>
+      <template v-if="kind==='supervisor'"><UiFormErrors :validation="supervisorValidation" />
+      <UiField v-model="supervisorForm.fullName" label="Nombre completo" required maxlength="180"  v-bind="supervisorValidation.field('fullName', 'Nombre completo')" /><UiField v-model="supervisorForm.position" label="Puesto" required maxlength="150"  v-bind="supervisorValidation.field('position', 'Puesto')" /><UiField v-model="supervisorForm.department" label="Departamento" maxlength="150"  v-bind="supervisorValidation.field('department', 'Departamento')" /><UiField v-model="supervisorForm.email" label="Correo electrónico" type="email"  v-bind="supervisorValidation.field('email', 'Correo electrónico')" /><UiField v-model="supervisorForm.phoneNumber" label="Teléfono" type="tel"  v-bind="supervisorValidation.field('phoneNumber', 'Teléfono')" /><label><input v-model="supervisorForm.isSignatory" type="checkbox" /> Puede firmar documentos</label></template>
+      <template v-else><UiFormErrors :validation="agreementValidation" />
+      <UiField v-model="agreementForm.agreementNumber" label="Número de convenio" required maxlength="64"  v-bind="agreementValidation.field('agreementNumber', 'Número de convenio')" /><UiField v-model="agreementForm.agreementType" label="Tipo de convenio" as="select" :options="agreementTypes"  v-bind="agreementValidation.field('agreementType', 'Tipo de convenio')" /><UiField v-model="agreementForm.description" label="Descripción" as="textarea"  v-bind="agreementValidation.field('description', 'Descripción')" /><UiField v-model="agreementForm.signedDate" label="Fecha de firma" type="date" required  v-bind="agreementValidation.field('signedDate', 'Fecha de firma')" /><UiField v-model="agreementForm.expirationDate" label="Vencimiento" type="date" :min="agreementForm.signedDate" required  v-bind="agreementValidation.field('expirationDate', 'Vencimiento')" /></template>
       <UiButton type="submit" :loading="busy">Guardar</UiButton>
     </form>
   </UiDialog>

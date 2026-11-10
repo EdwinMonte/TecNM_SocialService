@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { problemMessage } from '../../shared/api/problemDetails'
+import { watch as watchValidation } from 'vue'
+import { useFormValidation } from '../../shared/composables/useFormValidation'
+import { validateFields, optionalEmail } from '../../shared/utils/validationRules'
+import UiFormErrors from '../../shared/components/UiFormErrors.vue'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiDialog, UiField, UiTable } from '../../shared/components'
 import { hasRole } from '../../shared/composables/useSession'
@@ -22,7 +27,7 @@ async function load() {
     const result = await getCompanies({ page: page.value, search: search.value || undefined, companyType: type.value || undefined, isActive: status.value ? status.value === 'true' : undefined }, controller.signal)
     if (request !== sequence) return
     rows.value = result.items.map(item => ({ ...item, actions: '' })); pages.value = result.totalPages
-  } catch (e: any) { if (request === sequence && e.code !== 'ERR_CANCELED') { rows.value = []; error.value = e.response?.data?.detail || 'No se pudo cargar el catálogo.' } }
+  } catch (e: any) { if (request === sequence && e.code !== 'ERR_CANCELED') { rows.value = []; error.value = problemMessage(e, 'No se pudo cargar el catálogo.') } }
   finally { if (request === sequence) loading.value = false }
 }
 watch([search, type, status], () => { clearTimeout(timer); page.value = 1; timer = setTimeout(load, 250) })
@@ -31,23 +36,29 @@ void load()
 onBeforeUnmount(() => { sequence++; clearTimeout(timer); controller?.abort() })
 function edit(company?: Company) { editingId.value = company?.id ?? null; Object.assign(form, company ?? blank()); formError.value = ''; open.value = true }
 async function save() {
+  if (!companyValidation.validate()) return
+
   if (busy.value) return
   busy.value = true; formError.value = ''
   try {
     const privateType = ['micro', 'small', 'medium', 'large'].includes(form.companyType)
     const payload: CompanyRequest = { ...form, sector: form.sector === 'educational' ? 'educational' : privateType ? 'private' : form.companyType, companySize: privateType ? form.companyType : form.companySize }
     await saveCompany(editingId.value, payload); open.value = false; await load()
-  } catch (e: any) { formError.value = Object.values(e.response?.data?.errors ?? {}).flat().join(' ') || e.response?.data?.detail || 'No se pudo guardar la empresa.' }
+  } catch (e: any) {
+    companyValidation.apply(e, 'No se pudo guardar el formulario.');
+    formError.value = Object.values(e.response?.data?.errors ?? {}).flat().join(' ') || problemMessage(e, 'No se pudo guardar la empresa.') }
   finally { busy.value = false }
 }
 async function change(company: Company, remove = false) {
   if (busy.value) return
   busy.value = true; error.value = ''
   try { if (remove) await deleteCompany(company.id); else await setCompanyStatus(company.id, !company.isActive); deleting.value = null; await load() }
-  catch (e: any) { error.value = e.response?.data?.detail || 'No se pudo actualizar la empresa.'; deleting.value = null }
+  catch (e: any) { error.value = problemMessage(e, 'No se pudo actualizar la empresa.'); deleting.value = null }
   finally { busy.value = false }
 }
 function typeLabel(value: string) { return companyTypeLabels[value as CompanyType] }
+const companyValidation = useFormValidation(() => validateFields(form,{name:{required:true,max:200},commercialName:{max:200},companyType:{required:true},postalCode:{pattern:/^[0-9]{5}$/,message:'El código postal debe contener 5 dígitos.'},phoneNumber:{max:30},email:optionalEmail}))
+watchValidation(open, () => companyValidation.reset())
 </script>
 <template>
   <UiBasePage :fluid="true">
@@ -74,19 +85,20 @@ function typeLabel(value: string) { return companyTypeLabels[value as CompanyTyp
       </template>
     </UiCard>
     <UiDialog v-model="open" :title="editingId ? 'Editar empresa' : 'Registrar empresa'" size="lg">
-      <form class="company-form" @submit.prevent="save">
-        <UiAlert v-if="formError" tone="danger">{{ formError }}</UiAlert>
-        <UiField v-model="form.name" label="Nombre o razón social" required maxlength="200" />
-        <UiField :model-value="form.rfc ?? ''" @update:model-value="form.rfc = $event" label="RFC" maxlength="13" />
-        <UiField :model-value="form.commercialName ?? ''" @update:model-value="form.commercialName = $event" label="Nombre comercial" maxlength="200" />
-        <UiField v-model="form.companyType" label="Tipo de empresa" as="select" required :options="[{ value: '', label: 'Selecciona un tipo' }, ...typeOptions]" />
+      <form novalidate class="company-form" @submit.prevent="save">
+        <UiAlert v-if="formError && !(companyValidation.hasErrors.value)" tone="danger">{{ formError }}</UiAlert>
+        <UiFormErrors :validation="companyValidation" />
+        <UiField v-model="form.name" label="Nombre o razón social" required maxlength="200"  v-bind="companyValidation.field('name', 'Nombre o razón social')" />
+        <UiField :model-value="form.rfc ?? ''" @update:model-value="form.rfc = $event" label="RFC" maxlength="13"  v-bind="companyValidation.field('rfc', 'RFC')" />
+        <UiField :model-value="form.commercialName ?? ''" @update:model-value="form.commercialName = $event" label="Nombre comercial" maxlength="200"  v-bind="companyValidation.field('commercialName', 'Nombre comercial')" />
+        <UiField v-model="form.companyType" label="Tipo de empresa" as="select" required :options="[{ value: '', label: 'Selecciona un tipo' }, ...typeOptions]"  v-bind="companyValidation.field('companyType', 'Tipo de empresa')" />
         <label><input type="checkbox" :checked="form.sector === 'educational'" @change="form.sector = ($event.target as HTMLInputElement).checked ? 'educational' : 'private'" /> Institución educativa (reporte 911)</label>
         <label><input v-model="form.isTecnmInternal" type="checkbox" /> Dependencia interna TecNM</label>
-        <UiField :model-value="form.address ?? ''" @update:model-value="form.address = $event" label="Domicilio" />
-        <div class="filters"><UiField v-model="form.city" label="Ciudad" required maxlength="100" /><UiField v-model="form.state" label="Estado" required maxlength="100" /></div>
-        <UiField :model-value="form.postalCode ?? ''" @update:model-value="form.postalCode = $event" label="Código postal" pattern="[0-9]{5}" />
-        <UiField :model-value="form.phoneNumber ?? ''" @update:model-value="form.phoneNumber = $event" label="Teléfono" type="tel" maxlength="30" />
-        <UiField :model-value="form.email ?? ''" @update:model-value="form.email = $event" label="Correo electrónico" type="email" maxlength="255" />
+        <UiField :model-value="form.address ?? ''" @update:model-value="form.address = $event" label="Domicilio"  v-bind="companyValidation.field('address', 'Domicilio')" />
+        <div class="filters"><UiField v-model="form.city" label="Ciudad" required maxlength="100"  v-bind="companyValidation.field('city', 'Ciudad')" /><UiField v-model="form.state" label="Estado" required maxlength="100"  v-bind="companyValidation.field('state', 'Estado')" /></div>
+        <UiField :model-value="form.postalCode ?? ''" @update:model-value="form.postalCode = $event" label="Código postal" pattern="[0-9]{5}"  v-bind="companyValidation.field('postalCode', 'Código postal')" />
+        <UiField :model-value="form.phoneNumber ?? ''" @update:model-value="form.phoneNumber = $event" label="Teléfono" type="tel" maxlength="30"  v-bind="companyValidation.field('phoneNumber', 'Teléfono')" />
+        <UiField :model-value="form.email ?? ''" @update:model-value="form.email = $event" label="Correo electrónico" type="email" maxlength="255"  v-bind="companyValidation.field('email', 'Correo electrónico')" />
         <UiButton type="submit" :loading="busy">Guardar empresa</UiButton>
       </form>
     </UiDialog>

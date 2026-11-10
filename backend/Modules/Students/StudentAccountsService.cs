@@ -37,7 +37,7 @@ public sealed class StudentAccountsService(TecNMDbContext db, PasswordHasher<Use
         var email = NormalizeEmail(student.InstitutionalEmail);
         if (await db.Students.AnyAsync(s => s.Id != student.Id && s.InstitutionalEmail != null && s.InstitutionalEmail.Trim().ToLower() == email, ct)
             || await db.Users.AnyAsync(u => u.Id != student.UserId && (u.Username.ToLower() == email || u.Email.ToLower() == email), ct))
-            throw new ConflictException("students.account_email_conflict", "El correo institucional ya pertenece a otro alumno o cuenta.");
+            throw new ConflictException("students.account_email_conflict", "El correo institucional ya pertenece a otro alumno o cuenta.", new Dictionary<string, string[]> { ["institutionalEmail"] = ["Este correo ya está registrado. Usa el correo institucional del alumno."] });
 
         student.InstitutionalEmail = email;
         if (student.UserId.HasValue)

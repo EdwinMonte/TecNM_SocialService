@@ -127,3 +127,9 @@ const name = ref('')
 
 - Ejecutar `pnpm --prefix frontend run build`.
 - Ejecutar `node scripts/check-layout.mjs` desde `frontend` para validar combinaciones de shell y navegación.
+
+## Errores por campo
+
+Conservar reglas actuales. Propagar errors del servidor, normalizar rutas JSON y mostrar todos los mensajes junto al campo y dentro del formulario. Conservar valores al fallar; reiniciar errores al cambiar registro. No añadir campos ni endurecer correo/CURP.
+
+Cada formulario usa un estado de validación independiente: errores locales/servidor, campos visitados, resumen con enlaces y foco al primer error. UiField admite varios mensajes y expone controlAttrs para slots. Los errores de red/negocio sin campo permanecen visibles. Blur valida; input revalida campos ya visitados. No se endurecen reglas.

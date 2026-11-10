@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { watch as watchValidation } from 'vue'
+import { useFormValidation } from '../../../shared/composables/useFormValidation'
+import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
+import { problemMessage } from '../../../shared/api/problemDetails'
 import { socialDocumentLabel, socialDocumentOrder, socialDocumentPeriod } from '../../../shared/utils/socialServiceDocuments'
 import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
 import { http } from '../../../shared/api/http'
@@ -153,7 +157,7 @@ async function loadData(): Promise<void> {
     }
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.message || 'Error al cargar trámites de Servicio Social.'
+      problemMessage(err, 'Error al cargar trámites de Servicio Social.')
   } finally {
     isLoading.value = false
   }
@@ -172,7 +176,7 @@ async function openDetailModal(row: SocialServiceListItem): Promise<void> {
     studentDocs.value = docs
     isDetailOpen.value = true
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo cargar el detalle del trámite.'
+    errorMessage.value = problemMessage(err, 'No se pudo cargar el detalle del trámite.')
   }
 }
 
@@ -193,6 +197,8 @@ async function refreshCurrentDetail(): Promise<void> {
 
 async function handleApproveApplication(isAccepted: boolean): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   errorMessage.value = ''
   try {
@@ -206,7 +212,8 @@ async function handleApproveApplication(isAccepted: boolean): Promise<void> {
       : 'Solicitud rechazada con observaciones.'
     await refreshCurrentDetail()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo dictaminar la solicitud.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'No se pudo dictaminar la solicitud.')
   } finally {
     isActionRunning.value = false
   }
@@ -219,6 +226,8 @@ async function handleReviewDoc(doc: ExpedientDocument, status: 'approved' | 'rej
     if (!input) return
     reason = input
   }
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   errorMessage.value = ''
   try {
@@ -226,7 +235,8 @@ async function handleReviewDoc(doc: ExpedientDocument, status: 'approved' | 'rej
     successMessage.value = `Documento ${doc.documentCode} ${status === 'approved' ? 'aprobado' : 'observado'}.`
     await refreshCurrentDetail()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo dictaminar el documento.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'No se pudo dictaminar el documento.')
   } finally {
     isActionRunning.value = false
   }
@@ -254,12 +264,15 @@ async function handlePrint(docKey: string): Promise<void> {
     const data = await getSocialServicePrintData(selectedDetail.value.id, docKey)
     openPrintableDocument(data)
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Plantilla aún no disponible.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'Plantilla aún no disponible.')
   }
 }
 
 async function handleAdvanceAcceptance(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   try {
     await registerSocialServiceAcceptance(
@@ -269,7 +282,8 @@ async function handleAdvanceAcceptance(): Promise<void> {
     successMessage.value = 'Carta de Aceptación registrada en el trámite.'
     await refreshCurrentDetail()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Verifica que el documento CA esté aprobado.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'Verifica que el documento CA esté aprobado.')
   } finally {
     isActionRunning.value = false
   }
@@ -277,13 +291,16 @@ async function handleAdvanceAcceptance(): Promise<void> {
 
 async function handleActivate(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   try {
     await activateSocialService(selectedDetail.value.id)
     successMessage.value = 'Servicio Social activado formalmente.'
     await refreshCurrentDetail()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Verifica que la Carta Compromiso (CC) esté aprobada.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'Verifica que la Carta Compromiso (CC) esté aprobada.')
   } finally {
     isActionRunning.value = false
   }
@@ -291,14 +308,17 @@ async function handleActivate(): Promise<void> {
 
 async function handleComplete(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   try {
     await completeSocialService(selectedDetail.value.id, new Date().toISOString().slice(0, 10))
     successMessage.value = 'Documentación final validada. Trámite listo para liberar.'
     await refreshCurrentDetail()
   } catch (err: any) {
+    actionValidation.apply(err, 'No se pudo completar la operación.')
     errorMessage.value =
-      err?.response?.data?.message || 'Verifica que R1, R2, R3 y CT estén aprobados.'
+      problemMessage(err, 'Verifica que R1, R2, R3 y CT estén aprobados.')
   } finally {
     isActionRunning.value = false
   }
@@ -306,6 +326,8 @@ async function handleComplete(): Promise<void> {
 
 async function handleRelease(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   try {
     await releaseSocialService(selectedDetail.value.id, {
@@ -316,8 +338,9 @@ async function handleRelease(): Promise<void> {
     successMessage.value = 'Constancia de Terminación (SSC) emitida exitosamente.'
     await refreshCurrentDetail()
   } catch (err: any) {
+    actionValidation.apply(err, 'No se pudo completar la operación.')
     errorMessage.value =
-      err?.response?.data?.message || 'Verifica que todos los documentos obligatorios estén aprobados.'
+      problemMessage(err, 'Verifica que todos los documentos obligatorios estén aprobados.')
   } finally {
     isActionRunning.value = false
   }
@@ -325,13 +348,16 @@ async function handleRelease(): Promise<void> {
 
 async function handleSendSchoolAct(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   try {
     await sendSocialServiceSchoolAct(selectedDetail.value.id)
     successMessage.value = 'Acta turnada a Servicios Escolares con folio DGTV.'
     await refreshCurrentDetail()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo generar el acta.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'No se pudo generar el acta.')
   } finally {
     isActionRunning.value = false
   }
@@ -340,6 +366,8 @@ async function handleSendSchoolAct(): Promise<void> {
 onMounted(() => {
   void loadData()
 })
+const actionValidation = useFormValidation()
+watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => actionValidation.reset())
 </script>
 
 <template>
@@ -354,7 +382,7 @@ onMounted(() => {
       </p>
     </div>
 
-    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">
+    <UiAlert v-if="errorMessage && !(actionValidation.hasErrors.value)" tone="danger" style="margin-bottom: 1rem;">
       {{ errorMessage }}
     </UiAlert>
     <UiAlert v-if="successMessage" tone="success" style="margin-bottom: 1rem;">
@@ -500,6 +528,7 @@ onMounted(() => {
       "
     >
       <div v-if="selectedDetail" style="display: flex; flex-direction: column; gap: 1rem;">
+        <UiFormErrors :validation="actionValidation" />
         <ExpedientChecklist :application-accepted="selectedDetail.application?.isAcceptedByOffice" :requirements="selectedDetail.documentRequirements" :documents="studentDocs" tramite-type="social_service" :tramite-id="selectedDetail.id" :student-id="selectedDetail.student.id" :can-edit="false" @changed="refreshCurrentDetail" />
         <div
           style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; background: #f8fafc; padding: 0.85rem; border-radius: 8px;"
@@ -557,8 +586,8 @@ onMounted(() => {
             Aprueba primero la Solicitud firmada y la vigencia IMSS. La Carta de Presentación
             firmada se carga como PDF y recibe su propio dictamen documental.
           </p>
-          <UiField label="Observaciones de Vinculación">
-            <input v-model="reviewObservations" type="text" />
+          <UiField label="Observaciones de Vinculación" v-slot="{ controlAttrs }" v-bind="actionValidation.field('rejectionReason', 'Observaciones')">
+            <input v-bind="controlAttrs" v-model="reviewObservations" type="text" />
           </UiField>
           <div style="display: flex; gap: 0.5rem; margin-top: 0.6rem;">
             <UiButton

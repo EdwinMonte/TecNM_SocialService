@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
+import { watch as watchValidation } from 'vue'
+import { useFormValidation } from '../../../shared/composables/useFormValidation'
+import { validateFields, optionalEmail, dateOrder } from '../../../shared/utils/validationRules'
+import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
 import DocumentViewerModal from '../../expedients/components/DocumentViewerModal.vue'
 
 import { socialDocumentLabel } from '../../../shared/utils/socialServiceDocuments'
@@ -171,7 +176,7 @@ async function loadData(): Promise<void> {
       commitmentForm.commitmentDate = ss.commitment?.commitmentDate || ss.startDate
     }
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Error al cargar tu Servicio Social.'
+    errorMessage.value = problemMessage(err, 'Error al cargar tu Servicio Social.')
   } finally {
     isLoading.value = false
   }
@@ -182,7 +187,15 @@ function handleImssFileSelect(event: Event): void {
   imssFileForApplication.value = input.files?.[0] ?? null
 }
 
+function prepareApplicationSubmission(): void {
+  if (isSubmitting.value || !applicationValidation.validate()) return
+  if (imssFileForApplication.value) imssPreviewOpen.value = true
+  else void handleSubmitApplication()
+}
 async function handleSubmitApplication(): Promise<void> {
+  if (isSubmitting.value) return
+  if (!applicationValidation.validate()) { imssPreviewOpen.value = false; return }
+
   isSubmitting.value = true
   errorMessage.value = ''
   successMessage.value = ''
@@ -199,8 +212,10 @@ async function handleSubmitApplication(): Promise<void> {
       `${socialDocumentLabel('SOL')} generada y enviada a Vinculación.`
     await loadData()
   } catch (err: any) {
+    applicationValidation.apply(err, 'No se pudo guardar el formulario.')
+    if (applicationValidation.entries.value.length) imssPreviewOpen.value = false
     errorMessage.value =
-      err?.response?.data?.detail || err?.message || 'Verifica todos los campos de la solicitud y tu vigencia IMSS.'
+      problemMessage(err, 'Verifica todos los campos de la solicitud y tu vigencia IMSS.')
   } finally {
     isSubmitting.value = false
   }
@@ -220,7 +235,7 @@ async function handlePrintFormat(documentKey: string): Promise<void> {
     openPrintableDocument(printData)
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.message || 'El formato aún no está disponible para impresión.'
+      problemMessage(err, 'El formato aún no está disponible para impresión.')
   }
 }
 
@@ -242,6 +257,8 @@ function handleOpenStepModal(modalKey: string): void {
 }
 
 async function handleSaveAndPrintCommitment(): Promise<void> {
+  if (isSubmitting.value || !commitmentValidation.validate()) return
+
   if (!service.value) return
   isSubmitting.value = true
   errorMessage.value = ''
@@ -251,13 +268,16 @@ async function handleSaveAndPrintCommitment(): Promise<void> {
     successMessage.value = `${socialDocumentLabel('CC')}: datos guardados.`
     await handlePrintFormat('commitment')
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Error al guardar la Carta Compromiso.'
+    commitmentValidation.apply(err, 'No se pudo guardar el formulario.')
+    errorMessage.value = problemMessage(err, 'Error al guardar la Carta Compromiso.')
   } finally {
     isSubmitting.value = false
   }
 }
 
 async function handleSaveAndPrintReport(): Promise<void> {
+  if (isSubmitting.value || !reportValidation.validate()) return
+
   if (!service.value) return
   isSubmitting.value = true
   errorMessage.value = ''
@@ -274,7 +294,8 @@ async function handleSaveAndPrintReport(): Promise<void> {
     await handlePrintFormat(`report_${activeReportNumber.value}`)
     await loadData()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Error al guardar el Reporte Bimestral.'
+    reportValidation.apply(err, 'No se pudo guardar el formulario.')
+    errorMessage.value = problemMessage(err, 'Error al guardar el Reporte Bimestral.')
   } finally {
     isSubmitting.value = false
   }
@@ -283,6 +304,14 @@ async function handleSaveAndPrintReport(): Promise<void> {
 onMounted(() => {
   void loadData()
 })
+const applicationValidation = useFormValidation(() => {
+ const errors = validateFields(openForm, {programId:{required:true,min:1},companyId:{required:true,min:1},supervisorId:{required:true,min:1},startDate:{required:true},endDate:{required:true},'application.studentAddress':{required:true},'application.studentPhone':{required:true,max:20},'application.dependencyName':{required:true,max:200},'application.dependencyHeadName':{required:true,max:180},'application.dependencyHeadPosition':{required:true,max:150},'application.activitiesOutline':{required:true},'application.periodType':{required:true,choices:['february_july','august_january']}})
+ return dateOrder(errors, openForm, 'startDate', 'endDate')
+})
+const reportValidation = useFormValidation(() => dateOrder(validateFields(reportForm, {activitiesSummary:{required:true}}), reportForm,'periodStartDate','periodEndDate'))
+const commitmentValidation = useFormValidation(() => validateFields(commitmentForm,{studentAddress:{required:true},studentPhone:{required:true,max:20},dependencyAddress:{required:true}}))
+watchValidation(isReportModalOpen, () => reportValidation.reset())
+watchValidation(isCommitmentModalOpen, () => commitmentValidation.reset())
 </script>
 
 <template>
@@ -295,7 +324,7 @@ onMounted(() => {
       </p>
     </div>
 
-    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">
+    <UiAlert v-if="errorMessage && !(applicationValidation.hasErrors.value || reportValidation.hasErrors.value || commitmentValidation.hasErrors.value)" tone="danger" style="margin-bottom: 1rem;">
       {{ errorMessage }}
     </UiAlert>
     <UiAlert v-if="successMessage" tone="success" style="margin-bottom: 1rem;">
@@ -316,8 +345,9 @@ onMounted(() => {
         </p>
 
         <div class="form-grid">
-          <UiField label="Modalidad del Servicio Social *">
-            <select v-model="openForm.modality" @change="handleModalityChange">
+          <UiFormErrors :validation="applicationValidation" />
+          <UiField label="Modalidad del Servicio Social *" v-bind="applicationValidation.field('modality', 'Modalidad del Servicio Social *')" v-slot="{ controlAttrs }">
+            <select v-bind="controlAttrs" v-model="openForm.modality" @change="handleModalityChange">
               <option value="internal">
                 Local en el TecNM (Genera Carta de Aceptación automática)
               </option>
@@ -325,60 +355,60 @@ onMounted(() => {
             </select>
           </UiField>
 
-          <UiField label="Periodo Escolar *">
-            <select v-model.number="openForm.periodId">
+          <UiField label="Periodo Escolar *" v-bind="applicationValidation.field('periodId', 'Periodo Escolar *')" v-slot="{ controlAttrs }">
+            <select v-bind="controlAttrs" v-model.number="openForm.periodId">
               <option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
             </select>
           </UiField>
 
-          <UiField label="Programa de Servicio Social *">
-            <select v-model.number="openForm.programId">
+          <UiField label="Programa de Servicio Social *" v-bind="applicationValidation.field('programId', 'Programa de Servicio Social *')" v-slot="{ controlAttrs }">
+            <select v-bind="controlAttrs" v-model.number="openForm.programId">
               <option v-for="prog in programOptions" :key="prog.id" :value="prog.id">
                 {{ prog.label }}
               </option>
             </select>
           </UiField>
 
-          <UiField label="Dependencia / Departamento Receptor *">
-            <select v-model.number="openForm.companyId" @change="handleCompanyChange">
+          <UiField label="Dependencia / Departamento Receptor *" v-bind="applicationValidation.field('companyId', 'Dependencia / Departamento Receptor *')" v-slot="{ controlAttrs }">
+            <select v-bind="controlAttrs" v-model.number="openForm.companyId" @change="handleCompanyChange">
               <option v-for="c in companyOptions" :key="c.id" :value="c.id">{{ c.label }}</option>
             </select>
           </UiField>
 
-          <UiField label="Titular / Responsable del Área *">
-            <select v-model.number="openForm.supervisorId" @change="handleSupervisorChange">
+          <UiField label="Titular / Responsable del Área *" v-bind="applicationValidation.field('supervisorId', 'Titular / Responsable del Área *')" v-slot="{ controlAttrs }">
+            <select v-bind="controlAttrs" v-model.number="openForm.supervisorId" @change="handleSupervisorChange">
               <option v-for="s in supervisorOptions" :key="s.id" :value="s.id">{{ s.label }}</option>
             </select>
           </UiField>
 
-          <UiField label="Teléfono del Estudiante *">
-            <input
+          <UiField label="Teléfono del Estudiante *" v-bind="applicationValidation.field('application.studentPhone', 'Teléfono del Estudiante *')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs"
               v-model="openForm.application.studentPhone"
               type="text"
               placeholder="Ej. 8661458920"
             />
           </UiField>
 
-          <UiField label="Domicilio Completo del Estudiante *">
-            <input
+          <UiField label="Domicilio Completo del Estudiante *" v-bind="applicationValidation.field('application.studentAddress', 'Domicilio Completo del Estudiante *')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs"
               v-model="openForm.application.studentAddress"
               type="text"
               placeholder="Calle, Número, Colonia y Ciudad"
             />
           </UiField>
 
-          <UiField label="Fecha de Inicio *">
-            <input v-model="openForm.startDate" type="date" />
+          <UiField label="Fecha de Inicio *" v-bind="applicationValidation.field('startDate', 'Fecha de Inicio *')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs" v-model="openForm.startDate" type="date" />
           </UiField>
 
-          <UiField label="Fecha de Término (Mín. 6 meses) *">
-            <input v-model="openForm.endDate" type="date" />
+          <UiField label="Fecha de Término (Mín. 6 meses) *" v-bind="applicationValidation.field('endDate', 'Fecha de Término (Mín. 6 meses) *')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs" v-model="openForm.endDate" type="date" />
           </UiField>
         </div>
 
         <div style="margin-top: 1rem;">
-          <UiField label="Actividades a Desarrollar en el Programa (Anexo XVIII) *">
-            <textarea
+          <UiField label="Actividades a Desarrollar en el Programa (Anexo XVIII) *" v-bind="applicationValidation.field('application.activitiesOutline', 'Actividades a Desarrollar en el Programa (Anexo XVIII) *')" v-slot="{ controlAttrs }">
+            <textarea v-bind="controlAttrs"
               v-model="openForm.application.activitiesOutline"
               rows="3"
               style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px;"
@@ -409,7 +439,7 @@ onMounted(() => {
         </div>
 
         <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
-          <UiButton variant="primary" :disabled="isSubmitting || (!imssFileForApplication && !['pending', 'approved'].includes(studentProfile?.imssStatus || ''))" @click="imssFileForApplication ? (imssPreviewOpen = true) : handleSubmitApplication()">
+          <UiButton variant="primary" :disabled="isSubmitting || (!imssFileForApplication && !['pending', 'approved'].includes(studentProfile?.imssStatus || ''))" @click="prepareApplicationSubmission">
             {{
               isSubmitting
                 ? 'Generando Solicitud...'
@@ -493,17 +523,18 @@ onMounted(() => {
       :title="socialDocumentLabel('CC')"
     >
       <div style="display: flex; flex-direction: column; gap: 0.85rem;">
-        <UiField label="Domicilio del Estudiante *">
-          <input v-model="commitmentForm.studentAddress" type="text" />
+        <UiFormErrors :validation="commitmentValidation" />
+        <UiField label="Domicilio del Estudiante *" v-bind="commitmentValidation.field('studentAddress', 'Domicilio del Estudiante *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="commitmentForm.studentAddress" type="text" />
         </UiField>
-        <UiField label="Teléfono del Estudiante *">
-          <input v-model="commitmentForm.studentPhone" type="text" />
+        <UiField label="Teléfono del Estudiante *" v-bind="commitmentValidation.field('studentPhone', 'Teléfono del Estudiante *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="commitmentForm.studentPhone" type="text" />
         </UiField>
-        <UiField label="Domicilio de la Dependencia *">
-          <input v-model="commitmentForm.dependencyAddress" type="text" />
+        <UiField label="Domicilio de la Dependencia *" v-bind="commitmentValidation.field('dependencyAddress', 'Domicilio de la Dependencia *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="commitmentForm.dependencyAddress" type="text" />
         </UiField>
-        <UiField label="Fecha de Compromiso *">
-          <input v-model="commitmentForm.commitmentDate" type="date" />
+        <UiField label="Fecha de Compromiso *" v-bind="commitmentValidation.field('commitmentDate', 'Fecha de Compromiso *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="commitmentForm.commitmentDate" type="date" />
         </UiField>
       </div>
       <template #footer>
@@ -530,18 +561,19 @@ onMounted(() => {
     >
       <div style="display: flex; flex-direction: column; gap: 0.85rem;">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-          <UiField label="Fecha Inicio del Bimestre *">
-            <input v-model="reportForm.periodStartDate" type="date" />
+          <UiFormErrors :validation="reportValidation" />
+          <UiField label="Fecha Inicio del Bimestre *" v-bind="reportValidation.field('periodStartDate', 'Fecha Inicio del Bimestre *')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs" v-model="reportForm.periodStartDate" type="date" />
           </UiField>
-          <UiField label="Fecha Fin del Bimestre *">
-            <input v-model="reportForm.periodEndDate" type="date" />
+          <UiField label="Fecha Fin del Bimestre *" v-bind="reportValidation.field('periodEndDate', 'Fecha Fin del Bimestre *')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs" v-model="reportForm.periodEndDate" type="date" />
           </UiField>
         </div>
-        <UiField label="Horas Reportadas en el Bimestre (Informativo para impresión) *">
-          <input v-model.number="reportForm.reportedHours" type="number" min="1" max="480" />
+        <UiField label="Horas Reportadas en el Bimestre (Informativo para impresión) *" v-bind="reportValidation.field('reportedHours', 'Horas Reportadas en el Bimestre (Informativo para impresión) *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model.number="reportForm.reportedHours" type="number" min="1" max="480" />
         </UiField>
-        <UiField label="Resumen de Actividades Realizadas *">
-          <textarea
+        <UiField label="Resumen de Actividades Realizadas *" v-bind="reportValidation.field('activitiesSummary', 'Resumen de Actividades Realizadas *')" v-slot="{ controlAttrs }">
+          <textarea v-bind="controlAttrs"
             v-model="reportForm.activitiesSummary"
             rows="4"
             style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px;"

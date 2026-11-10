@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { watch as watchValidation } from 'vue'
+import { useFormValidation } from '../../../shared/composables/useFormValidation'
+import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
+import { problemMessage } from '../../../shared/api/problemDetails'
 import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
 import { http } from '../../../shared/api/http'
 import { computed, onMounted, ref } from 'vue'
@@ -150,7 +154,7 @@ async function loadData(): Promise<void> {
     }
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.message || 'Error al cargar trámites de Prácticas Profesionales.'
+      problemMessage(err, 'Error al cargar trámites de Prácticas Profesionales.')
   } finally {
     isLoading.value = false
   }
@@ -169,7 +173,7 @@ async function openDetailModal(row: InternshipListItem): Promise<void> {
     studentDocs.value = docs
     isDetailOpen.value = true
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo cargar el detalle del trámite.'
+    errorMessage.value = problemMessage(err, 'No se pudo cargar el detalle del trámite.')
   }
 }
 
@@ -188,6 +192,8 @@ async function refreshCurrentDetail(): Promise<void> {
 
 async function handleApproveRequest(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   errorMessage.value = ''
   try {
@@ -196,7 +202,8 @@ async function handleApproveRequest(): Promise<void> {
       'Solicitud aprobada. Se generó automáticamente la Carta de Presentación con folio EJ26/PR...'
     await refreshCurrentDetail()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo aprobar la solicitud.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'No se pudo aprobar la solicitud.')
   } finally {
     isActionRunning.value = false
   }
@@ -209,6 +216,8 @@ async function handleReviewDoc(doc: ExpedientDocument, status: 'approved' | 'rej
     if (!input) return
     reason = input
   }
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   errorMessage.value = ''
   try {
@@ -216,7 +225,8 @@ async function handleReviewDoc(doc: ExpedientDocument, status: 'approved' | 'rej
     successMessage.value = `Documento ${doc.documentCode} ${status === 'approved' ? 'aprobado' : 'observado'}.`
     await refreshCurrentDetail()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo dictaminar el documento.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'No se pudo dictaminar el documento.')
   } finally {
     isActionRunning.value = false
   }
@@ -244,20 +254,24 @@ async function handlePrint(docKey: 'presentation_letter' | 'evaluation' | 'relea
     const data = await getInternshipPrintData(selectedDetail.value.id, docKey)
     openPrintableDocument(data)
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Plantilla aún no disponible.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'Plantilla aún no disponible.')
   }
 }
 
 async function handleComplete(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   try {
     await completeInternship(selectedDetail.value.id, new Date().toISOString().slice(0, 10))
     successMessage.value = 'Documentación EV y CT validada. Trámite listo para liberar.'
     await refreshCurrentDetail()
   } catch (err: any) {
+    actionValidation.apply(err, 'No se pudo completar la operación.')
     errorMessage.value =
-      err?.response?.data?.message || 'Verifica que EV y CT estén aprobados.'
+      problemMessage(err, 'Verifica que EV y CT estén aprobados.')
   } finally {
     isActionRunning.value = false
   }
@@ -265,14 +279,17 @@ async function handleComplete(): Promise<void> {
 
 async function handleRelease(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   try {
     await releaseInternship(selectedDetail.value.id)
     successMessage.value = 'Constancia de Acreditación de Prácticas (PPC) emitida exitosamente.'
     await refreshCurrentDetail()
   } catch (err: any) {
+    actionValidation.apply(err, 'No se pudo completar la operación.')
     errorMessage.value =
-      err?.response?.data?.message || 'Verifica que CA, EV y CT estén aprobados.'
+      problemMessage(err, 'Verifica que CA, EV y CT estén aprobados.')
   } finally {
     isActionRunning.value = false
   }
@@ -280,13 +297,16 @@ async function handleRelease(): Promise<void> {
 
 async function handleSendSchoolAct(): Promise<void> {
   if (!selectedDetail.value) return
+  if (isActionRunning.value) return
+  actionValidation.reset()
   isActionRunning.value = true
   try {
     await sendInternshipSchoolAct(selectedDetail.value.id)
     successMessage.value = 'Acta de Prácticas turnada a Servicios Escolares con folio DGTV.'
     await refreshCurrentDetail()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'No se pudo generar el acta.'
+    actionValidation.apply(err, 'No se pudo completar la operación.')
+    errorMessage.value = problemMessage(err, 'No se pudo generar el acta.')
   } finally {
     isActionRunning.value = false
   }
@@ -295,6 +315,8 @@ async function handleSendSchoolAct(): Promise<void> {
 onMounted(() => {
   void loadData()
 })
+const actionValidation = useFormValidation()
+watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => actionValidation.reset())
 </script>
 
 <template>
@@ -309,7 +331,7 @@ onMounted(() => {
       </p>
     </div>
 
-    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">
+    <UiAlert v-if="errorMessage && !(actionValidation.hasErrors.value)" tone="danger" style="margin-bottom: 1rem;">
       {{ errorMessage }}
     </UiAlert>
     <UiAlert v-if="successMessage" tone="success" style="margin-bottom: 1rem;">
@@ -456,6 +478,7 @@ onMounted(() => {
       "
     >
       <div v-if="selectedDetail" style="display: flex; flex-direction: column; gap: 1rem;">
+        <UiFormErrors :validation="actionValidation" />
         <ExpedientChecklist :requirements="selectedDetail.documentRequirements" :documents="studentDocs" tramite-type="internship" :tramite-id="selectedDetail.id" :student-id="selectedDetail.student.id" :can-edit="false" @changed="refreshCurrentDetail" />
         <div
           style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; background: #f8fafc; padding: 0.85rem; border-radius: 8px;"
@@ -513,8 +536,8 @@ onMounted(() => {
             Contacto confirmado: {{ selectedDetail.student.phoneNumber }} ·
             {{ selectedDetail.student.institutionalEmail }}
           </p>
-          <UiField label="Observaciones de Coordinación">
-            <input v-model="approveObservations" type="text" />
+          <UiField label="Observaciones de Coordinación" v-slot="{ controlAttrs }" v-bind="actionValidation.field('observations', 'Observaciones')">
+            <input v-bind="controlAttrs" v-model="approveObservations" type="text" />
           </UiField>
           <div style="margin-top: 0.6rem;">
             <UiButton

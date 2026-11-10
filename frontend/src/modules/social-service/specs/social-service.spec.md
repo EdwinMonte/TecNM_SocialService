@@ -82,3 +82,7 @@ Formulario por pasos (`UiCard` o stepper):
 
 
 Apertura SS: enviar Solicitud e IMSS juntos mediante POST /api/social-services/submissions multipart (application JSON, imssFile opcional con evidencia vigente pendiente/aprobada). No exige aprobación IMSS previa al envío. Vista previa antes de confirmar; aprobación administrativa sigue exigiendo IMSS aprobado. No aplica a PP.
+
+## Validación uniforme
+
+Los formularios de captura muestran errores locales y del servidor junto al campo con UiField y resumen UiFormErrors dentro del formulario/modal. Las rutas anidadas se conservan; errores sin control visible permanecen en el resumen. Blur valida, input revalida después de la primera visita. Se conserva el contenido al fallar, se enfoca el primer control inválido y se limpia el estado al cambiar de registro/formulario. Backend conserva reglas, estados HTTP y autorización.

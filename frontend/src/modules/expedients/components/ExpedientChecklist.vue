@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
 import { computed, ref, watch } from 'vue'
 import { UiCard, UiBadge, UiButton, UiAlert } from '../../../shared/components'
 import { http } from '../../../shared/api/http'
@@ -44,7 +45,7 @@ async function confirmUpload() {
       await uploadStudentDocument(props.studentId, data)
     } else await uploadMyDocument({ file, tramiteType: props.tramiteType, tramiteId: props.tramiteId, documentCode: item.code })
     pending.value = null; open.value = false; blob.value = null; emit('changed')
-  } catch (e: any) { error.value = e.response?.data?.detail || e.message || 'No se pudo cargar el PDF.' }
+  } catch (e: any) { error.value = problemMessage(e, 'No se pudo cargar el PDF.') }
   finally { busy.value = '' }
 }
 </script>

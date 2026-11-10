@@ -59,14 +59,14 @@ public partial class CareersService(TecNMDbContext dbContext)
             .AsNoTracking()
             .Where(c => c.IsActive)
             .OrderBy(c => c.Code)
-            .Select(c => new { c.Id, c.Code, c.Name })
+            .Select(c => new { c.Id, c.Code, c.Name, c.TotalCredits })
             .ToListAsync(cancellationToken);
 
         return items
             .Select(c => new OptionItem(
                 c.Id,
                 $"{c.Code} · {c.Name}",
-                new Dictionary<string, object?> { ["code"] = c.Code }))
+                new Dictionary<string, object?> { ["code"] = c.Code, ["totalCredits"] = c.TotalCredits }))
             .ToList();
     }
 

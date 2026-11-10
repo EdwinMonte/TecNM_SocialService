@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
+import { watch as watchValidation } from 'vue'
+import { useFormValidation } from '../../../shared/composables/useFormValidation'
+import { validateFields } from '../../../shared/utils/validationRules'
+import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
 import { isAxiosError } from 'axios'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
@@ -254,6 +259,8 @@ function openEditModal(career: Career): void {
 }
 
 async function handleSave(): Promise<void> {
+  if (!careerValidation.validate()) return
+
   formError.value = ''
 
   const code = formCode.value.trim().toUpperCase()
@@ -322,13 +329,8 @@ async function handleSave(): Promise<void> {
     dialogOpen.value = false
     await loadCareers()
   } catch (error) {
-    if (isAxiosError(error) && error.response?.data?.title) {
-      formError.value = error.response.data.title
-    } else if (isAxiosError(error) && error.response?.status === 409) {
-      formError.value = 'La clave ingresada ya está registrada en otra carrera.'
-    } else {
-      formError.value = 'Ocurrió un error al guardar los datos de la carrera.'
-    }
+    careerValidation.apply(error, 'No se pudo guardar la carrera.')
+    formError.value = problemMessage(error, 'No se pudo guardar la carrera.')
   } finally {
     isSaving.value = false
   }
@@ -401,6 +403,8 @@ async function handleConfirmDelete(): Promise<void> {
 }
 
 onMounted(loadCareers)
+const careerValidation = useFormValidation(() => validateFields({code:formCode.value.trim().toUpperCase(),name:formName.value,totalCredits:formCredits.value},{code:{required:true,max:16,pattern:/^[A-Z0-9_-]+$/},name:{required:true,max:150},totalCredits:{required:true,integer:true,min:1}}))
+watchValidation(dialogOpen, () => careerValidation.reset())
 </script>
 
 <template>
@@ -806,18 +810,19 @@ onMounted(loadCareers)
 
     <!-- Modal de Creación / Edición -->
     <UiDialog v-model="dialogOpen" :title="dialogTitle">
-      <form class="dialog-form" @submit.prevent="handleSave">
-        <UiAlert v-if="formError" tone="danger" title="Revisa los datos ingresados" class="mb-3">
+      <form novalidate class="dialog-form" @submit.prevent="handleSave">
+        <UiAlert v-if="formError && !(careerValidation.hasErrors.value)" tone="danger" title="Revisa los datos ingresados" class="mb-3">
           {{ formError }}
         </UiAlert>
 
+        <UiFormErrors :validation="careerValidation" />
         <UiField
           v-model="formCode"
           label="Clave Oficial (Siglas)"
           hint="Entre 1 y 16 caracteres alfanuméricos en mayúsculas. Ej. IIND, IINF, IGEM"
           placeholder="Ej. IIND"
           required
-        />
+         v-bind="careerValidation.field('code', 'Clave Oficial (Siglas)')" />
 
         <UiField
           v-model="formName"
@@ -825,7 +830,7 @@ onMounted(loadCareers)
           hint="Nombre completo conforme al plan de estudios autorizado por el TecNM"
           placeholder="Ej. Ingeniería Industrial"
           required
-        />
+         v-bind="careerValidation.field('name', 'Nombre Oficial de la Carrera')" />
 
         <UiField
           v-model="formCredits"
@@ -835,7 +840,7 @@ onMounted(loadCareers)
           max="500"
           hint="Estándar TecNM: 260 créditos totales (182 para Servicio Social)"
           required
-        />
+         v-bind="careerValidation.field('totalCredits', 'Créditos Totales de Retícula')" />
       </form>
 
       <template #actions>

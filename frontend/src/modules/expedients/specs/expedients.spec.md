@@ -82,3 +82,7 @@ Aplicar la matriz de prellenado del contrato documental v2: reportes con evaluad
 CT descarga el Anexo XIX prellenado mediante pdfKey termination_letter. Reutiliza alumno, programa, actividades, fechas, horas registradas, ciudad y supervisor según el contrato documental v2. Conserva destinatarios impresos, firmas/sello manuales vacíos y carga/revisión del PDF firmado; descargar no altera el trámite.
 
 Carta Compromiso: descarga directa con domicilio de solicitud, teléfono del perfil y domicilio de la dependencia, usando respaldos registrados cuando falten. La fecha impresa se calcula al descargar en America/Mexico_City, sin reutilizar la fecha guardada. No exige captura previa de CC; firma del alumno vacía y ninguna escritura al descargar.
+
+## Validación uniforme
+
+Los formularios de captura muestran errores locales y del servidor junto al campo con UiField y resumen UiFormErrors dentro del formulario/modal. Las rutas anidadas se conservan; errores sin control visible permanecen en el resumen. Blur valida, input revalida después de la primera visita. Se conserva el contenido al fallar, se enfoca el primer control inválido y se limpia el estado al cambiar de registro/formulario. Backend conserva reglas, estados HTTP y autorización.

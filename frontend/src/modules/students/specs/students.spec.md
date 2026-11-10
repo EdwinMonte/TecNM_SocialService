@@ -92,3 +92,7 @@ UI: columna Seguimiento SS, valoración, periodo inicial, motivo, filtros y diá
 ## Padrón compacto y detalle (vigente)
 
 Una sola tabla en `/students`: nombre, matrícula, carrera/semestre, seguimiento SS (según rol) y Ver detalle. La cola IMSS de preingreso permanece en `/expedients/review`; no se monta ni consulta automáticamente en el padrón. El detalle reutiliza UiDialog, carga datos completos solo para perfiles autorizados y concentra datos personales, académicos, contacto, cuenta, IMSS y seguimiento. Candidatos restringidos muestran únicamente el resumen permitido, sin peticiones al perfil. Acciones de editar, cuentas, dictamen y valoración quedan dentro del detalle. Filtros principales: búsqueda, carrera y seguimiento; turno/IMSS/constancia dentro de Más filtros. Tabla sin cortes en escritorio, presentación por filas compactas en móvil. Mostrar carga, error recuperable, vacío, paginación y cierre por Escape con retorno de foco. Mantener datos y permisos existentes.
+
+## Validación uniforme
+
+Los formularios de captura muestran errores locales y del servidor junto al campo con UiField y resumen UiFormErrors dentro del formulario/modal. Las rutas anidadas se conservan; errores sin control visible permanecen en el resumen. Blur valida, input revalida después de la primera visita. Se conserva el contenido al fallar, se enfoca el primer control inválido y se limpia el estado al cambiar de registro/formulario. Backend conserva reglas, estados HTTP y autorización.

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
 import { onMounted, ref } from 'vue'
 import { UiAlert, UiBasePage, UiCard } from '../../../shared/components'
 import { getDashboardMetrics } from '../api/reportsApi'
@@ -14,7 +15,7 @@ async function loadData() {
   try {
     data.value = await getDashboardMetrics()
   } catch (err: any) {
-    errorMessage.value = err.response?.data?.message || 'Error al cargar métricas de Vinculación'
+    errorMessage.value = problemMessage(err, 'Error al cargar métricas de Vinculación')
   } finally {
     isLoading.value = false
   }

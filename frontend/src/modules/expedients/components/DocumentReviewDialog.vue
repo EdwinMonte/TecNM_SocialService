@@ -3,6 +3,8 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 import { UiAlert, UiButton, UiDialog, UiField } from '../../../shared/components'
 import { socialDocumentLabel } from '../../../shared/utils/socialServiceDocuments'
 import { problemMessage } from '../../../shared/api/problemDetails'
+import { useFormValidation } from '../../../shared/composables/useFormValidation'
+import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
 import { getDocumentBlob, reviewDocument } from '../api/expedientsApi'
 import type { ExpedientDocument } from '../types/expedients'
 
@@ -10,14 +12,23 @@ const open = defineModel<boolean>({ default: false })
 const props = defineProps<{ document: ExpedientDocument | null; studentName?: string }>()
 const emit = defineEmits<{ reviewed: [document: ExpedientDocument] }>()
 const imssVerified = ref(false)
-const reason = ref(''), error = ref(''), dateError = ref(''), reasonError = ref('')
+const reason = ref(''), error = ref('')
+const decision = ref('approved')
+const validation = useFormValidation(() => {
+  const errors: Record<string, string[]> = {}
+  if (decision.value === 'rejected' && !reason.value.trim()) errors.rejectionReason = ['Indica el motivo de rechazo.']
+  if (decision.value === 'rejected' && reason.value.trim().length > 1000) errors.rejectionReason = ['El motivo admite máximo 1000 caracteres.']
+  if (decision.value === 'approved' && props.document?.documentCode === 'IMSS' && !imssVerified.value) errors.imssVerified = ['Confirma que el PDF corresponde al alumno y muestra estado VIGENTE.']
+  return errors
+})
 const url = ref(''), loading = ref(false), submitting = ref(false)
 let sequence = 0
 function release() { if (url.value) URL.revokeObjectURL(url.value); url.value = '' }
 watch([open, () => props.document?.id], async () => {
   const request = ++sequence
   release()
-  imssVerified.value = false; reason.value = ''; error.value = ''; dateError.value = ''; reasonError.value = ''
+  validation.reset()
+  imssVerified.value = false; reason.value = ''; error.value = ''
   if (!open.value || !props.document) return
   const document = props.document
   reason.value = document.rejectionReason || ''
@@ -37,10 +48,9 @@ onBeforeUnmount(() => { sequence++; release() })
 async function submit(status: 'approved' | 'rejected') {
   const document = props.document
   if (!document || document.status !== 'pending' || submitting.value || loading.value) return
-  error.value = ''; dateError.value = ''; reasonError.value = ''
-  if (status === 'approved' && document.documentCode === 'IMSS' && !imssVerified.value) dateError.value = 'Confirma que el PDF corresponde al alumno y muestra estado VIGENTE.'
-  if (status === 'rejected' && !reason.value.trim()) reasonError.value = 'Indica el motivo de rechazo.'
-  if (dateError.value || reasonError.value) return
+  error.value = ''
+  decision.value = status
+  if (!validation.validate()) return
   submitting.value = true
   try {
     const reviewed = await reviewDocument(document.id, { status,
@@ -48,9 +58,7 @@ async function submit(status: 'approved' | 'rejected') {
     emit('reviewed', reviewed)
     open.value = false
   } catch (failure: any) {
-    error.value = problemMessage(failure, 'No fue posible registrar el dictamen.')
-    dateError.value = failure?.response?.data?.errors?.documentDate?.join(' ') || ''
-    reasonError.value = failure?.response?.data?.errors?.rejectionReason?.join(' ') || ''
+    validation.apply(failure, 'No fue posible registrar el dictamen.')
   } finally { submitting.value = false }
 }
 </script>
@@ -58,6 +66,7 @@ async function submit(status: 'approved' | 'rejected') {
 <template>
   <UiDialog v-model="open" :title="`Revisar ${document?.tramiteType === 'social_service' ? socialDocumentLabel(document.documentCode) : document?.documentCode || 'documento'}${studentName ? ` · ${studentName}` : ''}`" size="xl">
     <div class="review-content" :aria-busy="loading || submitting">
+      <UiFormErrors :validation="validation" />
       <UiAlert v-if="error" tone="danger" role="alert">{{ error }}</UiAlert>
       <p v-if="loading" role="status">Cargando documento…</p>
       <iframe v-if="url" :src="url" title="PDF que se está revisando" class="review-pdf" />
@@ -66,11 +75,10 @@ async function submit(status: 'approved' | 'rejected') {
       <template v-if="document?.documentCode === 'IMSS'">
         <template v-if="document.status === 'pending'">
           <p>Verifica los datos del alumno y que la constancia muestre estado VIGENTE.</p>
-          <label><input v-model="imssVerified" type="checkbox" :disabled="loading || submitting" /> Confirmo que el PDF corresponde al alumno y muestra estado VIGENTE.</label>
-          <UiAlert v-if="dateError" tone="danger" role="alert">{{ dateError }}</UiAlert>
+          <UiField v-bind="validation.field('imssVerified', 'Confirmo que el PDF corresponde al alumno y muestra estado VIGENTE.')" label="Confirmo que el PDF corresponde al alumno y muestra estado VIGENTE." v-slot="{ controlAttrs }"><input v-bind="controlAttrs" v-model="imssVerified" type="checkbox" :disabled="loading || submitting" /></UiField>
         </template>
       </template>
-      <UiField v-if="document?.status === 'pending'" v-model="reason" as="textarea" label="Motivo de rechazo (obligatorio para rechazar)" :error="reasonError" maxlength="1000" :disabled="submitting" />
+      <UiField v-if="document?.status === 'pending'" v-model="reason" as="textarea" label="Motivo de rechazo (obligatorio para rechazar)" v-bind="validation.field('rejectionReason', 'Motivo de rechazo')" maxlength="1000" :disabled="submitting" />
     </div>
     <template #footer>
       <div class="review-actions">

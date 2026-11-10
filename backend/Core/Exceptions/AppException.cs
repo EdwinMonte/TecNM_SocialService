@@ -17,8 +17,8 @@ public class AppException(
 public class NotFoundException(string code, string message)
     : AppException(404, code, message, "Recurso no encontrado");
 
-public class ConflictException(string code, string message)
-    : AppException(409, code, message, "Conflicto con el estado actual");
+public class ConflictException(string code, string message, IDictionary<string, string[]>? errors = null)
+    : AppException(409, code, message, "Conflicto con el estado actual", errors);
 
 public class BusinessRuleException(string code, string message, IDictionary<string, string[]>? errors = null)
     : AppException(422, code, message, "Regla de negocio no cumplida", errors);

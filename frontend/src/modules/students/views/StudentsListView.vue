@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { watch as watchValidation } from 'vue'
+import { useFormValidation } from '../../../shared/composables/useFormValidation'
+import { validateFields } from '../../../shared/utils/validationRules'
+import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import DocumentReviewDialog from '../../expedients/components/DocumentReviewDialog.vue'
 import { getStudentDocuments } from '../../expedients/api/expedientsApi'
@@ -51,11 +55,12 @@ function openAssessment(row: StudentListItem) {
  assessmentCandidate.value = row; assessment.value = row.socialServiceFollowUp?.progressAssessment || 'consistent'; assessmentNotes.value = row.socialServiceFollowUp?.notes || ''; assessmentError.value = ''; assessmentOpen.value = true
 }
 async function saveAssessment() {
+ if (savingAssessment.value || !assessmentValidation.validate()) return
  const row = assessmentCandidate.value, periodId = row?.socialServiceFollowUp?.trackingPeriodId
  if (!row || !periodId || savingAssessment.value) return
  savingAssessment.value = true; assessmentError.value = ''
  try { await reviewSocialServiceFollowUp(row.id, {periodId, assessment: assessment.value, notes: assessmentNotes.value}); assessmentOpen.value = false; await loadData() }
- catch (error) { assessmentError.value = problemMessage(error, 'No se pudo guardar la valoración.') }
+ catch (error) { assessmentValidation.apply(error, 'No se pudo guardar la valoración.'); assessmentError.value = problemMessage(error, 'No se pudo guardar la valoración.') }
  finally {savingAssessment.value = false}
 }
 const canCreate = computed(() => hasRole('admin', 'social_service_officer', 'internship_coordinator', 'department_head'))
@@ -181,6 +186,7 @@ const detailSections = computed(() => {
 })
 function applyFilters() { currentPage.value = 1; void loadData() }
 
+
 const studentForm = reactive<StudentRequest>({
   careerId: 0,
   controlNumber: '',
@@ -279,7 +285,7 @@ async function loadData(): Promise<void> {
   } catch (err: any) {
     if (request !== listRequest) return
     students.value = []; totalItems.value = 0
-    errorMessage.value = err?.response?.data?.detail || err?.response?.data?.message || 'Error al cargar padrón de alumnos.'
+    errorMessage.value = problemMessage(err, 'Error al cargar padrón de alumnos.')
   } finally {
     if (request === listRequest) isLoading.value = false
   }
@@ -300,6 +306,7 @@ function resetAllFilters(): void {
 }
 
 function openCreateModal(): void {
+  errorMessage.value = ''
   isEditing.value = false
   editingId.value = null
   selectedDetail.value = null
@@ -354,11 +361,31 @@ async function openEditModal(row: StudentListItem): Promise<void> {
     })
     isStudentModalOpen.value = true
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.detail || err?.response?.data?.message || 'No se pudo cargar el detalle del estudiante.'
+    errorMessage.value = problemMessage(err, 'No se pudo cargar el detalle del estudiante.')
   }
 }
 
+function studentRules(): Record<string, string[]> {
+  const errors: Record<string, string[]> = {}
+  const check = (key: string, invalid: boolean, message: string) => { if (invalid) errors[key] = [message] }
+  check('controlNumber', !/^[A-Z0-9_-]{1,32}$/.test(studentForm.controlNumber.trim().toUpperCase()), 'Indica una matrícula de 1 a 32 caracteres: letras, números, guion o guion bajo.')
+  check('curp', !!studentForm.curp?.trim() && !/^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/.test(studentForm.curp.trim().toUpperCase()), 'La CURP debe tener 18 caracteres con el formato correcto.')
+  for (const [key, max] of [['firstName',100], ['firstSurname',70]] as const) check(key, !studentForm[key].trim() || studentForm[key].trim().length > max, `Este campo es obligatorio (máximo ${max} caracteres).`)
+  check('secondSurname', (studentForm.secondSurname?.trim().length || 0) > 70, 'Máximo 70 caracteres.')
+  check('careerId', !studentForm.careerId, 'Selecciona una carrera.')
+  check('currentSemester', !Number.isInteger(studentForm.currentSemester) || studentForm.currentSemester < 1 || studentForm.currentSemester > 15, 'Indica un semestre entero entre 1 y 15.')
+  const total = careerOptions.value.find(c => c.id === studentForm.careerId)?.meta?.totalCredits
+  check('completedCredits', !Number.isInteger(studentForm.completedCredits) || studentForm.completedCredits < 0 || (total !== undefined && studentForm.completedCredits > total), 'Los créditos deben ser un entero entre cero y el total de la carrera.')
+  for (const key of ['institutionalEmail','personalEmail'] as const) check(key, !!studentForm[key]?.trim() && (studentForm[key]!.trim().length > 255 || !studentForm[key]!.includes('@')), 'Indica un correo con @ y máximo 255 caracteres.')
+  check('phoneNumber', (studentForm.phoneNumber?.trim().length || 0) > 20, 'El teléfono admite máximo 20 caracteres.')
+  check('gender', !!studentForm.gender && !['M','F'].includes(studentForm.gender.trim().toUpperCase()), 'Selecciona una opción válida.')
+  check('shift', !['morning','afternoon','night'].includes(studentForm.shift.trim().toLowerCase()), 'Selecciona un turno válido.')
+  check('disabilityDescription', (studentForm.hasDisability && !studentForm.disabilityDescription?.trim()) || (studentForm.disabilityDescription?.trim().length || 0) > 150, 'Describe la discapacidad (máximo 150 caracteres).')
+  return errors
+}
 async function handleSaveStudent(): Promise<void> {
+  if (isSubmittingStudent.value || !studentValidation.validate()) return
+
   if (isSubmittingStudent.value || (isEditing.value ? !canRegister.value : !canCreate.value)) return
   isSubmittingStudent.value = true
   errorMessage.value = ''
@@ -387,7 +414,8 @@ async function handleSaveStudent(): Promise<void> {
     isStudentModalOpen.value = false
     await loadData()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.detail || err?.message || 'Error al guardar los datos del alumno.'
+    studentValidation.apply(err, 'No se pudo guardar el formulario.')
+    errorMessage.value = problemMessage(err, 'Error al guardar los datos del alumno.')
   } finally {
     isSubmittingStudent.value = false
   }
@@ -413,7 +441,7 @@ async function handleCreateAccount(row: StudentListItem): Promise<void> {
     await loadData()
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.detail || err?.response?.data?.message || 'No se pudo generar la cuenta de usuario para el alumno.'
+      problemMessage(err, 'No se pudo generar la cuenta de usuario para el alumno.')
   }
 }
 
@@ -469,6 +497,7 @@ function handleExcelFileChange(event: Event): void {
 
 
 async function handleRunImport(): Promise<void> {
+  if (isImporting.value || !importValidation.validate()) return
   if (!importFile.value || !importPeriodId.value) return
   isImporting.value = true
   errorMessage.value = ''
@@ -477,7 +506,8 @@ async function handleRunImport(): Promise<void> {
     successMessage.value = `Importación finalizada: ${importResult.value.importedRecords} alumnos; ${importResult.value.createdAccounts} cuentas creadas; ${importResult.value.existingAccounts} existentes; ${importResult.value.failedRecords} filas rechazadas.`
     await loadData()
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.detail || err?.response?.data?.message || 'Error al procesar el archivo Excel (.xlsx).'
+    importValidation.apply(err, 'No se pudo importar el archivo.')
+    errorMessage.value = problemMessage(err, 'Error al procesar el archivo Excel (.xlsx).')
   } finally {
     isImporting.value = false
   }
@@ -490,6 +520,13 @@ onBeforeUnmount(() => {
 onMounted(async () => {
   await Promise.all([loadCatalogs(), loadData()])
 })
+const studentTotalCredits = computed(() => careerOptions.value.find(c => c.id === studentForm.careerId)?.meta?.totalCredits)
+const assessmentValidation = useFormValidation(() => validateFields({ assessment: assessment.value, notes: assessmentNotes.value }, {assessment:{required:true,choices:['consistent','low_progress']},notes:{max:1000}}))
+const importValidation = useFormValidation(() => validateFields({periodId:importPeriodId.value,file:importFile.value},{periodId:{required:true,min:1},file:{required:true}}))
+watchValidation(assessmentOpen, () => assessmentValidation.reset())
+watchValidation(isImportModalOpen, () => importValidation.reset())
+const studentValidation = useFormValidation(studentRules)
+watchValidation(isStudentModalOpen, () => { studentValidation.reset(); errorMessage.value = '' })
 </script>
 
 <template>
@@ -544,7 +581,7 @@ onMounted(async () => {
     </div>
 
     <!-- Feedback Alerts -->
-    <UiAlert v-if="errorMessage" tone="danger" class="mb-4">
+    <UiAlert v-if="errorMessage && !(studentValidation.hasErrors.value || assessmentValidation.hasErrors.value || importValidation.hasErrors.value)" tone="danger" class="mb-4">
       {{ errorMessage }}
     </UiAlert>
     <UiAlert v-if="successMessage" tone="success" class="mb-4">
@@ -629,9 +666,10 @@ onMounted(async () => {
 
     <UiDialog v-model="assessmentOpen" title="Valorar seguimiento SS">
       <p>{{ assessmentCandidate?.fullName }}</p>
-      <UiField id="follow-up-assessment" label="Constancia"><select id="follow-up-assessment" v-model="assessment" :disabled="savingAssessment"><option value="consistent">Constante</option><option value="low_progress">Con poco avance</option></select></UiField>
-      <UiField id="follow-up-notes" label="Observación"><textarea id="follow-up-notes" v-model="assessmentNotes" maxlength="1000" :disabled="savingAssessment" /></UiField>
-      <p v-if="assessmentError" role="alert">{{ assessmentError }}</p>
+      <UiFormErrors :validation="assessmentValidation" />
+      <UiField v-bind="assessmentValidation.field('assessment', 'Constancia')" label="Constancia" v-slot="{ controlAttrs }"><select v-bind="controlAttrs" v-model="assessment" :disabled="savingAssessment"><option value="consistent">Constante</option><option value="low_progress">Con poco avance</option></select></UiField>
+      <UiField v-bind="assessmentValidation.field('notes', 'Observación')" label="Observación" v-slot="{ controlAttrs }"><textarea v-bind="controlAttrs" v-model="assessmentNotes" maxlength="1000" :disabled="savingAssessment" /></UiField>
+      <p v-if="assessmentError && !assessmentValidation.hasErrors.value" role="alert">{{ assessmentError }}</p>
       <UiButton :disabled="savingAssessment" @click="saveAssessment">{{ savingAssessment ? 'Guardando…' : 'Guardar valoración' }}</UiButton>
     </UiDialog>
     <UiDialog
@@ -639,59 +677,61 @@ onMounted(async () => {
       size="lg"
       :title="isEditing ? `Expediente · ${studentForm.controlNumber}` : 'Agregar Alumno (Caso Específico)'"
     >
+      <UiAlert v-if="errorMessage && !(studentValidation.hasErrors.value || assessmentValidation.hasErrors.value || importValidation.hasErrors.value)" tone="danger">{{ errorMessage }}</UiAlert>
       <fieldset class="modal-form-grid" :disabled="isEditing ? !canRegister : !canCreate" style="border:0;padding:0;margin:0">
-        <UiField id="ss-eligible-period" label="Primer periodo de aptitud SS" hint="Primer semestre como candidato"><select id="ss-eligible-period" v-model="studentForm.socialServiceEligiblePeriodId" class="modern-select"><option :value="undefined">Activo al crear / conservar al editar</option><option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option></select></UiField>
-        <UiField label="No. de Control *" hint="Ej. I23050363">
-          <input v-model="studentForm.controlNumber" type="text" class="modern-input" placeholder="I23050999" />
+        <UiFormErrors :validation="studentValidation" />
+        <UiField label="Primer periodo de aptitud SS" hint="Primer semestre como candidato" v-bind="studentValidation.field('socialServiceEligiblePeriodId', 'Primer periodo de aptitud SS')" v-slot="{ controlAttrs }"><select v-bind="controlAttrs" v-model="studentForm.socialServiceEligiblePeriodId" class="modern-select"><option :value="undefined">Activo al crear / conservar al editar</option><option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option></select></UiField>
+        <UiField label="No. de Control *" hint="Ej. I23050363" v-bind="studentValidation.field('controlNumber', 'No. de Control *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="studentForm.controlNumber" type="text" class="modern-input" placeholder="I23050999" />
         </UiField>
 
-        <UiField label="Carrera *">
-          <select v-model.number="studentForm.careerId" class="modern-select">
+        <UiField label="Carrera *" v-bind="studentValidation.field('careerId', 'Carrera *')" v-slot="{ controlAttrs }">
+          <select v-bind="controlAttrs" v-model.number="studentForm.careerId" class="modern-select">
             <option v-for="c in careerOptions" :key="c.id" :value="c.id">{{ c.label }}</option>
           </select>
         </UiField>
 
-        <UiField label="Nombre(s) *">
-          <input v-model="studentForm.firstName" type="text" class="modern-input" placeholder="Nombre del alumno" />
+        <UiField label="Nombre(s) *" v-bind="studentValidation.field('firstName', 'Nombre(s) *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="studentForm.firstName" type="text" class="modern-input" placeholder="Nombre del alumno" />
         </UiField>
 
-        <UiField label="Primer Apellido *">
-          <input v-model="studentForm.firstSurname" type="text" class="modern-input" placeholder="Apellido paterno" />
+        <UiField label="Primer Apellido *" v-bind="studentValidation.field('firstSurname', 'Primer Apellido *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="studentForm.firstSurname" type="text" class="modern-input" placeholder="Apellido paterno" />
         </UiField>
 
-        <UiField label="Segundo Apellido">
-          <input v-model="studentForm.secondSurname" type="text" class="modern-input" placeholder="Apellido materno" />
+        <UiField label="Segundo Apellido" v-bind="studentValidation.field('secondSurname', 'Segundo Apellido')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="studentForm.secondSurname" type="text" class="modern-input" placeholder="Apellido materno" />
         </UiField>
 
-        <UiField label="CURP">
-          <input v-model="studentForm.curp" type="text" class="modern-input" maxlength="18" placeholder="18 caracteres" />
+        <UiField label="CURP" v-bind="studentValidation.field('curp', 'CURP')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="studentForm.curp" type="text" class="modern-input" maxlength="18" placeholder="18 caracteres" />
         </UiField>
 
-        <UiField label="Semestre Actual (1-15) *">
-          <input v-model.number="studentForm.currentSemester" type="number" class="modern-input" min="1" max="15" />
+        <UiField label="Semestre Actual (1-15) *" v-bind="studentValidation.field('currentSemester', 'Semestre Actual (1-15) *')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model.number="studentForm.currentSemester" type="number" class="modern-input" min="1" max="15" />
         </UiField>
 
-        <UiField label="Créditos Aprobados *" hint="Total retícula: 260 (≥182 = 70%)">
-          <input v-model.number="studentForm.completedCredits" type="number" class="modern-input" min="0" max="300" />
+        <UiField label="Créditos Aprobados *" :hint="`Total retícula: ${studentTotalCredits ?? 'Consulta la carrera'}`" v-bind="studentValidation.field('completedCredits', 'Créditos aprobados')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model.number="studentForm.completedCredits" type="number" class="modern-input" min="0" :max="careerOptions.find(c => c.id === studentForm.careerId)?.meta?.totalCredits" />
         </UiField>
 
-        <UiField label="Turno *">
-          <select v-model="studentForm.shift" class="modern-select">
+        <UiField label="Turno *" v-bind="studentValidation.field('shift', 'Turno *')" v-slot="{ controlAttrs }">
+          <select v-bind="controlAttrs" v-model="studentForm.shift" class="modern-select">
             <option value="morning">Matutino</option>
             <option value="afternoon">Vespertino</option>
             <option value="night">Nocturno</option>
           </select>
         </UiField>
 
-        <UiField label="Sexo (Estadístico 911)">
-          <select v-model="studentForm.gender" class="modern-select">
+        <UiField label="Sexo (Estadístico 911)" v-bind="studentValidation.field('gender', 'Sexo (Estadístico 911)')" v-slot="{ controlAttrs }">
+          <select v-bind="controlAttrs" v-model="studentForm.gender" class="modern-select">
             <option value="M">Hombre (M)</option>
             <option value="F">Mujer (F)</option>
           </select>
         </UiField>
 
-        <UiField label="Correo Institucional">
-          <input
+        <UiField label="Correo Institucional" v-bind="studentValidation.field('institutionalEmail', 'Correo Institucional')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs"
             v-model="studentForm.institutionalEmail"
             type="email"
             class="modern-input"
@@ -699,8 +739,8 @@ onMounted(async () => {
           />
         </UiField>
 
-        <UiField label="Teléfono de Contacto">
-          <input v-model="studentForm.phoneNumber" type="text" class="modern-input" placeholder="8661234567" />
+        <UiField label="Teléfono de Contacto" v-bind="studentValidation.field('phoneNumber', 'Teléfono de Contacto')" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" v-model="studentForm.phoneNumber" type="text" class="modern-input" placeholder="8661234567" />
         </UiField>
       </fieldset>
 
@@ -763,14 +803,15 @@ onMounted(async () => {
           Social o Prácticas Profesionales en el periodo seleccionado.
         </p>
 
-        <UiField label="Periodo Escolar Destino *">
-          <select v-model.number="importPeriodId" class="modern-select">
+        <UiFormErrors :validation="importValidation" />
+        <UiField v-bind="importValidation.field('periodId', 'Periodo escolar destino')" label="Periodo Escolar Destino *" v-slot="{ controlAttrs }">
+          <select v-bind="controlAttrs" v-model.number="importPeriodId" class="modern-select">
             <option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
           </select>
         </UiField>
 
-        <UiField label="Archivo Excel (.xlsx) *">
-          <input type="file" accept=".xlsx" class="file-input" @change="handleExcelFileChange" />
+        <UiField v-bind="importValidation.field('file', 'Archivo Excel')" label="Archivo Excel (.xlsx) *" v-slot="{ controlAttrs }">
+          <input v-bind="controlAttrs" type="file" accept=".xlsx" class="file-input" @change="handleExcelFileChange" />
         </UiField>
 
         <div v-if="importResult" class="import-summary-box">

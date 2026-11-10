@@ -217,7 +217,7 @@ public partial class StudentsService(
         {
             throw new ConflictException(
                 "students.duplicated_control_number",
-                $"Ya existe un estudiante registrado con la matrícula '{normControlNumber}'.");
+                $"Ya existe un estudiante registrado con la matrícula '{normControlNumber}'.", new Dictionary<string, string[]> { ["controlNumber"] = ["Esta matrícula ya está registrada. Verifica el número de control."] });
         }
 
         var credits = request.CompletedCredits > 0 ? request.CompletedCredits : 156;
@@ -278,7 +278,7 @@ public partial class StudentsService(
         {
             throw new ConflictException(
                 "students.duplicated_control_number",
-                $"Ya existe otro estudiante registrado con la matrícula '{normControlNumber}'.");
+                $"Ya existe otro estudiante registrado con la matrícula '{normControlNumber}'.", new Dictionary<string, string[]> { ["controlNumber"] = ["Esta matrícula ya pertenece a otro alumno."] });
         }
 
         var credits = request.CompletedCredits >= 0 ? request.CompletedCredits : student.CompletedCredits;
@@ -752,7 +752,7 @@ public partial class StudentsService(
         {
             throw new BusinessRuleException(
                 "students.credits_exceed_total",
-                $"Los créditos acumulados ({request.CompletedCredits}) no pueden exceder el total de la carrera ({totalCredits}).");
+                $"Los créditos acumulados ({request.CompletedCredits}) no pueden exceder el total de la carrera ({totalCredits}).", new Dictionary<string, string[]> { ["completedCredits"] = [$"Indica como máximo {totalCredits} créditos para esta carrera."] });
         }
     }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
 import { computed, onMounted, ref } from 'vue'
 import { defaultProcess, canReadProcess } from '../../../shared/composables/useSession'
 import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiDialog, UiField } from '../../../shared/components'
@@ -79,7 +80,7 @@ async function loadData(): Promise<void> {
   } catch (err: any) {
     if (request !== dataRequest) return
     errorMessage.value =
-      err?.response?.data?.message || 'Error al cargar la matriz de seguimiento en vivo.'
+      problemMessage(err, 'Error al cargar la matriz de seguimiento en vivo.')
   } finally {
     if (request === dataRequest) isLoading.value = false
   }
@@ -181,24 +182,24 @@ onMounted(async () => {
         </div>
 
         <div class="filters-row">
-          <UiField label="Periodo">
-            <select v-model.number="selectedPeriodId" @change="loadData">
+          <UiField label="Periodo" v-slot="{ controlAttrs }">
+            <select v-bind="controlAttrs" v-model.number="selectedPeriodId" @change="loadData">
               <option :value="undefined">Periodo Activo</option>
               <option :value="0">Todos los Periodos</option>
               <option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
             </select>
           </UiField>
 
-          <UiField label="Carrera">
-            <select v-model.number="selectedCareerId" @change="loadData">
+          <UiField label="Carrera" v-slot="{ controlAttrs }">
+            <select v-bind="controlAttrs" v-model.number="selectedCareerId" @change="loadData">
               <option :value="undefined">Todas las Carreras</option>
               <option v-for="c in careerOptions" :key="c.id" :value="c.id">{{ c.label }}</option>
             </select>
           </UiField>
 
-          <UiField label="Buscar Matrícula / Alumno">
+          <UiField label="Buscar Matrícula / Alumno" v-slot="{ controlAttrs }">
             <div style="display: flex; gap: 0.5rem; align-items: center;">
-              <input
+              <input v-bind="controlAttrs"
                 v-model="searchQuery"
                 type="text"
                 placeholder="Ej. I23050618"

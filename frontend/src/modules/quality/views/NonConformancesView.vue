@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
 import { onMounted, ref } from 'vue'
 import { UiAlert, UiBadge, UiBasePage, UiCard, UiTable } from '../../../shared/components'
 import { getNonConformances } from '../api/qualityApi'
@@ -28,7 +29,7 @@ async function loadData() {
   try {
     items.value = await getNonConformances()
   } catch (err: any) {
-    errorMessage.value = err.response?.data?.message || 'Error al cargar incidentes de PNC'
+    errorMessage.value = problemMessage(err, 'Error al cargar incidentes de PNC')
   } finally {
     isLoading.value = false
   }

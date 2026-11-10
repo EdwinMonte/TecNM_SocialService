@@ -154,6 +154,8 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Actualizar estado IMSS' }).count(), 0)
   assert.equal(await page.getByRole('button', { name: 'Subir constancia para revisión' }).count(), 0)
   await page.locator('input[type=file]').setInputFiles({ name: 'imss.pdf', mimeType: 'application/pdf', buffer: pdf })
+  await page.getByLabel('Domicilio Completo del Estudiante *', { exact: true }).fill('Calle de prueba 10')
+  await page.getByLabel('Actividades a Desarrollar en el Programa (Anexo XVIII) *', { exact: true }).fill('Apoyo comunitario')
   await sendJoint.click()
   const jointPreview = page.getByRole('dialog', { name: 'Confirma tu Solicitud y constancia IMSS' })
   await jointPreview.waitFor()

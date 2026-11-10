@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
+import { watch as watchValidation } from 'vue'
+import { useFormValidation } from '../../../shared/composables/useFormValidation'
+import { validateFields, optionalEmail } from '../../../shared/utils/validationRules'
+import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
 import DocumentViewerModal from '../../expedients/components/DocumentViewerModal.vue'
 
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -64,13 +69,15 @@ async function loadProfile(): Promise<void> {
     contactForm.shift = data.shift
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.message || 'No se pudo cargar la información del expediente del alumno.'
+      problemMessage(err, 'No se pudo cargar la información del expediente del alumno.')
   } finally {
     isLoading.value = false
   }
 }
 
 async function handleSaveContact(): Promise<void> {
+  if (isSavingContact.value || !contactValidation.validate()) return
+
   isSavingContact.value = true
   errorMessage.value = ''
   successMessage.value = ''
@@ -85,7 +92,8 @@ async function handleSaveContact(): Promise<void> {
     profile.value = updated
     successMessage.value = 'Datos de contacto y turno actualizados exitosamente.'
   } catch (err: any) {
-    errorMessage.value = err?.response?.data?.message || 'Error al actualizar los datos de contacto.'
+    contactValidation.apply(err, 'No se pudo guardar el formulario.')
+    errorMessage.value = problemMessage(err, 'Error al actualizar los datos de contacto.')
   } finally {
     isSavingContact.value = false
   }
@@ -111,7 +119,7 @@ async function handleUploadImss(): Promise<void> {
       'Constancia IMSS cargada. Vinculación debe revisarla y aprobarla.'
   } catch (err: any) {
     errorMessage.value =
-      err?.response?.data?.detail || err?.message || 'Error al subir la Constancia de Vigencia del IMSS.'
+      problemMessage(err, 'Error al subir la Constancia de Vigencia del IMSS.')
   } finally {
     isUploadingImss.value = false
   }
@@ -130,6 +138,7 @@ async function handleViewMyImss(): Promise<void> {
 onMounted(() => {
   void loadProfile()
 })
+const contactValidation = useFormValidation(() => validateFields(contactForm, {phoneNumber:{max:20},institutionalEmail:optionalEmail,personalEmail:optionalEmail,currentSemester:{required:true,integer:true,min:1,maxNumber:15},shift:{required:true,choices:['morning','afternoon','night']}}))
 </script>
 
 <template>
@@ -141,7 +150,7 @@ onMounted(() => {
       </p>
     </div>
 
-    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">
+    <UiAlert v-if="errorMessage && !(contactValidation.hasErrors.value)" tone="danger" style="margin-bottom: 1rem;">
       {{ errorMessage }}
     </UiAlert>
     <UiAlert v-if="successMessage" tone="success" style="margin-bottom: 1rem;">
@@ -247,22 +256,23 @@ onMounted(() => {
         <div
           style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;"
         >
-          <UiField label="Teléfono de Contacto" hint="Se usa en Anexo XVIII, XX y Solicitud PP">
-            <input v-model="contactForm.phoneNumber" type="text" placeholder="Ej. 8661458920" />
+          <UiFormErrors :validation="contactValidation" />
+          <UiField label="Teléfono de Contacto" hint="Se usa en Anexo XVIII, XX y Solicitud PP" v-bind="contactValidation.field('phoneNumber', 'Teléfono de Contacto')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs" v-model="contactForm.phoneNumber" type="text" placeholder="Ej. 8661458920" />
           </UiField>
 
-          <UiField v-model="contactForm.institutionalEmail" label="Correo Institucional (@monclova.tecnm.mx)" type="email" readonly hint="Administración gestiona el correo de acceso." />
+          <UiField v-model="contactForm.institutionalEmail" label="Correo Institucional (@monclova.tecnm.mx)" type="email" readonly hint="Administración gestiona el correo de acceso."  v-bind="contactValidation.field('institutionalEmail', 'Correo Institucional (@monclova.tecnm.mx)')" />
 
-          <UiField label="Correo Personal">
-            <input v-model="contactForm.personalEmail" type="email" placeholder="alumno@gmail.com" />
+          <UiField label="Correo Personal" v-bind="contactValidation.field('personalEmail', 'Correo Personal')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs" v-model="contactForm.personalEmail" type="email" placeholder="alumno@gmail.com" />
           </UiField>
 
-          <UiField label="Semestre Actual">
-            <input v-model.number="contactForm.currentSemester" type="number" min="1" max="15" />
+          <UiField label="Semestre Actual" v-bind="contactValidation.field('currentSemester', 'Semestre Actual')" v-slot="{ controlAttrs }">
+            <input v-bind="controlAttrs" v-model.number="contactForm.currentSemester" type="number" min="1" max="15" />
           </UiField>
 
-          <UiField label="Turno">
-            <select v-model="contactForm.shift">
+          <UiField label="Turno" v-bind="contactValidation.field('shift', 'Turno')" v-slot="{ controlAttrs }">
+            <select v-bind="controlAttrs" v-model="contactForm.shift">
               <option value="morning">Matutino</option>
               <option value="afternoon">Vespertino</option>
               <option value="night">Nocturno</option>

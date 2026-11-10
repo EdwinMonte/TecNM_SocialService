@@ -281,6 +281,7 @@ internal static class HttpChecks
         await FollowUpChecks.RunAsync(factory);
         await AccessChecks.RunAsync(factory);
         await AccountImportChecks.RunAsync(factory, bytes);
+        await ValidationChecks.RunAsync(factory);
         async Task<HttpResponseMessage> Replace(byte suffix)
         {
             using var form = new MultipartFormDataContent();

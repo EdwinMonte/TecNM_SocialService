@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { defaultProcess } from '../../../shared/composables/useSession'
@@ -43,7 +44,7 @@ async function loadData(): Promise<void> {
   } catch (err: any) {
     if (request !== sequence || err.code === 'ERR_CANCELED') return
     errorMessage.value =
-      err?.response?.data?.message || 'Error al cargar estadísticas institucionales.'
+      problemMessage(err, 'Error al cargar estadísticas institucionales.')
   } finally {
     if (request === sequence) isLoading.value = false
   }
@@ -87,8 +88,8 @@ onMounted(async () => {
           </UiButton>
         </div>
 
-        <UiField label="Periodo Escolar">
-          <select v-model="selectedPeriodId" @change="loadData">
+        <UiField label="Periodo Escolar" v-slot="{ controlAttrs }">
+          <select v-bind="controlAttrs" v-model="selectedPeriodId" @change="loadData">
             <option :value="undefined">Periodo Activo</option>
             <option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
           </select>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { problemMessage } from '../../../shared/api/problemDetails'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { http } from '../../../shared/api/http'
 import { UiAlert, UiButton, UiCard, UiTable } from '../../../shared/components'
@@ -16,7 +17,7 @@ async function load() {
   controller?.abort();controller=new AbortController();const request=++sequence
   loading.value=true;error.value='';data.value=null
   try {const response=await http.get<LinkageResponse>('/reports/linkage',{params:{tramiteType:props.tramiteType,periodId:props.periodId,page:page.value,pageSize:20},signal:controller.signal});if(request===sequence)data.value=response.data}
-  catch(e:any){if(request===sequence && e.code!=='ERR_CANCELED')error.value=e.response?.data?.detail || 'No se pudieron cargar las métricas por empresa.'}
+  catch(e:any){if(request===sequence && e.code!=='ERR_CANCELED')error.value=problemMessage(e, 'No se pudieron cargar las métricas por empresa.')}
   finally{if(request===sequence)loading.value=false}
 }
 watch(()=>[props.tramiteType,props.periodId],()=>{page.value=1;void load()},{immediate:true})
