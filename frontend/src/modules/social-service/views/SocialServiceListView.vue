@@ -500,7 +500,7 @@ onMounted(() => {
       "
     >
       <div v-if="selectedDetail" style="display: flex; flex-direction: column; gap: 1rem;">
-        <ExpedientChecklist :requirements="selectedDetail.documentRequirements" :documents="studentDocs" tramite-type="social_service" :tramite-id="selectedDetail.id" :student-id="selectedDetail.student.id" :can-edit="false" @changed="refreshCurrentDetail" />
+        <ExpedientChecklist :application-accepted="selectedDetail.application?.isAcceptedByOffice" :requirements="selectedDetail.documentRequirements" :documents="studentDocs" tramite-type="social_service" :tramite-id="selectedDetail.id" :student-id="selectedDetail.student.id" :can-edit="false" @changed="refreshCurrentDetail" />
         <div
           style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; background: #f8fafc; padding: 0.85rem; border-radius: 8px;"
         >

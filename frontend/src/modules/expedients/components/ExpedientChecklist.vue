@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { UiCard, UiBadge, UiButton, UiAlert } from '../../../shared/components'
 import { http } from '../../../shared/api/http'
 import { getDocumentBlob, uploadMyDocument, uploadStudentDocument } from '../api/expedientsApi'
 import type { ExpedientDocument, DocumentRequirement } from '../types/expedients'
 import { socialServiceDocuments, socialDocumentLabel, socialDocumentOrder, socialDocumentPeriod } from '../../../shared/utils/socialServiceDocuments'
 import DocumentViewerModal from './DocumentViewerModal.vue'
-const props = defineProps<{ requirements: DocumentRequirement[]; documents: ExpedientDocument[]; tramiteType: 'social_service' | 'internship'; tramiteId: number; studentId?: number; canEdit?: boolean }>()
+const props = defineProps<{ requirements: DocumentRequirement[]; documents: ExpedientDocument[]; tramiteType: 'social_service' | 'internship'; tramiteId: number; studentId?: number; canEdit?: boolean; applicationAccepted?: boolean | null }>()
 const orderedRequirements = computed(() => props.tramiteType === 'social_service' ? [...props.requirements].sort((a,b) => socialDocumentOrder(a.code) - socialDocumentOrder(b.code)) : props.requirements)
 const emit = defineEmits<{ changed: []; edit: [key: string] }>()
 const error = ref(''), busy = ref(''), title = ref(''), blob = ref<Blob | null>(null), open = ref(false)
+const pending = ref<{ item: DocumentRequirement; file: File } | null>(null)
+watch(open, value => { if (!value && !busy.value) { pending.value = null; blob.value = null } })
 function current(code: string) { return props.documents.find(d => d.documentCode === code && d.status !== 'superseded') }
 async function view(item: DocumentRequirement, uploaded = false) {
+  pending.value = null
   error.value = ''; busy.value = item.code
   try {
     const doc = current(item.code)
@@ -23,17 +26,26 @@ async function view(item: DocumentRequirement, uploaded = false) {
 }
 async function upload(item: DocumentRequirement, event: Event) {
   const input = event.target as HTMLInputElement, file = input.files?.[0]
-  if (!file) return
-  error.value = ''; busy.value = item.code
+  input.value = ''
+  if (!file || busy.value) return
+  error.value = ''
+  if (!file.name.toLowerCase().endsWith('.pdf') || file.size > 5 * 1024 * 1024) { error.value = 'Adjunta un PDF de hasta 5 MiB.'; return }
+  if (await file.slice(0, 5).text() !== '%PDF-') { error.value = 'El archivo no es un PDF válido.'; return }
+  pending.value = { item, file }; blob.value = file
+  title.value = `Verifica el archivo: ${file.name}`; open.value = true
+}
+async function confirmUpload() {
+  if (!pending.value || busy.value) return
+  const { item, file } = pending.value
+  busy.value = item.code; error.value = ''
   try {
-    if (!file.name.toLowerCase().endsWith('.pdf') || file.size > 5 * 1024 * 1024) throw new Error('Adjunta un PDF de hasta 5 MiB.')
     if (props.studentId) {
       const data = new FormData(); data.append('file', file); data.append('tramiteType', props.tramiteType); data.append('tramiteId', String(props.tramiteId)); data.append('documentCode', item.code)
       await uploadStudentDocument(props.studentId, data)
     } else await uploadMyDocument({ file, tramiteType: props.tramiteType, tramiteId: props.tramiteId, documentCode: item.code })
-    emit('changed')
+    pending.value = null; open.value = false; blob.value = null; emit('changed')
   } catch (e: any) { error.value = e.response?.data?.detail || e.message || 'No se pudo cargar el PDF.' }
-  finally { busy.value = ''; input.value = '' }
+  finally { busy.value = '' }
 }
 </script>
 <template>
@@ -42,18 +54,18 @@ async function upload(item: DocumentRequirement, event: Event) {
     <template v-for="item in orderedRequirements" :key="item.code">
     <h3 v-if="tramiteType === 'social_service' && item.code === 'R1'">4. {{ socialServiceDocuments.find(item => item.number === '4')?.title }}</h3>
     <article style="padding:1rem 0;border-bottom:1px solid var(--color-border)">
-      <strong>{{ tramiteType === 'social_service' ? socialDocumentLabel(item.code) : item.title }}</strong> <UiBadge>{{ current(item.code)?.status === 'approved' ? 'Aprobado' : current(item.code)?.status === 'rejected' ? 'Rechazado' : current(item.code) ? 'En revisión' : 'Pendiente' }}</UiBadge>
+      <strong>{{ tramiteType === 'social_service' ? socialDocumentLabel(item.code) : item.title }}</strong> <UiBadge>{{ item.code === 'SOL' && tramiteType === 'social_service' ? (applicationAccepted === true ? 'Aprobado' : applicationAccepted === false ? 'Rechazado' : 'En revisión') : current(item.code)?.status === 'approved' ? 'Aprobado' : current(item.code)?.status === 'rejected' ? 'Rechazado' : current(item.code) ? 'En revisión' : 'Pendiente' }}</UiBadge>
       <p v-if="tramiteType === 'social_service' && socialDocumentPeriod(item.code)">{{ socialDocumentPeriod(item.code) }}</p>
       <p v-if="current(item.code)?.rejectionReason">{{ current(item.code)?.rejectionReason }}</p>
       <p v-if="item.blockedReason">{{ item.blockedReason }}</p>
       <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem">
-        <UiButton v-if="canEdit !== false && current(item.code)?.status !== 'approved' && (item.pdfKey === 'commitment' || item.pdfKey?.startsWith('report_') || item.pdfKey === 'evaluation')" variant="secondary" @click="emit('edit', item.pdfKey!)">Editar datos del formato</UiButton>
-        <UiButton v-if="item.pdfKey || item.templateKey" :disabled="!!busy" @click="view(item)">{{ item.templateKey ? 'Descargar plantilla' : 'Descargar prellenado' }}</UiButton>
+        <UiButton v-if="canEdit !== false && current(item.code)?.status !== 'approved' && (item.pdfKey?.startsWith('report_') || item.pdfKey === 'evaluation')" variant="secondary" @click="emit('edit', item.pdfKey!)">Editar datos del formato</UiButton>
+        <UiButton v-if="(item.pdfKey || item.templateKey) && !(tramiteType === 'social_service' && item.code === 'CC' && !studentId && current(item.code)?.status === 'approved')" :disabled="!!busy" @click="view(item)">{{ item.templateKey ? 'Descargar plantilla' : 'Descargar prellenado' }}</UiButton>
         <UiButton v-if="current(item.code)" variant="secondary" @click="view(item, true)">Consultar PDF</UiButton>
         <label v-if="item.canUpload && current(item.code)?.status !== 'approved'">Subir PDF firmado <input type="file" accept="application/pdf" :disabled="!!busy" @change="upload(item, $event)" /></label>
       </div>
     </article>
     </template>
-    <DocumentViewerModal v-model="open" :title="title" :blob="blob" />
+    <DocumentViewerModal v-model="open" :title="title" :blob="blob" :confirm-upload="!!pending" :busy="!!busy" :error="pending ? error : undefined" @confirm="confirmUpload" />
   </UiCard>
 </template>

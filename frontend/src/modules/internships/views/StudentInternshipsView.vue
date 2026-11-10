@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DocumentViewerModal from '../../expedients/components/DocumentViewerModal.vue'
+
 import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
 import { http } from '../../../shared/api/http'
 import { onMounted, reactive, ref } from 'vue'
@@ -30,6 +32,7 @@ import {
 } from '../api/internshipsApi'
 import type { CreateInternshipPayload, InternshipDetail } from '../types/internships'
 
+const imssPreviewOpen = ref(false)
 const internship = ref<InternshipDetail | null>(null)
 const studentProfile = ref<StudentDetail | null>(null)
 const uploadedDocs = ref<ExpedientDocument[]>([])
@@ -143,6 +146,7 @@ async function uploadAdmissionImss(): Promise<void> {
   try {
     studentProfile.value = await uploadMyImssFile(imssFileForRequest.value)
     imssFileForRequest.value = null
+    imssPreviewOpen.value = false
     successMessage.value = 'Constancia cargada. Pendiente de revisión; la apertura se habilitará cuando Vinculación la apruebe.'
   } catch (error: any) { errorMessage.value = error?.response?.data?.detail || 'No fue posible cargar la constancia.' }
   finally { isSubmitting.value = false }
@@ -336,7 +340,7 @@ onMounted(() => {
             </div>
           </div>
           <input type="file" accept="application/pdf" @change="handleImssFileChange" />
-          <UiButton variant="secondary" :disabled="!imssFileForRequest || isSubmitting" @click="uploadAdmissionImss">Subir constancia para revisión</UiButton>
+          <UiButton variant="secondary" :disabled="!imssFileForRequest || isSubmitting" @click="imssPreviewOpen = true">Subir constancia para revisión</UiButton>
           <UiButton variant="secondary" :disabled="isSubmitting" @click="refreshImss">Actualizar estado IMSS</UiButton>
           <p v-if="studentProfile?.imssStatus === 'pending'">Pendiente de revisión por Vinculación. Todavía no puedes abrir el trámite.</p>
           <UiAlert v-if="studentProfile?.imssRejectionReason" tone="danger">{{ studentProfile.imssRejectionReason }}</UiAlert>
@@ -497,6 +501,7 @@ onMounted(() => {
       </template>
     </UiDialog>
   </UiBasePage>
+  <DocumentViewerModal v-model="imssPreviewOpen" title="Verifica tu constancia IMSS" :blob="imssFileForRequest" confirm-upload :busy="isSubmitting" :error="errorMessage" @confirm="uploadAdmissionImss" />
 </template>
 
 <style scoped>

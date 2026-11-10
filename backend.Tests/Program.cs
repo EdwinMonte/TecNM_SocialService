@@ -85,7 +85,7 @@ foreach (var service in new[] { historicalService, newService })
     service.Application = new SocialServiceApplication { IsAcceptedByOffice = true };
     foreach (var code in new[] { "CP", "CA", "SOL", "CT" })
     {
-        Check(DocumentProgressCalculator.DocumentDone(service, new HashSet<string>(), code) == (service.DocumentWorkflowVersion == 1), "Historical dates only credit v1 milestones");
+        Check(DocumentProgressCalculator.DocumentDone(service, new HashSet<string>(), code) == (code == "SOL" || service.DocumentWorkflowVersion == 1), "Application approval closes SOL without PDF");
         Check(DocumentProgressCalculator.DocumentDone(service, new HashSet<string> { code }, code), "Approved evidence credits either workflow version");
     }
 }

@@ -20,3 +20,5 @@ Aplicar la matriz de prellenado del contrato documental v2: reportes con evaluad
 CT descarga el Anexo XIX prellenado mediante pdfKey termination_letter. Reutiliza alumno, programa, actividades, fechas, horas registradas, ciudad y supervisor según el contrato documental v2. Conserva destinatarios impresos, firmas/sello manuales vacíos y carga/revisión del PDF firmado; descargar no altera el trámite.
 
 Carta Compromiso: descarga directa con domicilio de solicitud, teléfono del perfil y domicilio de la dependencia, usando respaldos registrados cuando falten. La fecha impresa se calcula al descargar en America/Mexico_City, sin reutilizar la fecha guardada. No exige captura previa de CC; firma del alumno vacía y ninguna escritura al descargar.
+
+Apertura SS: enviar Solicitud e IMSS juntos mediante POST /api/social-services/submissions multipart (application JSON, imssFile opcional con evidencia vigente pendiente/aprobada). No exige aprobación IMSS previa al envío. Vista previa antes de confirmar; aprobación administrativa sigue exigiendo IMSS aprobado. No aplica a PP.

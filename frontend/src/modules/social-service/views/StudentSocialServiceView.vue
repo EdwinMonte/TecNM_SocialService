@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DocumentViewerModal from '../../expedients/components/DocumentViewerModal.vue'
+
 import { socialDocumentLabel } from '../../../shared/utils/socialServiceDocuments'
 import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
 import { http } from '../../../shared/api/http'
@@ -22,17 +24,18 @@ import {
 import type { OptionItem } from '../../catalogs/types/careers'
 import { getMyDocuments } from '../../expedients/api/expedientsApi'
 import type { ExpedientDocument } from '../../expedients/types/expedients'
-import { getMyStudentProfile, uploadMyImssFile } from '../../students/api/studentsApi'
+import { getMyStudentProfile } from '../../students/api/studentsApi'
 import type { StudentDetail } from '../../students/types/students'
 import {
   getMySocialService,
   getSocialServicePrintData,
-  requestSocialService,
+  submitSocialService,
   submitBimonthlyReport,
   upsertCommitment,
 } from '../api/socialServiceApi'
 import type { CreateSocialServicePayload, SocialServiceDetail } from '../types/socialService'
 
+const imssPreviewOpen = ref(false)
 const service = ref<SocialServiceDetail | null>(null)
 const studentProfile = ref<StudentDetail | null>(null)
 const uploadedDocs = ref<ExpedientDocument[]>([])
@@ -179,35 +182,21 @@ function handleImssFileSelect(event: Event): void {
   imssFileForApplication.value = input.files?.[0] ?? null
 }
 
-async function uploadAdmissionImss(): Promise<void> {
-  if (!imssFileForApplication.value || isSubmitting.value) return
-  isSubmitting.value = true; errorMessage.value = ''; successMessage.value = ''
-  try {
-    studentProfile.value = await uploadMyImssFile(imssFileForApplication.value)
-    imssFileForApplication.value = null
-    successMessage.value = 'Constancia cargada. Pendiente de revisión; la apertura se habilitará cuando Vinculación la apruebe.'
-  } catch (error: any) { errorMessage.value = error?.response?.data?.detail || 'No fue posible cargar la constancia.' }
-  finally { isSubmitting.value = false }
-}
-async function refreshImss(): Promise<void> {
-  try { studentProfile.value = await getMyStudentProfile() }
-  catch { errorMessage.value = 'No fue posible actualizar el estado de tu constancia.' }
-}
-
 async function handleSubmitApplication(): Promise<void> {
   isSubmitting.value = true
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    if (!studentProfile.value?.hasValidImss) {
-      errorMessage.value = 'Carga tu constancia y espera la aprobación de Vinculación antes de abrir el trámite.'
+    if (!imssFileForApplication.value && !['pending', 'approved'].includes(studentProfile.value?.imssStatus || '')) {
+      errorMessage.value = 'Adjunta tu constancia IMSS para enviar la solicitud.'
       return
     }
-    const created = await requestSocialService(openForm)
+    const created = await submitSocialService(openForm, imssFileForApplication.value)
+    imssPreviewOpen.value = false
+    imssFileForApplication.value = null
     service.value = created
     successMessage.value =
       `${socialDocumentLabel('SOL')} generada y enviada a Vinculación.`
-    await handlePrintFormat('application')
     await loadData()
   } catch (err: any) {
     errorMessage.value =
@@ -406,25 +395,25 @@ onMounted(() => {
               <UiBadge :tone="studentProfile?.hasValidImss ? 'success' : 'warning'">
                 {{
                   studentProfile?.hasValidImss
-                    ? 'Ya cuentas con Vigencia IMSS registrada'
-                    : 'Sube tu archivo PDF aquí'
+                    ? 'Constancia aprobada registrada'
+                    : studentProfile?.imssStatus === 'pending' ? 'Constancia pendiente de revisión' : 'Adjunta tu constancia IMSS'
                 }}
               </UiBadge>
             </div>
           </div>
           <input type="file" accept="application/pdf" @change="handleImssFileSelect" />
-          <UiButton variant="secondary" :disabled="!imssFileForApplication || isSubmitting" @click="uploadAdmissionImss">Subir constancia para revisión</UiButton>
-          <UiButton variant="secondary" :disabled="isSubmitting" @click="refreshImss">Actualizar estado IMSS</UiButton>
-          <p v-if="studentProfile?.imssStatus === 'pending'">Pendiente de revisión por Vinculación. Todavía no puedes abrir el trámite.</p>
+
+
+          <p v-if="studentProfile?.imssStatus === 'pending'">La constancia se validará junto con tu solicitud.</p>
           <UiAlert v-if="studentProfile?.imssRejectionReason" tone="danger">{{ studentProfile.imssRejectionReason }}</UiAlert>
         </div>
 
         <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
-          <UiButton variant="primary" :disabled="isSubmitting || !studentProfile?.hasValidImss || !!imssFileForApplication" @click="handleSubmitApplication">
+          <UiButton variant="primary" :disabled="isSubmitting || (!imssFileForApplication && !['pending', 'approved'].includes(studentProfile?.imssStatus || ''))" @click="imssFileForApplication ? (imssPreviewOpen = true) : handleSubmitApplication()">
             {{
               isSubmitting
                 ? 'Generando Solicitud...'
-                : `Enviar ${socialDocumentLabel('SOL')} a Vinculación`
+                : 'Enviar Solicitud e IMSS a revisión'
             }}
           </UiButton>
         </div>
@@ -492,7 +481,7 @@ onMounted(() => {
       </UiCard>
 
       <!-- Paso a Paso de Documentos y Prellenado de Formatos -->
-      <ExpedientChecklist :requirements="service.documentRequirements" :documents="uploadedDocs.filter(d => d.tramiteId === service!.id)" tramite-type="social_service" :tramite-id="service.id" :can-edit="!['released', 'cancelled', 'non_compliant'].includes(service.status)" @changed="loadData" @edit="handleOpenStepModal($event)" />
+      <ExpedientChecklist :application-accepted="service.application?.isAcceptedByOffice" :requirements="service.documentRequirements" :documents="uploadedDocs.filter(d => d.tramiteId === service!.id)" tramite-type="social_service" :tramite-id="service.id" :can-edit="!['released', 'cancelled', 'non_compliant'].includes(service.status)" @changed="loadData" @edit="handleOpenStepModal($event)" />
     </div>
 
     <!-- ==================================================================== -->
@@ -574,6 +563,7 @@ onMounted(() => {
     <!-- ==================================================================== -->
 
   </UiBasePage>
+  <DocumentViewerModal v-model="imssPreviewOpen" title="Confirma tu Solicitud y constancia IMSS" :blob="imssFileForApplication" confirm-upload :busy="isSubmitting" :error="errorMessage" @confirm="handleSubmitApplication" />
 </template>
 
 <style scoped>

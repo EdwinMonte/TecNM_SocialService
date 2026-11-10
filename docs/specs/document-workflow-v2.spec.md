@@ -132,3 +132,13 @@ Las cargas documentales y adaptadores IMSS propagan `documentDate` multipart opc
 ## Criterio vigente: estado IMSS revisado visualmente
 
 Este criterio sustituye las reglas anteriores de fecha/año IMSS. Para aprobar, el encargado verifica que el PDF corresponda al alumno y muestre estado VIGENTE. No se captura fecha, no se exige año actual y no caduca automáticamente al cambiar el año. El documento aprobado vigente (no sustituido ni borrado) habilita ingreso SS/PP; una nueva carga reinicia revisión. Rechazar exige motivo. Fechas históricas conservadas son metadatos, no autorización. Interfaz muestra confirmación explícita de estado VIGENTE y titular antes de aprobar, tanto en padrón como bandeja; cargas no solicitan fechas.
+
+## Simplificación del flujo del alumno
+
+Solicitud se revisa desde los datos del trámite: no requiere firma, nueva captura ni PDF. Su aprobación administrativa cierra SOL en checklist, progreso, conclusión y liberación. No se permite cargar nuevos PDFs SOL; se conservan evidencias históricas. Carta Compromiso no ofrece edición y oculta prellenado al alumno tras aprobación; conserva consulta del PDF aprobado. Toda carga del checklist muestra el contenido PDF local antes de transmitir bytes; requiere Confirmar y enviar a revisión, permite cancelar sin subir, impide doble envío y mantiene errores para reintento.
+
+La confirmación visual también aplica a cargas IMSS del perfil y de apertura SS/PP.
+
+## Envío conjunto de apertura SS
+
+POST /api/social-services/submissions (student) recibe multipart application (JSON CreateSocialServiceRequest) e imssFile (PDF opcional si existe IMSS pendiente/aprobado). Un solo envío confirmado tras previsualizar adjunto registra solicitud requested e IMSS pendiente en una transacción; no exige IMSS aprobado para enviar. Rechazado/ausente exige nuevo PDF. Conserva endpoint JSON anterior y reglas PP. Aprobar solicitud sigue exigiendo IMSS aprobado. No se exige PDF SOL ni se descarga automáticamente. Ante fallo se revierte BD y se elimina únicamente el archivo nuevo.

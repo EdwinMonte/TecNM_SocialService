@@ -43,6 +43,13 @@ export async function requestSocialService(payload: CreateSocialServicePayload):
   return (await http.post<SocialServiceDetail>('/social-services', payload)).data
 }
 
+export async function submitSocialService(payload: CreateSocialServicePayload, imssFile: File | null): Promise<SocialServiceDetail> {
+  const form = new FormData()
+  form.append('application', JSON.stringify(payload))
+  if (imssFile) form.append('imssFile', imssFile)
+  return (await http.post<SocialServiceDetail>('/social-services/submissions', form)).data
+}
+
 export async function reviewSocialServiceApplication(
   id: number,
   payload: { isAccepted: boolean; rejectionReason?: string | null; officeObservations?: string | null },

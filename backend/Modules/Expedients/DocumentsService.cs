@@ -142,7 +142,8 @@ public sealed class DocumentsService(
         await EnsureCanChangeEvidenceAsync(normalizedTramite, tramiteId, normalizedCode, cancellationToken);
         await using var hashStream = file!.OpenReadStream();
         var hash = Convert.ToHexString(await SHA256.HashDataAsync(hashStream, cancellationToken));
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
         var existingDocs = await dbContext.ExpedientDocuments
             .Where(d => d.StudentId == studentId
                         && d.TramiteType == normalizedTramite
@@ -215,7 +216,7 @@ public sealed class DocumentsService(
                 student.ImssValidatedBy = null;
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         }
         catch { fileStorage.TryDelete(storagePath); throw; }
         return ToResponse(entity);

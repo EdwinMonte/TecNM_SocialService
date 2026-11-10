@@ -68,6 +68,20 @@ public sealed class SocialServicesController(SocialServiceService service) : Con
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
+    [HttpPost("submissions")]
+    [Authorize(Roles = "student")]
+    [Consumes("multipart/form-data")]
+    public async Task<ActionResult<SocialServiceDetailResponse>> Submit(
+        [FromForm] string application, IFormFile? imssFile, CancellationToken cancellationToken)
+    {
+        CreateSocialServiceRequest? request;
+        try { request = System.Text.Json.JsonSerializer.Deserialize<CreateSocialServiceRequest>(application, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)); }
+        catch (System.Text.Json.JsonException) { return BadRequest(new { detail = "La solicitud no contiene datos válidos." }); }
+        if (request?.Application is null) return BadRequest(new { detail = "Completa los datos de la solicitud." });
+        var created = await service.CreateAsync(request, cancellationToken, imssFile, submitForReview: true);
+        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+    }
+
     [HttpPut("{id:long}")]
     [Authorize(Roles = "admin,social_service_officer,student")]
     public async Task<ActionResult<SocialServiceDetailResponse>> Update(

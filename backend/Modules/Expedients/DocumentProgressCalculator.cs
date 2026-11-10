@@ -6,6 +6,7 @@ public static class DocumentProgressCalculator
 {
     public static bool DocumentDone(Core.Entities.SocialService service, ISet<string> approved, string code)
     {
+        if (code == "SOL") return service.Application?.IsAcceptedByOffice == true;
         if (approved.Contains(code)) return true;
         if (code == "COT") return service.Status == "released" || !string.IsNullOrWhiteSpace(service.ReleaseCertificateFolio);
         if (service.DocumentWorkflowVersion >= 2) return false;

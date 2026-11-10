@@ -25,7 +25,7 @@ public static class DocumentDefinitions
 
         var docs = new List<DocumentRequirement>
         {
-            new("SOL", SocialServiceDocumentCatalog.Title("SOL"), "application"),
+            new("SOL", SocialServiceDocumentCatalog.Title("SOL"), CanUpload: false),
             new("CP", SocialServiceDocumentCatalog.Title("CP"), BlockedReason: "Adjunta el PDF firmado. Vinculación debe revisarlo y aprobarlo."),
             new("CA", SocialServiceDocumentCatalog.Title("CA"), TemplateKey: "ss-acceptance-example"),
             new("CC", SocialServiceDocumentCatalog.Title("CC"), "commitment")

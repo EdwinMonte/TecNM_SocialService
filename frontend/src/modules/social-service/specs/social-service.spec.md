@@ -80,3 +80,5 @@ Formulario por pasos (`UiCard` o stepper):
   - Botón "Registrar Producto No Conforme (PNC)": Abre modal para registrar incidencia ISO 9001.
   - Botón "Ver Historial de Estados": Abre línea de tiempo de auditoría (`tramite_status_logs`).
 
+
+Apertura SS: enviar Solicitud e IMSS juntos mediante POST /api/social-services/submissions multipart (application JSON, imssFile opcional con evidencia vigente pendiente/aprobada). No exige aprobación IMSS previa al envío. Vista previa antes de confirmar; aprobación administrativa sigue exigiendo IMSS aprobado. No aplica a PP.

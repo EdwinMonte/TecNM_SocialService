@@ -125,12 +125,27 @@ internal static class HttpChecks
         {
             var db = scope.ServiceProvider.GetRequiredService<TecNMDbContext>();
             var reference = await db.SocialServices.AsNoTracking().FirstAsync();
-            var ss = new SocialService { StudentId = 1, PeriodId = reference.PeriodId, ProgramId = reference.ProgramId,
-                CompanyId = reference.CompanyId, SupervisorId = reference.SupervisorId, SemesterEnrolled = 7,
-                StartDate = today, EndDate = today.AddMonths(6), PresentationLetterDate = today, Modality = "external", Status = "requested" };
-            db.SocialServices.Add(ss); await db.SaveChangesAsync();
-            db.SocialServiceApplications.Add(new SocialServiceApplication { SocialServiceId = ss.Id, CurrentSemester = 7, StudentAddress = "Calle de prueba", StudentPhone = "8661234567", DependencyName = "Dependencia", DependencyHeadName = "Responsable", DependencyHeadPosition = "Director", ActivitiesOutline = "Actividades de prueba" });
-            await db.SaveChangesAsync();
+            var submissionPayload = new { periodId = reference.PeriodId, programId = reference.ProgramId, companyId = reference.CompanyId, supervisorId = reference.SupervisorId,
+                modality = await db.Companies.Where(c => c.Id == reference.CompanyId).Select(c => c.IsTecnmInternal).SingleAsync() ? "internal" : "external", startDate = today, endDate = today.AddMonths(6),
+                application = new { studentAddress = "Calle de prueba", studentPhone = "8661234567", periodType = "february_july", dependencyName = "Dependencia", dependencyHeadName = "Responsable", dependencyHeadPosition = "Director", activitiesOutline = "Actividades de prueba" } };
+            async Task<HttpResponseMessage> Submit(byte[] content)
+            {
+                using var form = new MultipartFormDataContent();
+                form.Add(new StringContent(JsonSerializer.Serialize(submissionPayload)), "application");
+                form.Add(new ByteArrayContent(content), "imssFile", "imss.pdf");
+                return await student.PostAsync("/api/social-services/submissions", form);
+            }
+            var submissionsBefore = await db.SocialServices.CountAsync();
+            var invalidSubmission = await Submit([1, 2, 3]);
+            if (invalidSubmission.IsSuccessStatusCode || await db.SocialServices.CountAsync() != submissionsBefore) throw new Exception("Invalid IMSS left a submission.");
+            var submitted = await Submit([.. bytes, 10, 37, 88]);
+            if (!submitted.IsSuccessStatusCode) throw new Exception(await submitted.Content.ReadAsStringAsync());
+            var submittedId = (await submitted.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
+            var ss = await db.SocialServices.SingleAsync(t => t.Id == submittedId);
+            var admission = await db.ExpedientDocuments.SingleAsync(d => d.Id == ss.AdmissionImssDocumentId);
+            if (admission.Status != "pending" || ss.Status != "requested") throw new Exception("Joint submission must await review.");
+            Expect(await admin.PostAsJsonAsync($"/api/social-services/{ss.Id}/application/review", new { isAccepted = true }), HttpStatusCode.UnprocessableEntity);
+            Expect(await admin.PostAsJsonAsync($"/api/documents/{admission.Id}/review", new { status = "approved" }), HttpStatusCode.OK);
             var commitmentCount = await db.SocialServiceCommitments.CountAsync();
             var clockBefore = testClock.UtcNow;
             try
@@ -194,12 +209,6 @@ internal static class HttpChecks
             var initialRow = tracking.EnumerateArray().Single(row => row.GetProperty("tramiteId").GetInt64() == ss.Id);
             if (initialRow.GetProperty("documents").GetProperty("cp").GetBoolean() || initialRow.GetProperty("progressPercentage").GetInt32() != 0)
                 throw new Exception("V2 tracking credited presentation date without approved PDF.");
-            using var solForm = new MultipartFormDataContent();
-            solForm.Add(new ByteArrayContent(bytes), "file", "sol.pdf"); solForm.Add(new StringContent("social_service"),"tramiteType");
-            solForm.Add(new StringContent(ss.Id.ToString()),"tramiteId"); solForm.Add(new StringContent("SOL"),"documentCode");
-            var solResponse = await student.PostAsync("/api/students/me/documents", solForm); Expect(solResponse,HttpStatusCode.Created);
-            var sol = await solResponse.Content.ReadFromJsonAsync<JsonElement>();
-            Expect(await admin.PostAsJsonAsync($"/api/documents/{sol.GetProperty("id").GetInt64()}/review",new {status="approved"}),HttpStatusCode.OK);
             Expect(await admin.PostAsJsonAsync($"/api/social-services/{ss.Id}/application/review",new {isAccepted=true}),HttpStatusCode.OK);
             if (await db.SocialServices.AsNoTracking().Where(t=>t.Id==ss.Id).Select(t=>t.PresentationLetterFolio).SingleAsync() is not null) throw new Exception("Temporary approval consumed a presentation folio");
             Expect(await admin.PostAsJsonAsync($"/api/social-services/{ss.Id}/presentation-letter",new {presentationLetterDate=today}),HttpStatusCode.Conflict);
@@ -257,7 +266,7 @@ internal static class HttpChecks
                     if ((await blocked.Content.ReadAsStringAsync()).Contains("students.imss_approval_required")) throw new Exception("Year boundary incorrectly blocked PP due to IMSS.");
                     var blockedSs = await client.PostAsJsonAsync("/api/social-services", new {
                         studentId = 1, periodId = ss.PeriodId, programId = ss.ProgramId, companyId = ss.CompanyId, supervisorId = ss.SupervisorId,
-                        modality = "external", startDate = today, endDate = today.AddMonths(6),
+                        modality = await db.Companies.Where(c => c.Id == reference.CompanyId).Select(c => c.IsTecnmInternal).SingleAsync() ? "internal" : "external", startDate = today, endDate = today.AddMonths(6),
                         application = new { studentAddress = "Calle de prueba", studentPhone = "8661234567", periodType = "normal",
                             dependencyName = "Dependencia", dependencyHeadName = "Responsable", dependencyHeadPosition = "Director", activitiesOutline = "Actividades" }
                     });

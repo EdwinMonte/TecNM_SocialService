@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DocumentViewerModal from '../../expedients/components/DocumentViewerModal.vue'
+
 import { computed, onMounted, reactive, ref } from 'vue'
 import { UiAlert, UiBadge, UiBasePage, UiButton, UiCard, UiField } from '../../../shared/components'
 import {
@@ -10,6 +12,7 @@ import {
 } from '../api/studentsApi'
 import type { StudentDetail, StudentEligibility, StudentShift } from '../types/students'
 
+const imssPreviewOpen = ref(false)
 const profile = ref<StudentDetail | null>(null)
 const eligibility = ref<StudentEligibility | null>(null)
 const isLoading = ref(true)
@@ -94,7 +97,7 @@ function handleFileChange(event: Event): void {
 }
 
 async function handleUploadImss(): Promise<void> {
-  if (!selectedImssFile.value) return
+  if (!selectedImssFile.value || isUploadingImss.value) return
   isUploadingImss.value = true
   errorMessage.value = ''
   successMessage.value = ''
@@ -102,6 +105,7 @@ async function handleUploadImss(): Promise<void> {
     const updated = await uploadMyImssFile(selectedImssFile.value)
     profile.value = updated
     selectedImssFile.value = null
+    imssPreviewOpen.value = false
     eligibility.value = await getMyEligibility().catch(() => null)
     successMessage.value =
       'Constancia IMSS cargada. Vinculación debe revisarla y aprobarla.'
@@ -230,7 +234,7 @@ onMounted(() => {
           <UiButton
             variant="primary"
             :disabled="!selectedImssFile || isUploadingImss"
-            @click="handleUploadImss"
+            @click="imssPreviewOpen = true"
           >
             {{ isUploadingImss ? 'Subiendo PDF...' : 'Subir Constancia IMSS (PDF)' }}
           </UiButton>
@@ -274,4 +278,5 @@ onMounted(() => {
       </UiCard>
     </div>
   </UiBasePage>
+  <DocumentViewerModal v-model="imssPreviewOpen" title="Verifica tu constancia IMSS" :blob="selectedImssFile" confirm-upload :busy="isUploadingImss" :error="errorMessage" @confirm="handleUploadImss" />
 </template>

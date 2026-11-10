@@ -230,10 +230,11 @@ public sealed class SocialServiceService(
 
     public async Task<SocialServiceDetailResponse> CreateAsync(
         CreateSocialServiceRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IFormFile? imssFile = null, bool submitForReview = false)
     {
         long targetStudentId;
-        if (IsSocialServiceStaff())
+        if (IsSocialServiceStaff() && !submitForReview)
         {
             if (!request.StudentId.HasValue || request.StudentId.Value <= 0)
             {
@@ -261,7 +262,7 @@ public sealed class SocialServiceService(
                 "El estudiante no se encuentra inscrito o en condiciones de realizar el Servicio Social.");
         }
 
-        var admissionImssId = await imss.RequireApprovedAsync(student.Id, cancellationToken);
+        long? admissionImssId = submitForReview ? null : await imss.RequireApprovedAsync(student.Id, cancellationToken);
 
         var hasActiveOrReleased = await dbContext.SocialServices
             .AnyAsync(s => s.StudentId == targetStudentId && s.Status != "cancelled" && s.Status != "non_compliant", cancellationToken);
@@ -310,29 +311,51 @@ public sealed class SocialServiceService(
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        dbContext.SocialServices.Add(entity);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        var application = new SocialServiceApplication
+        string? newImssPath = null;
+        try
         {
-            SocialServiceId = entity.Id,
-            StudentAddress = request.Application.StudentAddress.Trim(),
-            StudentPhone = request.Application.StudentPhone.Trim(),
-            PeriodType = request.Application.PeriodType.Trim().ToLowerInvariant(),
-            CurrentSemester = student.CurrentSemester,
-            DependencyName = request.Application.DependencyName.Trim(),
-            DependencyHeadName = request.Application.DependencyHeadName.Trim(),
-            DependencyHeadPosition = request.Application.DependencyHeadPosition.Trim(),
-            ActivitiesOutline = request.Application.ActivitiesOutline.Trim(),
-            IsAcceptedByOffice = null
-        };
+            if (submitForReview)
+            {
+                var previous = await imss.GetLatestAsync(student.Id, cancellationToken);
+                if (imssFile is not null)
+                {
+                    var uploaded = await documents.UploadDocumentAsync(student.Id, imssFile, "general", null, "IMSS", cancellationToken);
+                    var document = await dbContext.ExpedientDocuments.SingleAsync(d => d.Id == uploaded.Id, cancellationToken);
+                    if (previous?.Id != document.Id) newImssPath = document.StoragePath;
+                    entity.AdmissionImssDocumentId = document.Id;
+                }
+                else if (previous is { Status: "pending" or "approved", DeletedAt: null }) entity.AdmissionImssDocumentId = previous.Id;
+                else throw new BusinessRuleException("students.imss_required", "Adjunta la constancia IMSS para enviar tu solicitud a revisión.");
+            }
+            dbContext.SocialServices.Add(entity);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-        dbContext.SocialServiceApplications.Add(application);
-        AddStatusLog(entity.Id, null, "requested", "Apertura de solicitud de Servicio Social (Anexo XVIII)");
+            var application = new SocialServiceApplication
+            {
+                SocialServiceId = entity.Id,
+                StudentAddress = request.Application.StudentAddress.Trim(),
+                StudentPhone = request.Application.StudentPhone.Trim(),
+                PeriodType = request.Application.PeriodType.Trim().ToLowerInvariant(),
+                CurrentSemester = student.CurrentSemester,
+                DependencyName = request.Application.DependencyName.Trim(),
+                DependencyHeadName = request.Application.DependencyHeadName.Trim(),
+                DependencyHeadPosition = request.Application.DependencyHeadPosition.Trim(),
+                ActivitiesOutline = request.Application.ActivitiesOutline.Trim(),
+                IsAcceptedByOffice = null
+            };
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+            dbContext.SocialServiceApplications.Add(application);
+            AddStatusLog(entity.Id, null, "requested", "Apertura de solicitud de Servicio Social (Anexo XVIII)");
 
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+        }
+        catch
+        {
+            if (newImssPath is not null) storage.TryDelete(newImssPath);
+            throw;
+        }
         return await GetByIdAsync(entity.Id, cancellationToken);
     }
 
@@ -443,8 +466,6 @@ public sealed class SocialServiceService(
 
         if (request.IsAccepted)
         {
-            if (entity.DocumentWorkflowVersion >= 2 && !await HasApprovedDocumentAsync(entity.StudentId, entity.Id, "SOL", cancellationToken))
-                throw new BusinessRuleException("social_services.documents_missing", "Aprueba primero el PDF firmado de la Solicitud.");
             var previousStatus = entity.Status;
             entity.Status = "approved";
             AddStatusLog(entity.Id, previousStatus, "approved", "Solicitud Anexo XVIII aprobada; Carta de Presentación mediante PDF firmado y dictamen documental");
@@ -938,6 +959,7 @@ public sealed class SocialServiceService(
         CancellationToken cancellationToken = default)
     {
         var entity = await dbContext.SocialServices
+            .Include(s => s.Application)
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken)
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
 
@@ -951,7 +973,7 @@ public sealed class SocialServiceService(
         // Regla: Progreso guiado por documentos (sin bloqueo por horas)
         var approvedCodes = await GetApprovedDocumentCodesAsync(entity.StudentId, entity.Id, cancellationToken);
         var requiredDocs = entity.DocumentWorkflowVersion >= 2 ? DocumentDefinitions.RequiredForSocialService(2) : new[] { "R1", "R2", "R3", "CT" };
-        var missing = requiredDocs.Where(code => !approvedCodes.Contains(code)).ToList();
+        var missing = requiredDocs.Where(code => !(code == "SOL" ? DocumentProgressCalculator.DocumentDone(entity, approvedCodes, code) : approvedCodes.Contains(code))).ToList();
 
         if (missing.Count > 0)
         {
@@ -976,6 +998,7 @@ public sealed class SocialServiceService(
     {
         await using var operation = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var entity = await dbContext.SocialServices
+            .Include(s => s.Application)
             .SingleOrDefaultAsync(s => s.Id == id, cancellationToken)
             ?? throw new NotFoundException("social_services.not_found", $"Trámite de Servicio Social #{id} no encontrado.");
 
@@ -988,7 +1011,7 @@ public sealed class SocialServiceService(
 
         var approvedCodes = await GetApprovedDocumentCodesAsync(entity.StudentId, entity.Id, cancellationToken);
         var requiredDocs = DocumentDefinitions.RequiredForSocialService(entity.DocumentWorkflowVersion);
-        var missing = requiredDocs.Where(code => !approvedCodes.Contains(code)).ToList();
+        var missing = requiredDocs.Where(code => !(code == "SOL" ? DocumentProgressCalculator.DocumentDone(entity, approvedCodes, code) : approvedCodes.Contains(code))).ToList();
 
         if (missing.Count > 0)
         {

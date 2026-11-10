@@ -14,6 +14,7 @@ const pp = JSON.parse(fs.readFileSync(path.join(root, 'ui-fixtures/internship.js
 const ppAdmin = JSON.parse(fs.readFileSync(path.join(root, 'ui-fixtures/internship-admin.json')))
 const pdf = fs.readFileSync('backend/Resources/Documents/templates/ss-supervisor-evaluation.pdf')
 const base = process.env.UI_TEST_URL || 'https://127.0.0.1:5900'
+let jointOpening = false, jointSent = false
 let closed = false
 let presentationMissing = false
 let admin = false
@@ -33,13 +34,19 @@ try {
     if (!endpoint.startsWith('/api/')) return route.continue()
     let body = []
     if (endpoint === '/api/auth/me') body = { id: admin ? 1 : 2, username: admin ? 'admin' : 'usuario', name: 'Usuario de prueba', email: 'test@monclova.tecnm.mx', roles: [admin ? 'admin' : 'student'] }
-    else if (endpoint === '/api/students/me') body = profile
+    else if (endpoint === '/api/students/me') body = jointOpening ? { ...profile, hasValidImss: false, imssStatus: null } : profile
     else if (endpoint === '/api/students/me/eligibility') body = { socialService: { eligible: false }, internship: { eligible: false } }
     else if (endpoint === '/api/students/me/imss' && route.request().method() === 'PUT') {
       uploadedImss = true
       body = { ...profile, hasValidImss: false, imssDocumentDate: '2026-11-03' }
     }
-    else if (endpoint === '/api/social-services/me') body = [{ id: detail.id }]
+    else if (endpoint === '/api/social-services/me') body = jointOpening && !jointSent ? [] : [{ id: detail.id }]
+    else if (endpoint.endsWith('/options')) body = [{ id: 1, label: 'Programa de prueba', metadata: { isActive: true } }]
+    else if (endpoint === '/api/social-services/submissions') {
+      assert.ok(route.request().postDataBuffer().includes(Buffer.from('name="application"')))
+      assert.ok(route.request().postDataBuffer().includes(Buffer.from('name="imssFile"')))
+      jointSent = true; body = detail
+    }
     else if (endpoint === `/api/social-services/${detail.id}`) body = { ...detail, status: closed ? 'released' : 'approved', documentRequirements: detail.documentRequirements.map(d => ({ ...d, canUpload: d.canUpload && !closed })) }
     else if (endpoint === '/api/internships/me') body = [{ id: pp.id }]
     else if (endpoint === `/api/internships/${pp.id}`) body = admin ? ppAdmin : pp
@@ -57,6 +64,8 @@ try {
   await page.getByText('Expediente documental', { exact: true }).waitFor({timeout:10000})
   assert.equal(await page.getByText('Calificación por Criterio', { exact: false }).count(), 0)
   assert.ok(await page.locator('input[type=file]').count() > 0)
+  const commitment = page.locator('article').filter({ hasText: '2. Carta Compromiso' })
+  assert.equal(await commitment.getByRole('button', { name: 'Editar datos del formato' }).count(), 0)
   const row = page.locator('article').filter({ hasText: 'Formato de Evaluación Cualitativa' }).first()
   await row.getByRole('button', { name: 'Descargar prellenado' }).click()
   assert.ok(pdfRequests.includes(`/api/social-services/${detail.id}/pdf/evaluation_1`))
@@ -112,10 +121,16 @@ try {
   await page.goto(base + '/internships')
   await page.getByRole('button', { name: 'Gestionar', exact: false }).click()
   await page.getByText('Expediente documental', { exact: true }).waitFor()
-  await Promise.all([
-    page.waitForResponse(response => response.url().endsWith(`/students/${pp.student.id}/documents`) && response.request().method() === 'POST'),
-    acceptance.locator('input[type=file]').setInputFiles({ name: 'aceptacion.pdf', mimeType: 'application/pdf', buffer: pdf }),
-  ])
+  await acceptance.locator('input[type=file]').setInputFiles({ name: 'aceptacion.pdf', mimeType: 'application/pdf', buffer: pdf })
+  const preview = page.getByRole('dialog', { name: 'Verifica el archivo:', exact: false })
+  await preview.waitFor({ state: 'visible' })
+  assert.equal(uploadedAcceptance, false)
+  assert.match(await preview.locator('iframe').getAttribute('src'), /^blob:/)
+  await preview.getByRole('button', { name: 'Cancelar' }).click()
+  assert.equal(uploadedAcceptance, false)
+  await acceptance.locator('input[type=file]').setInputFiles({ name: 'aceptacion.pdf', mimeType: 'application/pdf', buffer: pdf })
+  await preview.getByRole('button', { name: 'Confirmar y enviar a revisión' }).click()
+  await preview.waitFor({ state: 'hidden' })
   assert.ok(uploadedAcceptance)
   await page.screenshot({ path: path.join(root, 'ui-pp-admin.png') })
   admin = false
@@ -125,11 +140,30 @@ try {
   await page.locator('input[type=file]').setInputFiles({ name: 'imss.pdf', mimeType: 'application/pdf', buffer: pdf })
   assert.ok(await imssUpload.isEnabled(), 'IMSS date is optional on upload')
   await imssUpload.click()
+  assert.equal(uploadedImss, false)
+  await page.getByRole('dialog', { name: 'Verifica tu constancia IMSS' }).getByRole('button', { name: 'Confirmar y enviar a revisión' }).click()
   await page.getByText('Constancia IMSS cargada. Vinculación debe revisarla y aprobarla.', { exact: true }).waitFor()
   assert.ok(uploadedImss)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: path.join(root, 'ui-imss-profile-mobile.png') })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'IMSS profile mobile overflow')
+  jointOpening = true; closed = false
+  await page.goto(base + '/social-service/my')
+  const sendJoint = page.getByRole('button', { name: 'Enviar Solicitud e IMSS a revisión' })
+  await sendJoint.waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Actualizar estado IMSS' }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Subir constancia para revisión' }).count(), 0)
+  await page.locator('input[type=file]').setInputFiles({ name: 'imss.pdf', mimeType: 'application/pdf', buffer: pdf })
+  await sendJoint.click()
+  const jointPreview = page.getByRole('dialog', { name: 'Confirma tu Solicitud y constancia IMSS' })
+  await jointPreview.waitFor()
+  assert.equal(jointSent, false)
+  await jointPreview.getByRole('button', { name: 'Cancelar' }).click()
+  assert.equal(jointSent, false)
+  await sendJoint.click()
+  await jointPreview.getByRole('button', { name: 'Confirmar y enviar a revisión' }).click()
+  await jointPreview.waitFor({ state: 'hidden' })
+  assert.ok(jointSent)
   assert.deepEqual(errors, [])
   console.log('SS/PP desktop/mobile, viewer Escape, terminal actions, PP dates, staff-only acceptance and declared IMSS date checks passed.')
 } finally { await browser.close() }
