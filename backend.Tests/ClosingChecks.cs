@@ -61,6 +61,17 @@ internal static class ClosingChecks
         Expect(await admin.PostAsJsonAsync($"/api/social-services/{ssId}/complete", completion), HttpStatusCode.OK);
         await ReleaseOnce($"/api/social-services/{ssId}/release", "social_service_release_certificate", new { finalGradeLevel = "good", finalScore = 85, originalTerminationLetterReceived = true });
         if (await Progress() != 100) throw new Exception("Released SS did not reach 100 percent.");
+        Expect(await student.GetAsync($"/api/social-services/{ssId}/pdf/individual_act"), HttpStatusCode.Forbidden);
+        var actBefore = await admin.GetStringAsync($"/api/social-services/{ssId}");
+        foreach (var attempt in Enumerable.Range(0, 2))
+        {
+            var act = await admin.GetAsync($"/api/social-services/{ssId}/pdf/individual_act");
+            Expect(act, HttpStatusCode.OK);
+            if (act.Content.Headers.ContentType?.MediaType != "application/pdf") throw new Exception("Act PDF MIME");
+            File.WriteAllBytes("tmp/pdf-qa/ss-individual-act-http.pdf", await act.Content.ReadAsByteArrayAsync());
+        }
+        if (actBefore != await admin.GetStringAsync($"/api/social-services/{ssId}")) throw new Exception("Act download changed the process");
+
         Expect(await student.GetAsync($"/api/social-services/{ssId}/pdf/commitment"), HttpStatusCode.OK);
         await Upload(student, "social_service", ssId, "CC", false, HttpStatusCode.Conflict);
 

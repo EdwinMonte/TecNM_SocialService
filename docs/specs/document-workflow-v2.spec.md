@@ -142,3 +142,7 @@ La confirmación visual también aplica a cargas IMSS del perfil y de apertura S
 ## Envío conjunto de apertura SS
 
 POST /api/social-services/submissions (student) recibe multipart application (JSON CreateSocialServiceRequest) e imssFile (PDF opcional si existe IMSS pendiente/aprobado). Un solo envío confirmado tras previsualizar adjunto registra solicitud requested e IMSS pendiente en una transacción; no exige IMSS aprobado para enviar. Rechazado/ausente exige nuevo PDF. Conserva endpoint JSON anterior y reglas PP. Aprobar solicitud sigue exigiendo IMSS aprobado. No se exige PDF SOL ni se descarga automáticamente. Ante fallo se revierte BD y se elimina únicamente el archivo nuevo.
+
+## Acta Individual
+
+GET /api/social-services/{id}/pdf/individual_act entrega PDF oficial únicamente a admin, social_service_officer y department_head, para trámites released. Prellena alumno, matrícula, carrera, dependencia, actividades de reportes ordenados sin duplicados (respaldo solicitud), fechas del trámite y 480 horas. Expedición: día de descarga en America/Mexico_City mediante TimeProvider. Autoridades activas outreach_division_head e institute_director, con título opcional, nombre y cargo; solo firmas vacías. Faltantes devuelven 422 documents.data_missing por campo; desbordamiento 422 documents.text_overflow. Plantilla/fuente inválida devuelve 409. No modifica estado, evidencia, folios ni envío a Escolares. Solo PDF individual, sin reverso. Descarga administrativa con carga, prevención de doble petición y errores visibles; alumno sin acceso.

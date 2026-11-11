@@ -23,6 +23,11 @@ public sealed class DocumentTemplatesController(OfficialPdfService pdf, SocialSe
     [HttpGet("/api/social-services/{id:long}/pdf/{document}")]
     public async Task<IActionResult> SocialServicePdf(long id, string document, CancellationToken ct)
     {
+        if (document == "individual_act")
+        {
+            var actData = await socialService.GetIndividualActDataAsync(id, ct);
+            return File(pdf.Generate("ss-individual-act", actData), "application/pdf", $"SS_{id}_acta_individual.pdf");
+        }
         var detail = await socialService.GetByIdAsync(id, ct);
         if (document == "presentation_letter")
         {

@@ -274,3 +274,7 @@ Textos oficiales de los 7 criterios y 8 reactivos: tomar literal de los PDF fuen
 | `document_CT` | Anexo XIX — Carta de Terminación firmada y sellada | `CTA. TERM.` |
 | `release_certificate` | Constancia de Terminación emitida por Vinculación (`SSC...`) | `CONST.TERM` |
 | `school_services_act` | Acta enviada a Servicios Escolares (`DGTV...`) | `ACTA ENVIADA` |
+
+## Acta Individual
+
+GET /api/social-services/{id}/pdf/individual_act entrega PDF oficial únicamente a admin, social_service_officer y department_head, para trámites released. Prellena alumno, matrícula, carrera, dependencia, actividades de reportes ordenados sin duplicados (respaldo solicitud), fechas del trámite y 480 horas. Expedición: día de descarga en America/Mexico_City mediante TimeProvider. Autoridades activas outreach_division_head e institute_director, con título opcional, nombre y cargo; solo firmas vacías. Faltantes devuelven 422 documents.data_missing por campo; desbordamiento 422 documents.text_overflow. Plantilla/fuente inválida devuelve 409. No modifica estado, evidencia, folios ni envío a Escolares. Solo PDF individual, sin reverso. Descarga administrativa con carga, prevención de doble petición y errores visibles; alumno sin acceso.

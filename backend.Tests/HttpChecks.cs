@@ -53,6 +53,10 @@ internal static class HttpChecks
         await Login(admin, "admin");
         await Login(student, "l23050363@monclova.tecnm.mx");
         Expect(await student.GetAsync("/api/documents/review-queue"), HttpStatusCode.Forbidden);
+        Expect(await anonymous.GetAsync("/api/social-services/1/pdf/individual_act"), HttpStatusCode.Unauthorized);
+        Expect(await student.GetAsync("/api/social-services/1/pdf/individual_act"), HttpStatusCode.Forbidden);
+        Expect(await admin.GetAsync("/api/social-services/1/pdf/individual_act"), HttpStatusCode.Conflict);
+
         Expect(await student.GetAsync("/api/students/2/documents"), HttpStatusCode.NotFound);
         Expect(await student.PutAsJsonAsync("/api/internships/1/evaluation", new { }), HttpStatusCode.Forbidden);
         Expect(await student.PutAsJsonAsync("/api/social-services/1/evaluations/external_supervisor/1", new { }), HttpStatusCode.Forbidden);

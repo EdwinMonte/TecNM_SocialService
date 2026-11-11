@@ -252,6 +252,31 @@ async function handleViewDocPdf(docId: number): Promise<void> {
   }
 }
 
+const isActDownloading = ref(false)
+async function downloadIndividualAct(): Promise<void> {
+  if (!selectedDetail.value || isActDownloading.value) return
+  isActDownloading.value = true
+  actionValidation.reset()
+  try {
+    const id = selectedDetail.value.id
+    const response = await http.get(`/social-services/${id}/pdf/individual_act`, { responseType: 'blob' })
+    const url = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `SS_${id}_acta_individual.pdf`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (err: any) {
+    if (err.response?.data instanceof Blob) {
+      try { err.response.data = JSON.parse(await err.response.data.text()) } catch { /* Preserve transport error. */ }
+    }
+    actionValidation.apply(err, 'No se pudo descargar el Acta Individual.')
+    errorMessage.value = problemMessage(err, 'No se pudo descargar el Acta Individual.')
+  } finally {
+    isActDownloading.value = false
+  }
+}
+
 async function handlePrint(docKey: string): Promise<void> {
   if (!selectedDetail.value) return
   try {
@@ -575,6 +600,11 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
             Imprimir Constancia Liberación (SSC)
           </UiButton>
         </div>
+
+        <UiButton v-if="selectedDetail.status === 'released'" variant="secondary" size="sm"
+          :disabled="isActDownloading" @click="downloadIndividualAct">
+          {{ isActDownloading ? 'Descargando Acta Individual…' : 'Descargar Acta Individual' }}
+        </UiButton>
 
         <!-- Paso 1: Si está en 'requested', permitir Dictaminar y Emitir CP -->
         <div

@@ -13,3 +13,5 @@ Estampas opcionales: `institutional: true`, `stamps: [{ file, sha256, authorityR
 Los PNG en `signatures/dummy` y `stamps/dummy` son marcas genéricas de PRUEBA. No se aplican automáticamente. La Carta SS continúa bloqueada sin base limpia. Los anexos de firma física no admiten estampas.
 
 El ejemplo de aceptación se exporta una sola vez desde el DOCX original mediante `tools/pdf/export_acceptance.ps1` (Word en Windows). Su contenido ilustrativo se conserva; no constituye carta personalizada ni modifica el original. Conservar su hash al volver a preparar las otras plantillas.
+
+Acta Individual: preparar con `pwsh -File tools/pdf/export_individual_act.ps1 -PythonPath <python autorizado>`. Exporta el DOCX original en modo lectura y elimina los textos variables y subrayados de combinación antes de registrar `ss-individual-act`. El preparador general conserva esta entrada externa. Fuente dinámica Arial; sin estampas. Revisar el PDF generado y ejecutar verify_templates.py antes de publicar.

@@ -103,6 +103,21 @@ if (Directory.Exists(fonts))
         ["studentFullName"] = "María José Muñoz Peña", ["evaluationStartDate"] = new DateOnly(2026, 1, 12),
         ["evaluationEndDate"] = new DateOnly(2026, 6, 12)
     };
+    var actData = new Dictionary<string, object?>
+    {
+        ["actBody"] = "Por medio de la presente se hace constar que María José Muñoz Peña con matrícula I23050001 de Ingeniería Informática realizó su Servicio Social en Instituto Tecnológico Superior de Monclova desempeñando actividades de Apoyo tecnológico cubriendo un total de 480 horas, del 01/01/2026 al 30/06/2026.",
+        ["actDate"] = "Se extiende la presente para los fines legales que al interesado convengan, en Monclova, Coahuila a los 10 días del mes de noviembre del año 2026.",
+        ["outreachAuthority"] = "M.I. Ana Gómez Díaz\nJefa de División de Gestión Tecnológica y Vinculación",
+        ["directorAuthority"] = "Juan Pérez Muñoz\nDirector General"
+    };
+    Directory.CreateDirectory("tmp/pdf-qa");
+    File.WriteAllBytes("tmp/pdf-qa/ss-individual-act.pdf", generator.Generate("ss-individual-act", actData));
+    actData["actBody"] = new string('W', 10000);
+    try { generator.Generate("ss-individual-act", actData); throw new Exception("Act overflow accepted"); }
+    catch (BusinessRuleException ex) { Check(ex.Code == "documents.text_overflow", "Act rejects overflow"); }
+    actData["actBody"] = null;
+    try { generator.Generate("ss-individual-act", actData); throw new Exception("Missing act data accepted"); }
+    catch (BusinessRuleException ex) { Check(ex.Code == "documents.data_missing", "Act rejects missing data"); }
     var bytes = generator.Generate("pp-evaluation", sample);
     using var input = new MemoryStream(bytes);
     using var result = PdfReader.Open(input, PdfDocumentOpenMode.Import);

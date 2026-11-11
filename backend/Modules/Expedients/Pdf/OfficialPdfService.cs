@@ -70,7 +70,21 @@ public sealed class OfficialPdfService(IWebHostEnvironment environment, IConfigu
                     size = Math.Max(field.MinFontSize, size - 0.5);
                 }
                 for (var i = 0; i < lines.Length; i++)
-                    graphics.DrawString(lines[i], font, XBrushes.Black, new XPoint(field.X, field.Y + size + i * size * 1.2));
+                    {
+                    var line = lines[i];
+                    var x = field.Alignment == "center" ? field.X + (field.Width - graphics.MeasureString(line, font).Width) / 2 : field.X;
+                    var words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (field.Alignment == "justify" && i < lines.Length - 1 && words.Length > 1)
+                    {
+                        var gap = (field.Width - words.Sum(w => graphics.MeasureString(w, font).Width)) / (words.Length - 1);
+                        foreach (var word in words)
+                        {
+                            graphics.DrawString(word, font, XBrushes.Black, new XPoint(x, field.Y + size + i * size * 1.2));
+                            x += graphics.MeasureString(word, font).Width + gap;
+                        }
+                    }
+                    else graphics.DrawString(line, font, XBrushes.Black, new XPoint(x, field.Y + size + i * size * 1.2));
+                }
             }
         }
         foreach (var stamp in definition.Stamps ?? []) ApplyStamp(pdf, definition, stamp, data);
@@ -152,7 +166,7 @@ public sealed class OfficialPdfService(IWebHostEnvironment environment, IConfigu
         }
         foreach (var field in definition.Fields)
         {
-            if (field is null || string.IsNullOrWhiteSpace(field.Key) || field.Page < 0 || field.Page >= pdf.PageCount
+            if (field is null || field.Alignment is not ("left" or "center" or "justify") || string.IsNullOrWhiteSpace(field.Key) || field.Page < 0 || field.Page >= pdf.PageCount
                 || !new[] { field.X, field.Y, field.Width, field.Height, field.FontSize, field.MinFontSize }.All(double.IsFinite)
                 || field.X < 0 || field.Y < 0 || field.Width <= 0 || field.Height <= 0
                 || field.MinFontSize <= 0 || field.FontSize < field.MinFontSize) throw Unavailable();
@@ -179,7 +193,7 @@ public sealed class OfficialPdfService(IWebHostEnvironment environment, IConfigu
     }
 
     private static ConflictException Unavailable() => new("documents.template_unavailable", "La plantilla oficial aún no está disponible o no superó su verificación.");
-    public sealed record Field(string Key, double X, double Y, double Width, double Height, double FontSize = 9, double MinFontSize = 7, int Page = 0, string? Format = null, string? MatchValue = null, bool Optional = false);
+    public sealed record Field(string Key, double X, double Y, double Width, double Height, double FontSize = 9, double MinFontSize = 7, int Page = 0, string? Format = null, string? MatchValue = null, bool Optional = false, string Alignment = "left");
     public sealed record Stamp(string File, string Sha256, string AuthorityRoleKey, double X, double Y, double Width, double Height, double Opacity = 1, int Page = 0);
     public sealed record PageSize(double Width, double Height);
     public sealed record TemplateDefinition(string File, string Sha256, string Version, string Font, Field[] Fields, bool Institutional = false, Stamp[]? Stamps = null, int Pages = 0, PageSize[]? PageSizes = null);

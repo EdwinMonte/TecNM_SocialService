@@ -1213,6 +1213,50 @@ public sealed class SocialServiceService(
             .ToList();
     }
 
+    public async Task<Dictionary<string, object?>> GetIndividualActDataAsync(long id, CancellationToken ct = default)
+    {
+        if (!currentUser.IsInRole("admin") && !currentUser.IsInRole("social_service_officer") && !currentUser.IsInRole("department_head"))
+            throw new AppException(403, "documents.forbidden", "El Acta Individual está disponible únicamente para personal autorizado.");
+        var entity = await BuildDetailQuery().AsNoTracking().SingleOrDefaultAsync(s => s.Id == id, ct)
+            ?? throw new NotFoundException("social_services.not_found", "Trámite no encontrado.");
+        if (entity.Status != "released")
+            throw new ConflictException("social_services.not_available", "El Acta Individual requiere la liberación registrada.");
+        var authorities = await dbContext.InstitutionalAuthorities.AsNoTracking().Where(a => a.IsActive).ToListAsync(ct);
+        var errors = new Dictionary<string, string[]>();
+        string Required(string key, string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) errors[key] = [$"Falta el dato {key} para el Acta Individual."];
+            return value?.Trim() ?? "";
+        }
+        string Authority(string role)
+        {
+            var authority = authorities.SingleOrDefault(a => a.RoleKey == role);
+            var name = Required(role + ".fullName", authority?.FullName);
+            var position = Required(role + ".position", authority?.Position);
+            return string.Join(" ", new[] { authority?.Title, name }.Where(v => !string.IsNullOrWhiteSpace(v))) + "\n" + position;
+        }
+        var student = entity.Student;
+        var name = Required("studentFullName", string.Join(" ", new[] { student?.FirstName, student?.FirstSurname, student?.SecondSurname }.Where(v => !string.IsNullOrWhiteSpace(v))));
+        var control = Required("studentControlNumber", student?.ControlNumber);
+        var career = Required("careerName", student?.Career?.Name);
+        var company = Required("companyName", entity.Company?.Name);
+        var summaries = entity.Reports.OrderBy(r => r.ReportNumber).Select(r => r.ActivitiesSummary.Trim()).Where(v => v.Length > 0).Distinct().ToArray();
+        var activities = Required("activitiesOutline", summaries.Length > 0 ? string.Join("; ", summaries) : entity.Application?.ActivitiesOutline);
+        if (entity.StartDate == default) errors["startDate"] = ["Fecha de inicio requerida."];
+        if (entity.EndDate == default) errors["endDate"] = ["Fecha de término requerida."];
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(timeProvider.GetUtcNow(), "America/Mexico_City").DateTime);
+        var culture = System.Globalization.CultureInfo.GetCultureInfo("es-MX");
+        var data = new Dictionary<string, object?>
+        {
+            ["actBody"] = $"Por medio de la presente se hace constar que, según documentos que obran en los archivos de esta institución, (la) C. {name} con número de matrícula {control} de la carrera de {career} realizó su Servicio Social en {company} desempeñando actividades de {activities} cubriendo un total de 480 horas, durante el período comprendido del {entity.StartDate:dd/MM/yyyy} al {entity.EndDate:dd/MM/yyyy}.",
+            ["actDate"] = $"Se extiende la presente para los fines legales que al interesado convengan, en Monclova, Coahuila a los {today.Day} días del mes de {today.ToString("MMMM", culture)} del año {today.Year}.",
+            ["outreachAuthority"] = Authority("outreach_division_head"),
+            ["directorAuthority"] = Authority("institute_director")
+        };
+        if (errors.Count > 0) throw new BusinessRuleException("documents.data_missing", "Completa los datos requeridos para el Acta Individual.", errors);
+        return data;
+    }
+
     public async Task<Dictionary<string, object?>> GetPrintDataAsync(
         long id,
         string document,

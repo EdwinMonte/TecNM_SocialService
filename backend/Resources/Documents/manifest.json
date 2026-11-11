@@ -1046,5 +1046,60 @@
         "height": 792.0
       }
     ]
+  },
+  "ss-individual-act": {
+    "file": "templates/ss-individual-act.pdf",
+    "version": "1",
+    "font": "Arial",
+    "sha256": "1e0f42301b549c6bacb2d290aa3289dca22790f61d80967dfa3846a9441b2110",
+    "pages": 1,
+    "pageSizes": [
+      {
+        "width": 612.0,
+        "height": 792.0
+      }
+    ],
+    "fields": [
+      {
+        "key": "actBody",
+        "x": 56.6,
+        "y": 233,
+        "width": 500,
+        "height": 96,
+        "fontSize": 12.96,
+        "minFontSize": 10,
+        "alignment": "justify"
+      },
+      {
+        "key": "actDate",
+        "x": 56.6,
+        "y": 398,
+        "width": 500,
+        "height": 48,
+        "fontSize": 12.96,
+        "minFontSize": 11,
+        "alignment": "justify"
+      },
+      {
+        "key": "outreachAuthority",
+        "x": 62,
+        "y": 633,
+        "width": 240,
+        "height": 50,
+        "fontSize": 9,
+        "minFontSize": 8,
+        "alignment": "center"
+      },
+      {
+        "key": "directorAuthority",
+        "x": 330,
+        "y": 633,
+        "width": 240,
+        "height": 50,
+        "fontSize": 9,
+        "minFontSize": 8,
+        "alignment": "center"
+      }
+    ]
   }
 }
