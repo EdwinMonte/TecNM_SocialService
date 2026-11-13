@@ -11,14 +11,13 @@
 
 | Ruta | Nombre | Componente Principal | Rol Permitido | Propósito |
 | :--- | :--- | :--- | :--- | :--- |
-| `/quality/non-conformances` | `quality-pnc-list` | `NonConformancesListView.vue` | Staff, Dept Head | Bitácora y seguimiento formal de Producto No Conforme (PNC). |
-| `/quality/non-conformances/:id` | `quality-pnc-detail` | `NonConformanceDetailView.vue` | Staff, Dept Head | Expediente detallado del PNC y plan de acción correctiva. |
+| `/quality/pnc` | `quality-pnc` | `NonConformancesView.vue` | Staff, Dept Head | Bitácora, alta y seguimiento formal de Producto No Conforme (PNC). |
 
 ---
 
 ## 2. Requerimientos de UI y Componentes
 
-### 2.1 Vista `/quality/non-conformances`
+### 2.1 Vista `/quality/pnc`
 - **Contenedor:** `UiBasePage` (`fluid=true`, título: "Gestión de Calidad — Producto No Conforme (PNC)").
 - **Barra de Métricas Superiores (`UiMetric`):**
   - Total Abiertas (`open`).
@@ -33,8 +32,8 @@
   - Buscador por código de incidencia (`PNC-SS-...`), matrícula o nombre del alumno.
 - **Tabla de Incidencias (`UiTable`):**
   - Columnas: Código de Incidencia, Trámite, Alumno (matrícula y nombre), Categoría (etiqueta legible), Estado (`UiBadge`), Fecha de Registro, Acciones.
-  - Botón "Nuevo PNC" en encabezado que abre `CreatePncModal.vue`.
-  - Acción de fila: Botón "Gestionar Incidencia" -> abre detalle o modal de seguimiento.
+  - Botón "Registrar PNC" en encabezado (para `admin`, `social_service_officer` e `internship_coordinator`) que abre modal de alta.
+  - Acción de fila: Botón "Ver / Gestionar" -> abre modal de seguimiento con plan de acción y transiciones según rol y proceso.
 
 ---
 
