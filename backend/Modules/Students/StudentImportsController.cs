@@ -21,7 +21,7 @@ public class StudentImportsController(StudentImportsService studentImportsServic
             "Plantilla_Importacion_Estudiantes_TecNM.xlsx");
     }
 
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,social_service_officer,department_head")]
     [HttpPost]
     [Consumes("multipart/form-data")]
     public async Task<ActionResult<StudentImportResult>> Import(
@@ -33,7 +33,7 @@ public class StudentImportsController(StudentImportsService studentImportsServic
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
 
-    [Authorize(Roles = "admin,department_head")]
+    [Authorize(Roles = "admin,social_service_officer,department_head")]
     [HttpGet]
     public async Task<ActionResult<PagedResponse<StudentImportBatchDto>>> GetPaged(
         [FromQuery] int page = 1,
@@ -46,7 +46,7 @@ public class StudentImportsController(StudentImportsService studentImportsServic
         return Ok(result);
     }
 
-    [Authorize(Roles = "admin,department_head")]
+    [Authorize(Roles = "admin,social_service_officer,department_head")]
     [HttpGet("{id:long}")]
     public async Task<ActionResult<StudentImportResult>> GetById(
         long id,

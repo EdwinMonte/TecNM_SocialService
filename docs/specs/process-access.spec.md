@@ -2,13 +2,13 @@
 
 Contrato vigente; prevalece sobre permisos contradictorios de contratos anteriores.
 
-Padrón: admin, encargado SS, coordinador PP y jefe de Vinculación (`department_head`) pueden registrar alumnos manualmente y descargar la plantilla vacía. La importación masiva, edición global y administración de cuentas siguen exclusivas de admin. La exportación del listado usa exclusivamente los datos autorizados por `GET /api/students`, aplicando filtros y todas las páginas.
+Padrón: admin, encargado SS, coordinador PP y jefe de Vinculación (`department_head`) pueden registrar alumnos manualmente y descargar la plantilla vacía. La importación masiva por Excel (`POST /api/student-imports` y consulta de lotes) está habilitada para admin, encargado SS (`social_service_officer`) y jefe de Vinculación (`department_head`). La edición global y administración de cuentas siguen exclusivas de admin. La exportación del listado usa exclusivamente los datos autorizados por `GET /api/students`, aplicando filtros y todas las páginas.
 
 - SS consulta y aprueba únicamente expedientes y documentos SS; PP únicamente PP. Aplicar alcance a listados, detalles, PDF, historial, seguimiento y PNC antes de paginar.
 - Alumno consulta y carga exclusivamente sus propias evidencias. Personal, incluido admin, no carga formatos del alumno. Aceptación PP admite coordinador PP y admin; alumno solo consulta. Eliminación y reemplazo exigen el mismo permiso.
 - Requisitos generales de preingreso: revisión compartida con datos mínimos. Después del ingreso, vincular su consulta al proceso propio.
 - Padrón presenta IMSS dentro del detalle autorizado; la cola General/IMSS de preingreso permanece en la bandeja documental, sin duplicar tablas en el padrón. No amplía acceso a perfiles completos. Dictamen compartido mediante `/api/documents/{id}/review`; adaptador `/api/students/{id}/imss/validation` aplica el mismo alcance y devuelve documento, sin consultar detalle académico.
-- Ambos encargados gestionan empresas, supervisores y convenios. Admin conserva gestión; jefatura consulta. Altas, importaciones y cuentas globales del padrón son exclusivas de admin; la consulta de los encargados se limita a su proceso.
+- Ambos encargados gestionan empresas, supervisores y convenios. Admin conserva gestión; jefatura consulta. Edición global y administración de cuentas del padrón son exclusivas de admin; la consulta de los encargados se limita a su proceso.
 - Estadísticas agregadas SS/PP disponibles para ambos encargados, admin y jefatura; nunca exponen identificadores de alumnos o documentos. Seguimiento nominal permanece restringido.
 - Estadísticas abren en el proceso propio; ambos roles, admin y jefatura abren SS. Query explícita prevalece. Botones alternan un proceso a la vez, conservan periodo y descartan respuestas anteriores.
 - CompanyType obligatorio: public, micro, small, medium, large, social. Conservar dimensiones 911. Clasificar educativos individualmente; bloquear migración final si quedan pendientes.

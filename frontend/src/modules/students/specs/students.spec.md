@@ -25,7 +25,7 @@
 - **Contenedor:** `UiBasePage` (`fluid=true`, título: "Padrón de Estudiantes").
 - **Header Actions:**
   - Barra visible para personal: «Exportar alumnos (.csv)» obtiene todas las páginas con los filtros actuales y el alcance autorizado; los errores impiden descargar resultados parciales.
-  - Admin, encargado SS, coordinador PP y jefe de Vinculación (`department_head`): «Descargar plantilla Excel (.xlsx)» y «Agregar alumno manualmente», conectados a descarga y formulario/POST. Importar Excel y editar/cuentas siguen exclusivos de admin.
+  - Admin, encargado SS, coordinador PP y jefe de Vinculación (`department_head`): «Descargar plantilla Excel (.xlsx)» y «Agregar alumno manualmente», conectados a descarga y formulario/POST. Admin, encargado SS (`social_service_officer`) y jefe de Vinculación (`department_head`): «Importar Padrón Excel». Editar/cuentas siguen exclusivos de admin.
   - Acciones con ajuste de línea; en móvil ocupan el ancho disponible, permiten texto multilínea y mantienen al menos 44 px de altura.
   - Botón secundario con icono: "Importar Excel" -> navega a `/students/import`.
   - Botón principal: "Nuevo Estudiante" -> abre `UiDialog` de alta individual.

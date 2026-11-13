@@ -64,6 +64,7 @@ async function saveAssessment() {
  finally {savingAssessment.value = false}
 }
 const canCreate = computed(() => hasRole('admin', 'social_service_officer', 'internship_coordinator', 'department_head'))
+const canImport = computed(() => hasRole('admin', 'social_service_officer', 'department_head'))
 const isExporting = ref(false)
 const isDownloadingTemplate = ref(false)
 const canRegister = computed(() => hasRole('admin'))
@@ -556,7 +557,7 @@ watchValidation(isStudentModalOpen, () => { studentValidation.reset(); errorMess
         <UiButton
           variant="secondary"
           class="action-btn"
-          v-if="canRegister"
+          v-if="canImport"
           @click="
             importResult = null;
             importFile = null;

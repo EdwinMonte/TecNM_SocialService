@@ -24,8 +24,12 @@ internal static class AccountImportChecks
         var period=await db.AcademicPeriods.Select(p=>p.Id).FirstAsync();
         using var admin=factory.CreateClient(new(){BaseAddress=new Uri("https://localhost")});
         using var ss=factory.CreateClient(new(){BaseAddress=new Uri("https://localhost")});
+        using var head=factory.CreateClient(new(){BaseAddress=new Uri("https://localhost")});
+        using var pp=factory.CreateClient(new(){BaseAddress=new Uri("https://localhost")});
         await Expect(await admin.PostAsJsonAsync("/api/auth/login",new{username="admin",password="TecNM-Demo-2026!"}),HttpStatusCode.OK);
         await Expect(await ss.PostAsJsonAsync("/api/auth/login",new{username="encargado.ss",password="TecNM-Demo-2026!"}),HttpStatusCode.OK);
+        await Expect(await head.PostAsJsonAsync("/api/auth/login",new{username="jefa.vinculacion",password="TecNM-Demo-2026!"}),HttpStatusCode.OK);
+        await Expect(await pp.PostAsJsonAsync("/api/auth/login",new{username="coord.practicas",password="TecNM-Demo-2026!"}),HttpStatusCode.OK);
         var adminHash=await db.Users.Where(u=>u.Username=="admin").Select(u=>u.PasswordHash).SingleAsync();
         byte[] Excel(params (string control,string email,string name)[] rows)
         {
@@ -41,6 +45,11 @@ internal static class AccountImportChecks
             }
             return stream.ToArray();
         }
+        async Task<HttpResponseMessage> PostImport(HttpClient client,byte[] bytes)
+        {
+            using var form=new MultipartFormDataContent();form.Add(new ByteArrayContent(bytes),"file","students.xlsx");form.Add(new StringContent(period.ToString()),"periodId");
+            return await client.PostAsync("/api/student-imports",form);
+        }
         async Task<JsonElement> Import(byte[] bytes)
         {
             using var form=new MultipartFormDataContent();form.Add(new ByteArrayContent(bytes),"file","students.xlsx");form.Add(new StringContent(period.ToString()),"periodId");
@@ -48,6 +57,12 @@ internal static class AccountImportChecks
             return await response.Content.ReadFromJsonAsync<JsonElement>();
         }
         var adminEmail=await db.Users.Where(u=>u.Username=="admin").Select(u=>u.Email).SingleAsync();
+        await Expect(await PostImport(pp,Excel(("QAIMPPP","qa.imppp@monclova.tecnm.mx","PP"))),HttpStatusCode.Forbidden);
+        var ssImport=await PostImport(ss,Excel(("QAIMPSS","qa.impss@monclova.tecnm.mx","SS")));await Expect(ssImport,HttpStatusCode.Created);
+        var ssBatchId=(await ssImport.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
+        await Expect(await ss.GetAsync($"/api/student-imports/{ssBatchId}"),HttpStatusCode.OK);
+        await Expect(await PostImport(head,Excel(("QAIMPHD","qa.imphd@monclova.tecnm.mx","Jefa"))),HttpStatusCode.Created);
+        await Expect(await head.GetAsync("/api/student-imports"),HttpStatusCode.OK);
         var result=await Import(Excel(("QAIMP01","qa.import1@monclova.tecnm.mx","Uno"),("QAIMP02","qa.import2@monclova.tecnm.mx","Dos"),
             ("QAIMP03","","Sin correo"),("QAIMP04","invalid","Inválido"),("QAIMP01","duplicate@monclova.tecnm.mx","Repetido"),
             ("QAIMP05","qa.import1@monclova.tecnm.mx","Correo repetido"),("QAIMP06",adminEmail,"Colisión"),("QAIMP07","long@monclova.tecnm.mx",new string('x',101))));
