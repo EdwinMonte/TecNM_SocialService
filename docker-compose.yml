@@ -38,7 +38,7 @@ services:
       Jwt__Issuer: "TecNM.Api"
       Jwt__Audience: "TecNM.Frontend"
       Jwt__LifetimeHours: "8"
-      Cors__AllowedOrigin: ${Cors__AllowedOrigin:-http://localhost:3000}
+      Cors__AllowedOrigin: ${Cors__AllowedOrigin:-http://localhost:${FRONTEND_PORT:-3000}}
       Storage__RootPath: "/app/storage"
       Documents__FontsRootPath: "/app/document-fonts"
     volumes:
@@ -56,7 +56,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
 
 volumes:
   pgdata:
