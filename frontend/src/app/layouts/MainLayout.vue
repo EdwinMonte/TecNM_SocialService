@@ -72,19 +72,19 @@ const roleDisplay = computed(() => {
 
 <style scoped>
 .user-card-box {
-  padding: 10px 12px;
+  padding: 7px 10px;
   border-radius: 8px;
   background: var(--color-surface-white);
   border: 1px solid var(--color-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .user-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--color-text-primary);
-  margin-bottom: 4px;
-  line-height: 1.25;
+  margin-bottom: 2px;
+  line-height: 1.2;
 }
 
 .user-meta {
@@ -92,8 +92,8 @@ const roleDisplay = computed(() => {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: 4px;
+  font-size: 11px;
   color: var(--color-text-muted);
 }
 
@@ -106,12 +106,12 @@ const roleDisplay = computed(() => {
 .sidebar-footer-controls {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .theme-switch-wrap {
-  padding: 4px 10px;
-  border-radius: 8px;
+  padding: 2px 10px;
+  border-radius: 7px;
   background: var(--color-surface-white);
   border: 1px solid var(--color-border);
 }
@@ -121,8 +121,8 @@ const roleDisplay = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 32px;
-  font-size: 12px;
+  min-height: 28px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -130,7 +130,8 @@ const roleDisplay = computed(() => {
 .logout-action-btn :deep(button) {
   width: 100%;
   justify-content: center;
-  height: 34px;
-  font-size: 12px;
+  min-height: 30px;
+  height: 30px;
+  font-size: 11.5px;
 }
 </style>
