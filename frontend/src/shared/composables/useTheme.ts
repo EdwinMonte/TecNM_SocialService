@@ -74,13 +74,15 @@ watch(
       Math.max(y, window.innerHeight - y),
     )
 
+    document.documentElement.classList.add('theme-transitioning')
+
     const transition = docWithTransition.startViewTransition(() => {
       applyThemeAttribute(value)
     })
 
     transition.ready
       .then(() => {
-        document.documentElement.animate(
+        const anim = document.documentElement.animate(
           {
             clipPath: [
               `circle(0px at ${x}px ${y}px)`,
@@ -88,14 +90,19 @@ watch(
             ],
           },
           {
-            duration: 540,
+            duration: 460,
             easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
             pseudoElement: '::view-transition-new(root)',
           },
         )
+        anim.finished
+          .catch(() => {})
+          .finally(() => {
+            document.documentElement.classList.remove('theme-transitioning')
+          })
       })
       .catch(() => {
-        // Si la transición es interrumpida, el atributo data-theme ya quedó aplicado
+        document.documentElement.classList.remove('theme-transitioning')
       })
   },
   { immediate: true },

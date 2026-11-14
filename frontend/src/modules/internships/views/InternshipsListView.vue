@@ -56,21 +56,27 @@ const statusFilter = ref('')
 const isAutocompleteOpen = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-// KPIs animados compactos
+// KPIs animados compactos (sin parpadeo ni reinicio a 0)
 const animatedKpis = reactive({
   total: 0,
   requested: 0,
   active: 0,
   released: 0,
 })
+let kpiRafId = 0
 
 function updateAnimatedKpis(): void {
   const source = allItemsCache.value.length > 0 ? allItemsCache.value : items.value
   const targets = {
-    total: totalItems.value || source.length,
+    total: allItemsCache.value.length || totalItems.value || source.length,
     requested: source.filter((s) => s.status === 'requested').length,
     active: source.filter((s) => s.status === 'active' || s.status === 'approved' || s.status === 'accepted').length,
     released: source.filter((s) => s.status === 'released').length,
+  }
+
+  if (kpiRafId) {
+    cancelAnimationFrame(kpiRafId)
+    kpiRafId = 0
   }
 
   const prefersReduced =
@@ -78,23 +84,34 @@ function updateAnimatedKpis(): void {
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-  if (prefersReduced) {
+  if (
+    prefersReduced ||
+    (animatedKpis.total === targets.total &&
+      animatedKpis.requested === targets.requested &&
+      animatedKpis.active === targets.active &&
+      animatedKpis.released === targets.released)
+  ) {
     Object.assign(animatedKpis, targets)
     return
   }
 
-  const duration = 520
+  const startValues = { ...animatedKpis }
+  const duration = 360
   const start = performance.now()
   function tick(now: number): void {
     const progress = Math.min((now - start) / duration, 1)
-    const ease = 1 - Math.pow(1 - progress, 4)
-    animatedKpis.total = Math.round(targets.total * ease)
-    animatedKpis.requested = Math.round(targets.requested * ease)
-    animatedKpis.active = Math.round(targets.active * ease)
-    animatedKpis.released = Math.round(targets.released * ease)
-    if (progress < 1) requestAnimationFrame(tick)
+    const ease = 1 - Math.pow(1 - progress, 3)
+    animatedKpis.total = Math.round(startValues.total + (targets.total - startValues.total) * ease)
+    animatedKpis.requested = Math.round(startValues.requested + (targets.requested - startValues.requested) * ease)
+    animatedKpis.active = Math.round(startValues.active + (targets.active - startValues.active) * ease)
+    animatedKpis.released = Math.round(startValues.released + (targets.released - startValues.released) * ease)
+    if (progress < 1) {
+      kpiRafId = requestAnimationFrame(tick)
+    } else {
+      kpiRafId = 0
+    }
   }
-  requestAnimationFrame(tick)
+  kpiRafId = requestAnimationFrame(tick)
 }
 
 const autocompleteSuggestions = computed(() => {
@@ -452,9 +469,9 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 </script>
 
 <template>
-  <UiBasePage :fluid="true">
+  <UiBasePage :fluid="true" class="fullscreen-page">
     <!-- Encabezado Ejecutivo Compacto -->
-    <header class="exec-header reveal-step reveal-1">
+    <header class="exec-header">
       <div class="exec-header__left">
         <div class="exec-eyebrow">
           <span class="exec-badge">COORDINACIÓN DE PRÁCTICAS PROFESIONALES</span>
@@ -469,7 +486,7 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
       <div class="exec-kpis">
         <button
           type="button"
-          class="mini-kpi"
+          class="mini-kpi mini-kpi--total"
           :class="{ 'mini-kpi--active': statusFilter === '' }"
           @click="resetFilters"
         >
@@ -513,7 +530,7 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
       {{ successMessage }}
     </UiAlert>
 
-    <UiCard class="workspace-card reveal-step reveal-2">
+    <UiCard class="workspace-card">
       <div class="filters-bar">
         <div class="search-box">
           <label class="filter-label" for="pp-search-input">Buscar por Matrícula, Alumno, Carrera o Empresa</label>
@@ -594,25 +611,36 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
           <UiButton
             v-if="searchQuery || statusFilter"
             variant="secondary"
+            size="sm"
             class="reset-btn"
             title="Restablecer filtros"
             @click="resetFilters"
           >
             Limpiar
           </UiButton>
-          <UiButton variant="primary" class="filter-btn" :disabled="isLoading" @click="currentPage = 1; loadData()">
+          <UiButton variant="primary" size="sm" class="filter-btn" :disabled="isLoading" @click="currentPage = 1; loadData()">
             {{ isLoading ? 'Buscando...' : 'Buscar' }}
           </UiButton>
         </div>
       </div>
 
-      <UiTable label="Trámites de Prácticas Profesionales" :columns="columns" :rows="items">
+      <UiTable class="compact-table" label="Trámites de Prácticas Profesionales" :columns="columns" :rows="items">
+        <template #cell-studentControlNumber="{ row }">
+          <span class="control-code">{{ row.studentControlNumber }}</span>
+        </template>
+
+        <template #cell-studentFullName="{ row }">
+          <span class="student-name-cell">{{ row.studentFullName }}</span>
+        </template>
+
         <template #cell-companyName="{ row }">
-          <span>{{ row.companyName || 'En espera de Oficio CA' }}</span>
+          <span class="company-name-cell" :title="row.companyName || 'En espera de Oficio CA'">
+            {{ row.companyName || 'En espera de Oficio CA' }}
+          </span>
         </template>
 
         <template #cell-presentationLetterFolio="{ row }">
-          <strong>{{ row.presentationLetterFolio || 'Por emitir' }}</strong>
+          <strong class="control-code">{{ row.presentationLetterFolio || 'Por emitir' }}</strong>
         </template>
 
         <template #cell-documentProgressPercentage="{ row }">
@@ -978,170 +1006,186 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 </template>
 
 <style scoped>
-@keyframes slideUpFade {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.reveal-step {
-  animation: slideUpFade 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.reveal-1 {
-  animation-delay: 20ms;
-}
-
-.reveal-2 {
-  animation-delay: 60ms;
+.fullscreen-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .exec-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  gap: 1rem;
-  margin-bottom: 0.85rem;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.65rem;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .exec-header__left {
   flex: 1;
-  min-width: 280px;
+  min-width: 260px;
 }
 
 .exec-eyebrow {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.15rem;
   flex-wrap: wrap;
 }
 
 .exec-badge {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 0.06em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  background: rgba(197, 160, 89, 0.16);
-  color: #926d27;
+  padding: 0.14rem 0.5rem;
+  border-radius: 5px;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 
 .exec-period {
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 600;
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-secondary);
 }
 
 .exec-title {
-  font-size: 1.35rem;
+  font-size: 1.22rem;
   font-weight: 800;
   margin: 0;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary);
   letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .exec-subtitle {
-  color: var(--color-text-muted, #64748b);
-  margin: 0.2rem 0 0;
-  font-size: 0.84rem;
+  color: var(--color-text-secondary);
+  margin: 0.12rem 0 0;
+  font-size: 0.79rem;
+  line-height: 1.3;
 }
 
 .exec-kpis {
   display: flex;
-  gap: 0.55rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
 
+/* KPIs institucionales con fondo neutro y borde dorado al estar activo */
 .mini-kpi {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 0.45rem 0.85rem;
+  padding: 0.42rem 0.85rem;
   min-width: 112px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border, #e2e8f0);
-  background: var(--surface-card, #ffffff);
+  border-radius: 8px;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-surface-white);
+  color: var(--color-text-primary);
   cursor: pointer;
-  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .mini-kpi:hover {
+  background: var(--secondary-hover);
+  border-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-border-medium));
   transform: translateY(-2px);
-  border-color: #94a3b8;
-  box-shadow: 0 6px 14px -4px rgba(15, 23, 42, 0.08);
 }
 
-.mini-kpi--active {
-  border-color: #1b396a;
-  box-shadow: 0 0 0 2px rgba(27, 57, 106, 0.15);
+.mini-kpi:hover .mini-kpi__label,
+.mini-kpi--active .mini-kpi__label {
+  color: var(--color-text-primary);
 }
 
 .mini-kpi__label {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-secondary);
+  transition: color 180ms ease;
 }
 
 .mini-kpi__value {
-  font-size: 1.2rem;
+  font-size: 1.18rem;
   font-weight: 800;
-  color: var(--color-text-primary, #0f172a);
-  line-height: 1.2;
+  color: var(--color-text-primary);
+  line-height: 1.15;
 }
 
 .mini-kpi--gold .mini-kpi__value {
-  color: #b45309;
+  color: var(--color-warning);
 }
 
 .mini-kpi--navy .mini-kpi__value {
-  color: #1b396a;
+  color: var(--color-info);
 }
 
 .mini-kpi--emerald .mini-kpi__value {
-  color: #15803d;
+  color: var(--color-success);
+}
+
+.mini-kpi--active {
+  background: var(--kpi-active-bg);
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-accent) !important;
 }
 
 .compact-alert {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  flex-shrink: 0;
 }
 
+/* Tarjeta principal ajustada para pantalla completa sin scroll externo */
+.workspace-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px !important;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+}
+
+/* Barra de filtros con superficie institucional contrastada */
 .filters-bar {
   display: flex;
-  gap: 0.85rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
   align-items: flex-end;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-toolbar);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .search-box {
-  flex: 1.6;
+  flex: 1.7;
   min-width: 240px;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.22rem;
 }
 
 .select-box {
   flex: 1.1;
-  min-width: 210px;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.22rem;
 }
 
 .filter-label {
-  font-size: 0.78rem;
+  font-size: 0.73rem;
   font-weight: 600;
-  color: var(--color-text-secondary, #475569);
+  color: var(--color-text-secondary);
 }
 
 .input-wrapper,
@@ -1155,54 +1199,62 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 .search-icon {
   position: absolute;
   left: 0.75rem;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   pointer-events: none;
+  z-index: 2;
 }
 
-.modern-input {
+input.modern-input {
   width: 100%;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--field-border, #cbd5e1);
-  background: var(--field-bg, #ffffff);
-  padding: 0 2rem 0 2.25rem;
-  font-size: 0.84rem;
-  color: var(--field-text, #0f172a);
+  min-height: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--input-border) !important;
+  background: var(--input-bg) !important;
+  padding: 0 2rem 0 2.35rem !important;
+  font-size: 0.81rem;
+  color: var(--color-text-primary) !important;
   outline: none;
-  transition: all 0.15s ease;
   box-sizing: border-box;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
-.modern-input:focus {
-  border-color: #1b396a;
-  box-shadow: 0 0 0 3px rgba(27, 57, 106, 0.14);
+input.modern-input:hover,
+select.modern-select:hover {
+  border-color: var(--color-gray-400) !important;
 }
 
-.modern-select {
+input.modern-input:focus {
+  border-color: var(--color-border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-focus) 22%, transparent);
+}
+
+select.modern-select {
   width: 100%;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--field-border, #cbd5e1);
-  background: var(--field-bg, #ffffff);
-  padding: 0 2rem 0 0.75rem;
-  font-size: 0.84rem;
-  color: var(--field-text, #0f172a);
+  min-height: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--input-border) !important;
+  background: var(--input-bg) !important;
+  padding: 0 2rem 0 0.75rem !important;
+  font-size: 0.81rem;
+  color: var(--color-text-primary) !important;
   outline: none;
   appearance: none;
   cursor: pointer;
-  transition: all 0.15s ease;
   box-sizing: border-box;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
-.modern-select:focus {
-  border-color: #1b396a;
-  box-shadow: 0 0 0 3px rgba(27, 57, 106, 0.14);
+select.modern-select:focus {
+  border-color: var(--color-border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-focus) 22%, transparent);
 }
 
 .select-chevron {
   position: absolute;
   right: 0.75rem;
-  color: #64748b;
+  color: var(--color-text-secondary);
   pointer-events: none;
 }
 
@@ -1210,14 +1262,15 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  height: 36px;
+  height: 34px;
 }
 
 .reset-btn,
 .filter-btn {
-  height: 36px;
-  padding: 0 0.95rem;
-  font-size: 0.84rem;
+  min-height: 34px !important;
+  height: 34px !important;
+  padding: 0 0.9rem !important;
+  font-size: 0.8rem !important;
 }
 
 .autocomplete-container {
@@ -1227,12 +1280,12 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 
 .clear-search-btn {
   position: absolute;
-  right: 0.55rem;
+  right: 0.5rem;
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   cursor: pointer;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   padding: 0.2rem;
   display: inline-flex;
   align-items: center;
@@ -1241,8 +1294,8 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 }
 
 .clear-search-btn:hover {
-  color: #0f172a;
-  background: #f1f5f9;
+  color: var(--color-text-primary);
+  background: var(--secondary-hover);
 }
 
 .suggestions-dropdown {
@@ -1250,12 +1303,12 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--surface-card, #ffffff);
-  border: 1px solid var(--color-border, #cbd5e1);
+  background: var(--floating-bg);
+  border: 1px solid var(--floating-border);
   border-radius: 8px;
-  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--floating-shadow);
   z-index: 999;
-  max-height: 240px;
+  max-height: 220px;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -1264,10 +1317,10 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.55rem 0.85rem;
+  padding: 0.45rem 0.75rem;
   cursor: pointer;
-  border-bottom: 1px solid var(--color-border-subtle, #f1f5f9);
-  transition: background 0.12s ease;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background-color 140ms ease;
 }
 
 .suggestion-item:last-child {
@@ -1275,73 +1328,138 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 }
 
 .suggestion-item:hover {
-  background: rgba(27, 57, 106, 0.06);
+  background: var(--color-primary-subtle);
 }
 
 .suggestion-left {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.08rem;
 }
 
 .suggestion-control {
   font-family: monospace;
   font-weight: 700;
-  font-size: 0.8rem;
-  color: #1b396a;
+  font-size: 0.78rem;
+  color: var(--color-info-text);
 }
 
 .suggestion-name {
-  font-size: 0.82rem;
-  color: var(--color-text-primary, #1e293b);
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
 }
 
 .suggestion-right {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .suggestion-career {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 700;
   padding: 0.1rem 0.4rem;
-  background: #f1f5f9;
+  background: var(--color-primary-subtle);
   border-radius: 4px;
-  color: #475569;
+  color: var(--color-info-text);
 }
 
 .suggestion-progress {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--color-text-primary);
+}
+
+/* Tabla compacta institucional que se ajusta a la vista completa */
+.compact-table {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -16px !important;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0 !important;
+}
+
+.compact-table :deep(th) {
+  padding: 8px 12px;
+  font-size: 0.69rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: var(--surface-table-head);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-medium);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.compact-table :deep(td) {
+  padding: 7px 12px;
+  font-size: 0.81rem;
+  white-space: normal;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.compact-table :deep(tbody tr) {
+  transition: background-color 150ms ease;
+}
+
+.compact-table :deep(tbody tr:hover) {
+  background: var(--color-primary-subtle);
+}
+
+.control-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+
+.student-name-cell {
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+
+.company-name-cell {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 240px;
+  line-height: 1.3;
+  color: var(--color-text-secondary);
+  font-size: 0.79rem;
 }
 
 .progress-cell {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
+  min-width: 98px;
 }
 
 .progress-track {
   flex: 1;
-  height: 7px;
-  background: #e2e8f0;
+  height: 6px;
+  background: var(--color-gray-200);
   border-radius: 999px;
   overflow: hidden;
-  min-width: 56px;
+  min-width: 48px;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #15803d, #16a34a);
+  background: var(--color-success);
   border-radius: 999px;
-  transition: width 0.35s ease;
+  transition: width 300ms ease;
 }
 
 .progress-text {
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   font-weight: 700;
+  color: var(--color-text-primary);
 }
 
 .pagination-bar {
@@ -1349,20 +1467,21 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
-  padding-top: 0.75rem;
-  margin-top: 0.5rem;
-  border-top: 1px solid var(--color-border-subtle, #e2e8f0);
+  padding-top: 0.6rem;
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .pagination-info {
-  font-size: 0.82rem;
-  color: var(--color-text-muted, #64748b);
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
 }
 
 .pagination-controls {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 /* Modal Detalle y Observaciones */
@@ -1376,20 +1495,20 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 0.75rem;
-  background: var(--surface-subtle, #f8fafc);
+  background: var(--color-bg-light);
   padding: 0.8rem 0.95rem;
   border-radius: 8px;
-  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border: 1px solid var(--color-border);
 }
 
 .summary-item small {
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-secondary);
   display: block;
   font-size: 0.75rem;
 }
 
 .text-emerald {
-  color: #16a34a;
+  color: var(--color-success);
 }
 
 .detail-toolbar {
@@ -1413,8 +1532,9 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
   gap: 0.75rem;
   padding: 0.65rem 0.9rem;
   border-radius: 8px;
-  background: rgba(197, 160, 89, 0.12);
-  border: 1px solid rgba(197, 160, 89, 0.4);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-warning-text);
   font-size: 0.84rem;
   flex-wrap: wrap;
 }
@@ -1433,7 +1553,7 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 
 .empty-docs-note {
   padding: 0.65rem;
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
 }
 
@@ -1450,7 +1570,8 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
   justify-content: space-between;
   align-items: center;
   padding: 0.55rem 0.8rem;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-light);
   border-radius: 8px;
   gap: 0.5rem;
   flex-wrap: wrap;
@@ -1463,7 +1584,7 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 }
 
 .doc-rejection-note {
-  color: #b91c1c;
+  color: var(--color-danger-text);
   font-size: 0.78rem;
 }
 
@@ -1477,7 +1598,7 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
   flex-wrap: wrap;
   gap: 0.5rem;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
 }
 
 .observations-modal-body {
@@ -1488,8 +1609,8 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 
 .observations-student-pill {
   padding: 0.55rem 0.75rem;
-  background: var(--surface-subtle, #f8fafc);
-  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  background: var(--color-bg-light);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   font-size: 0.84rem;
   display: flex;
@@ -1500,6 +1621,6 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 .observations-helper {
   margin: 0;
   font-size: 0.85rem;
-  color: var(--color-text-secondary, #475569);
+  color: var(--color-text-secondary);
 }
 </style>
