@@ -17,7 +17,7 @@ export async function getInternships(params?: {
   companyId?: number
   isExpedientComplete?: boolean
   search?: string
-}): Promise<{ items: InternshipListItem[]; totalItems: number; page: number; pageSize: number }> {
+}): Promise<{ items: InternshipListItem[]; totalItems: number; totalPages: number; page: number; pageSize: number }> {
   return (await http.get('/internships', { params })).data
 }
 
@@ -58,6 +58,17 @@ export async function upsertInternshipEvaluation(
   payload: InternshipEvaluationRequest,
 ): Promise<InternshipEvaluation> {
   return (await http.put<InternshipEvaluation>(`/internships/${id}/evaluation`, payload)).data
+}
+
+export async function updateInternshipExpedient(
+  id: number,
+  payload: {
+    isExpedientComplete: boolean
+    originalTerminationLetterReceived: boolean
+    observations?: string | null
+  },
+): Promise<InternshipDetail> {
+  return (await http.patch<InternshipDetail>(`/internships/${id}/expedient`, payload)).data
 }
 
 export async function completeInternship(
