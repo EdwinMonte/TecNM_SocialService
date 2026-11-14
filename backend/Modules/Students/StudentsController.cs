@@ -43,10 +43,6 @@ public class StudentsController(StudentsService studentsService, StudentAccounts
         return Ok(options);
     }
 
-    [Authorize(Roles = "admin,social_service_officer")]
-    [HttpPut("{id:long}/social-service-follow-up/review")]
-    public async Task<ActionResult<SocialServiceFollowUpDto>> ReviewFollowUp(long id, FollowUpReviewRequest request, CancellationToken ct) => Ok(await studentsService.ReviewFollowUpAsync(id,request,ct));
-
     [Authorize(Roles = "student")]
     [HttpGet("me")]
     public async Task<ActionResult<StudentDetail>> GetMe(CancellationToken cancellationToken = default)

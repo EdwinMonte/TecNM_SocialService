@@ -165,6 +165,5 @@ export interface SocialServiceFollowUp {
  lastApprovedAt: string | null
  status: string
  progressAssessment: 'consistent' | 'low_progress' | null
- notes: string | null
- reviewedAt: string | null
+ autoReason?: string | null
 }

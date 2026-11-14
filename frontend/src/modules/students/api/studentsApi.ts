@@ -98,7 +98,3 @@ export async function uploadStudentsExcel(periodId: number, file: File): Promise
     })
   ).data
 }
-
-export async function reviewSocialServiceFollowUp(id: number, data: {periodId: number; assessment: string; notes?: string}): Promise<void> {
- await http.put('/students/'+id+'/social-service-follow-up/review', data)
-}

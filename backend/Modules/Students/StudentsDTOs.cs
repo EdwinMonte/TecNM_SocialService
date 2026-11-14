@@ -134,5 +134,4 @@ public sealed record StudentImportResult(
     IReadOnlyList<StudentImportRowError> RowErrors) { public int CreatedAccounts { get; init; } public int ExistingAccounts { get; init; } }
 
 
-public sealed record FollowUpReviewRequest(long PeriodId, string Assessment, string? Notes = null);
-public sealed record SocialServiceFollowUpDto(long? SocialServiceId, long? EligiblePeriodId, string? EligiblePeriodCode, long? TrackingPeriodId, string? TrackingPeriodCode, int? ElapsedSemesters, int ApprovedDocumentsCount, DateTimeOffset? LastApprovedAt, string Status, string? ProgressAssessment, string? Notes, DateTimeOffset? ReviewedAt);
+public sealed record SocialServiceFollowUpDto(long? SocialServiceId, long? EligiblePeriodId, string? EligiblePeriodCode, long? TrackingPeriodId, string? TrackingPeriodCode, int? ElapsedSemesters, int ApprovedDocumentsCount, DateTimeOffset? LastApprovedAt, string Status, string? ProgressAssessment, string? AutoReason = null);

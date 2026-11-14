@@ -37,8 +37,8 @@ try {
     assert.equal((await context.request.get(base+'/api/students/'+candidate.id)).status(),404)
    }
    const low=students.find(s=>s.socialServiceFollowUp.progressAssessment==='low_progress')
-   const saved=await context.request.put(base+'/api/students/'+low.id+'/social-service-follow-up/review',{data:{periodId:low.socialServiceFollowUp.trackingPeriodId,assessment:'low_progress',notes:low.socialServiceFollowUp.notes}})
-   assert.equal(saved.status(),200)
+   assert.ok(low)
+   assert.ok(low.socialServiceFollowUp.autoReason)
   }
   await page.goto(base+'/students')
   await page.getByRole('region',{name:'Listado del Padrón de Alumnos'}).waitFor()

@@ -56,8 +56,29 @@ public partial class StudentsService(
             .Include(s => s.Career)
             .AsNoTracking();
 
+        var nowUtc=clock.GetUtcNow();
+        var cutoffUtc=nowUtc.AddDays(-75);
+        var graceStartDate=DateOnly.FromDateTime(nowUtc.UtcDateTime).AddDays(-60);
+        DateTimeOffset? activePeriodStartUtc=null;
+        if(canFollowUp||followUpProgress!=null)
+        {
+            var activeStart=await dbContext.AcademicPeriods.AsNoTracking().Where(p=>p.IsActive).OrderByDescending(p=>p.StartDate).ThenByDescending(p=>p.Id).Select(p=>(DateOnly?)p.StartDate).FirstOrDefaultAsync(cancellationToken);
+            if(activeStart.HasValue) activePeriodStartUtc=new DateTimeOffset(activeStart.Value.ToDateTime(TimeOnly.MinValue),TimeSpan.Zero);
+        }
+        var hasActivePeriod=activePeriodStartUtc.HasValue;
+        var activeStartUtc=activePeriodStartUtc??DateTimeOffset.MinValue;
+
         if(followUpStatus!=null) query=query.Where(s=>dbContext.StudentSocialServiceFollowUps.Any(f=>f.StudentId==s.Id&&f.Status==followUpStatus));
-        if(followUpProgress!=null) query=query.Where(s=>dbContext.StudentSocialServiceFollowUps.Any(f=>f.StudentId==s.Id&&f.Status=="in_progress"&&(followUpProgress=="pending"?f.ProgressAssessment==null:f.ProgressAssessment==followUpProgress)));
+        if(followUpProgress!=null)
+        {
+            query=followUpProgress switch
+            {
+                "pending"=>query.Where(s=>dbContext.StudentSocialServiceFollowUps.Any(f=>f.StudentId==s.Id&&f.Status=="in_progress"&&(f.TrackingPeriodId==null||f.SocialServiceId==null))),
+                "consistent"=>query.Where(s=>dbContext.StudentSocialServiceFollowUps.Any(f=>f.StudentId==s.Id&&f.Status=="in_progress"&&f.TrackingPeriodId!=null&&f.SocialServiceId!=null&&dbContext.SocialServices.Any(ss=>ss.Id==f.SocialServiceId&&(ss.Status=="completed_pending_review"||ss.StartDate>=graceStartDate||(f.LastApprovedAt!=null&&((hasActivePeriod&&f.LastApprovedAt>=activeStartUtc)||f.LastApprovedAt>=cutoffUtc)))))),
+                "low_progress"=>query.Where(s=>dbContext.StudentSocialServiceFollowUps.Any(f=>f.StudentId==s.Id&&f.Status=="in_progress"&&f.TrackingPeriodId!=null&&f.SocialServiceId!=null&&dbContext.SocialServices.Any(ss=>ss.Id==f.SocialServiceId&&!(ss.Status=="completed_pending_review"||ss.StartDate>=graceStartDate||(f.LastApprovedAt!=null&&((hasActivePeriod&&f.LastApprovedAt>=activeStartUtc)||f.LastApprovedAt>=cutoffUtc)))))),
+                _=>query.Where(_=>false)
+            };
+        }
         // Protected candidate values must not be inferred through filters.
         if(shift!=null||isEnrolled!=null||hasValidImss!=null||hasDisability!=null) query=query.Where(s=>fullAccessIds.Contains(s.Id));
         if (!string.IsNullOrWhiteSpace(search))
@@ -125,8 +146,12 @@ public partial class StudentsService(
         var ids=items.Select(s=>s.Id).ToList();
         var allowed=await currentUser.VisibleStudents(dbContext).Where(s=>ids.Contains(s.Id)).Select(s=>s.Id).ToListAsync(cancellationToken);
         var followUps=canFollowUp ? await dbContext.StudentSocialServiceFollowUps.Where(f=>ids.Contains(f.StudentId)).ToDictionaryAsync(f=>f.StudentId,cancellationToken) : new Dictionary<long,StudentSocialServiceFollowUp>();
+        var serviceIds=followUps.Values.Where(f=>f.Status=="in_progress"&&f.TrackingPeriodId!=null&&f.SocialServiceId.HasValue).Select(f=>f.SocialServiceId!.Value).Distinct().ToList();
+        var serviceSnapshots=serviceIds.Count>0
+            ? await dbContext.SocialServices.AsNoTracking().Where(ss=>serviceIds.Contains(ss.Id)).ToDictionaryAsync(ss=>ss.Id,ss=>new SocialServiceFollowUpSnapshot(ss.Status,ss.StartDate),cancellationToken)
+            : new Dictionary<long,SocialServiceFollowUpSnapshot>();
         return new PagedResponse<StudentListItem>(
-            items.Select(s=> { var item=ToListItem(s); if(!allowed.Contains(s.Id)) item=item with {CurrentSemester=null,CurriculumProgressPercentage=null,Shift=null,IsEnrolled=null,HasValidImss=null,HasUserAccount=null,AccountUsername=null,AccountStatus=null,CanReadProfile=false}; return item with {SocialServiceFollowUp=followUps.TryGetValue(s.Id,out var f)?FollowUpDto(f):null}; }).ToList(),
+            items.Select(s=> { var item=ToListItem(s); if(!allowed.Contains(s.Id)) item=item with {CurrentSemester=null,CurriculumProgressPercentage=null,Shift=null,IsEnrolled=null,HasValidImss=null,HasUserAccount=null,AccountUsername=null,AccountStatus=null,CanReadProfile=false}; return item with {SocialServiceFollowUp=followUps.TryGetValue(s.Id,out var f)?FollowUpDto(f,f.SocialServiceId.HasValue&&serviceSnapshots.TryGetValue(f.SocialServiceId.Value,out var snapshot)?snapshot:null,activePeriodStartUtc,graceStartDate,cutoffUtc):null}; }).ToList(),
             currentPage,
             validPageSize,
             totalItems,

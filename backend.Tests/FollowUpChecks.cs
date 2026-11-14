@@ -48,20 +48,24 @@ internal static class FollowUpChecks
         doc.Status="rejected";await db.SaveChangesAsync();Check((await Current()).Status=="non_compliant","rejected PDF does not exempt notices");
         doc.Status="approved";doc.Origin="system";await db.SaveChangesAsync();Check((await Current()).Status=="non_compliant","automatic document is not student progress");
         doc.Origin="uploaded";await db.SaveChangesAsync();Check((await Current()).Status=="in_progress","first approved PDF exempts before activation");
-        var request=new {periodId=periods[4].Id,assessment="low_progress",notes="Requiere seguimiento"};
-        var responses=await Task.WhenAll(Enumerable.Range(0,2).Select(_=>admin.PutAsJsonAsync($"/api/students/{student.Id}/social-service-follow-up/review",request)));
-        Check(responses.All(x=>x.IsSuccessStatusCode||x.StatusCode==HttpStatusCode.Conflict)&&responses.Any(x=>x.IsSuccessStatusCode),"concurrent reviews have controlled outcome");
-        (await admin.PutAsJsonAsync($"/api/students/{student.Id}/social-service-follow-up/review",request)).EnsureSuccessStatusCode();
-        Check(await db.SocialServiceFollowUpReviews.CountAsync(x=>x.SocialServiceId==service.Id)==1,"idempotent unique review");
-        Check((await Current()).Status=="in_progress"&&(await Current()).ProgressAssessment=="low_progress","low progress never resumes warnings");
-        var filtered=await List(admin,"&followUpStatus=in_progress&followUpProgress=low_progress&pageSize=1");
-        Check(filtered.GetProperty("totalItems").GetInt32()==1,"filter before pagination");
-        foreach(var p in periods)p.IsActive=false;periods[3].IsActive=true;await db.SaveChangesAsync();Check((await Current()).ProgressAssessment==null,"new period needs assessment");
+        var autoLow=(await List(admin)).GetProperty("items")[0].GetProperty("socialServiceFollowUp");
+        Check(autoLow.GetProperty("progressAssessment").GetString()=="low_progress"&&!string.IsNullOrEmpty(autoLow.GetProperty("autoReason").GetString()),"auto low progress without recent evidence");
+        Check((await List(admin,"&followUpStatus=in_progress&followUpProgress=low_progress&pageSize=1")).GetProperty("totalItems").GetInt32()==1,"auto low progress filter");
+        doc.ReviewedAt=DateTimeOffset.UtcNow;await db.SaveChangesAsync();
+        var autoConsistent=(await List(admin)).GetProperty("items")[0].GetProperty("socialServiceFollowUp");
+        Check(autoConsistent.GetProperty("progressAssessment").GetString()=="consistent"&&!string.IsNullOrEmpty(autoConsistent.GetProperty("autoReason").GetString()),"auto consistent with recent approved evidence");
+        Check((await List(admin,"&followUpStatus=in_progress&followUpProgress=consistent&pageSize=1")).GetProperty("totalItems").GetInt32()==1,"auto consistent filter");
+        Check((await List(admin,"&followUpStatus=in_progress&followUpProgress=low_progress&pageSize=1")).GetProperty("totalItems").GetInt32()==0,"consistent excludes low progress filter");
+        var manualPut=await admin.PutAsJsonAsync($"/api/students/{student.Id}/social-service-follow-up/review",new {periodId=periods[4].Id,assessment="low_progress",notes="No permitido"});
+        Check(manualPut.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,"manual review endpoint removed");
+        foreach(var p in periods)p.IsActive=false;periods[3].IsActive=true;await db.SaveChangesAsync();
+        var newPeriodDto=(await List(admin)).GetProperty("items")[0].GetProperty("socialServiceFollowUp");
+        Check(newPeriodDto.GetProperty("progressAssessment").GetString()=="consistent","new period preserves auto assessment");
         service.Status="cancelled";await db.SaveChangesAsync();Check((await Current()).Status=="non_compliant","cancelled evidence ignored");
         service.Status="released";await db.SaveChangesAsync();Check((await Current()).Status=="released","released takes priority");
         service.Status="non_compliant";await db.SaveChangesAsync();Check((await Current()).Status=="non_compliant","formal PNC preserved");
         foreach(var p in periods)p.IsActive=false;foreach(var p in previous)p.IsActive=true;await db.SaveChangesAsync();
-        Console.WriteLine("Follow-up semester progression, evidence, redaction, roles, review concurrency and filters passed.");
+        Console.WriteLine("Follow-up semester progression, evidence, redaction, roles, automatic assessment and filters passed.");
     }
 }
 

@@ -23,7 +23,6 @@ import {
 import { getCareerOptions, getPeriodOptions } from '../../catalogs/api/careersApi'
 import type { OptionItem } from '../../catalogs/types/careers'
 import {
-  reviewSocialServiceFollowUp,
   createStudent,
   createStudentAccount,
   downloadImportTemplate,
@@ -36,6 +35,7 @@ import {
 } from '../api/studentsApi'
 import type {
   CreateStudentAccountResponse,
+  SocialServiceFollowUp,
   StudentDetail,
   StudentImportResult,
   StudentListItem,
@@ -44,25 +44,9 @@ import type {
 } from '../types/students'
 
 const canFollowUp = computed(() => hasRole('admin', 'social_service_officer', 'department_head'))
-const canAssess = computed(() => hasRole('admin', 'social_service_officer'))
 const followUpStatus = ref(''), followUpProgress = ref('')
 const followUpLabels: Record<string, string> = { first_notice: 'Primer aviso', second_notice: 'Segundo aviso', third_notice: 'Tercer aviso', non_compliant: 'Producto no conforme', in_progress: 'En proceso de realización del servicio', released: 'Liberado', pending_setup: 'Periodo de aptitud pendiente' }
 const assessmentLabels: Record<string, string> = {consistent: 'Constante', low_progress: 'Con poco avance', pending: 'Pendiente de valoración'}
-const assessmentCandidate = ref<StudentListItem | null>(null)
-const assessmentOpen = ref(false), savingAssessment = ref(false)
-const assessment = ref('consistent'), assessmentNotes = ref(''), assessmentError = ref('')
-function openAssessment(row: StudentListItem) {
- assessmentCandidate.value = row; assessment.value = row.socialServiceFollowUp?.progressAssessment || 'consistent'; assessmentNotes.value = row.socialServiceFollowUp?.notes || ''; assessmentError.value = ''; assessmentOpen.value = true
-}
-async function saveAssessment() {
- if (savingAssessment.value || !assessmentValidation.validate()) return
- const row = assessmentCandidate.value, periodId = row?.socialServiceFollowUp?.trackingPeriodId
- if (!row || !periodId || savingAssessment.value) return
- savingAssessment.value = true; assessmentError.value = ''
- try { await reviewSocialServiceFollowUp(row.id, {periodId, assessment: assessment.value, notes: assessmentNotes.value}); assessmentOpen.value = false; await loadData() }
- catch (error) { assessmentValidation.apply(error, 'No se pudo guardar la valoración.'); assessmentError.value = problemMessage(error, 'No se pudo guardar la valoración.') }
- finally {savingAssessment.value = false}
-}
 const canCreate = computed(() => hasRole('admin', 'social_service_officer', 'internship_coordinator', 'department_head'))
 const canImport = computed(() => hasRole('admin', 'social_service_officer', 'department_head'))
 const isExporting = ref(false)
@@ -168,11 +152,25 @@ async function openDetail(row: StudentListItem) {
 function displayDate(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString('es-MX', { timeZone: 'America/Mexico_City' }) : 'Sin registro'
 }
+function isFollowUpInProgress(followUp: SocialServiceFollowUp): boolean {
+  return followUp.status === 'in_progress'
+}
+function followUpPrimaryStatus(followUp: SocialServiceFollowUp): string {
+  if (followUp.status !== 'in_progress') return followUp.status
+  if (followUp.elapsedSemesters == null) return 'pending_setup'
+  if (followUp.elapsedSemesters <= 0) return 'first_notice'
+  if (followUp.elapsedSemesters === 1) return 'second_notice'
+  if (followUp.elapsedSemesters === 2) return 'third_notice'
+  return 'non_compliant'
+}
 function followUpTone(row: StudentListItem): 'success' | 'warning' | 'danger' | 'info' {
-  const status = row.socialServiceFollowUp?.status
+  const followUp = row.socialServiceFollowUp
+  if (!followUp) return 'info'
+  const status = followUpPrimaryStatus(followUp)
   if (status === 'non_compliant' || status === 'third_notice') return 'danger'
-  if (status === 'released' || row.socialServiceFollowUp?.progressAssessment === 'consistent') return 'success'
-  return status === 'second_notice' || row.socialServiceFollowUp?.progressAssessment === 'low_progress' ? 'warning' : 'info'
+  if (status === 'released') return 'success'
+  if (status === 'second_notice' || followUp.progressAssessment === 'low_progress') return 'warning'
+  return followUp.progressAssessment === 'consistent' ? 'success' : 'info'
 }
 const detailSections = computed(() => {
   const d = selectedDetail.value
@@ -522,9 +520,7 @@ onMounted(async () => {
   await Promise.all([loadCatalogs(), loadData()])
 })
 const studentTotalCredits = computed(() => careerOptions.value.find(c => c.id === studentForm.careerId)?.meta?.totalCredits)
-const assessmentValidation = useFormValidation(() => validateFields({ assessment: assessment.value, notes: assessmentNotes.value }, {assessment:{required:true,choices:['consistent','low_progress']},notes:{max:1000}}))
 const importValidation = useFormValidation(() => validateFields({periodId:importPeriodId.value,file:importFile.value},{periodId:{required:true,min:1},file:{required:true}}))
-watchValidation(assessmentOpen, () => assessmentValidation.reset())
 watchValidation(isImportModalOpen, () => importValidation.reset())
 const studentValidation = useFormValidation(studentRules)
 watchValidation(isStudentModalOpen, () => { studentValidation.reset(); errorMessage.value = '' })
@@ -582,7 +578,7 @@ watchValidation(isStudentModalOpen, () => { studentValidation.reset(); errorMess
     </div>
 
     <!-- Feedback Alerts -->
-    <UiAlert v-if="errorMessage && !(studentValidation.hasErrors.value || assessmentValidation.hasErrors.value || importValidation.hasErrors.value)" tone="danger" class="mb-4">
+    <UiAlert v-if="errorMessage && !(studentValidation.hasErrors.value || importValidation.hasErrors.value)" tone="danger" class="mb-4">
       {{ errorMessage }}
     </UiAlert>
     <UiAlert v-if="successMessage" tone="success" class="mb-4">
@@ -616,7 +612,7 @@ watchValidation(isStudentModalOpen, () => { studentValidation.reset(); errorMess
           <template #cell-fullName="{ row }"><span class="roster-name">{{ row.fullName }}</span></template>
           <template #cell-controlNumber="{ row }"><span class="roster-control">{{ row.controlNumber }}</span></template>
           <template #cell-careerCode="{ row }"><div class="roster-career"><span>{{ row.careerCode }}</span><small v-if="row.currentSemester != null">Semestre {{ row.currentSemester }}</small></div></template>
-          <template #cell-socialServiceFollowUp="{ row }"><div v-if="row.socialServiceFollowUp" class="roster-status"><UiBadge :tone="followUpTone(row)">{{ followUpLabels[row.socialServiceFollowUp.status] }}</UiBadge><small v-if="row.socialServiceFollowUp.status === 'in_progress'">{{ assessmentLabels[row.socialServiceFollowUp.progressAssessment || 'pending'] }}</small></div></template>
+          <template #cell-socialServiceFollowUp="{ row }"><div v-if="row.socialServiceFollowUp" class="roster-status"><UiBadge :tone="followUpTone(row)">{{ followUpLabels[followUpPrimaryStatus(row.socialServiceFollowUp)] }}</UiBadge><small v-if="isFollowUpInProgress(row.socialServiceFollowUp)" class="roster-status-process">En proceso de realización del servicio</small><small v-if="isFollowUpInProgress(row.socialServiceFollowUp)">{{ assessmentLabels[row.socialServiceFollowUp.progressAssessment || 'pending'] }}</small></div></template>
           <template #cell-actions="{ row }"><UiButton variant="secondary" @click="openDetail(row)" :aria-label="'Ver detalle de ' + row.fullName">Ver detalle</UiButton></template>
         </UiTable>
       </div>
@@ -637,18 +633,19 @@ watchValidation(isStudentModalOpen, () => { studentValidation.reset(); errorMess
         <UiAlert v-if="detailError" tone="danger"><p>{{ detailError }}</p><UiButton variant="secondary" @click="openDetail(detailRow)">Reintentar</UiButton></UiAlert>
         <section v-if="detailRow.socialServiceFollowUp" class="detail-section">
           <h3>Seguimiento de Servicio Social</h3>
-          <UiBadge :tone="followUpTone(detailRow)">{{ followUpLabels[detailRow.socialServiceFollowUp.status] }}</UiBadge>
+          <div class="detail-status-header">
+            <UiBadge :tone="followUpTone(detailRow)">{{ followUpLabels[followUpPrimaryStatus(detailRow.socialServiceFollowUp)] }}</UiBadge>
+            <span v-if="isFollowUpInProgress(detailRow.socialServiceFollowUp)" class="detail-status-secondary">En proceso de realización del servicio</span>
+          </div>
           <dl class="detail-fields">
-            <div v-if="detailRow.socialServiceFollowUp.status === 'in_progress'"><dt>Constancia documental</dt><dd>{{ assessmentLabels[detailRow.socialServiceFollowUp.progressAssessment || 'pending'] }}</dd></div>
+            <div v-if="isFollowUpInProgress(detailRow.socialServiceFollowUp)"><dt>Constancia documental</dt><dd>{{ assessmentLabels[detailRow.socialServiceFollowUp.progressAssessment || 'pending'] }}</dd></div>
+            <div v-if="isFollowUpInProgress(detailRow.socialServiceFollowUp) && detailRow.socialServiceFollowUp.autoReason"><dt>Criterio</dt><dd>{{ detailRow.socialServiceFollowUp.autoReason }}</dd></div>
             <div><dt>Primer periodo de aptitud</dt><dd>{{ detailRow.socialServiceFollowUp.eligiblePeriodCode || 'Pendiente de confirmar' }}</dd></div>
             <div><dt>Periodo de seguimiento</dt><dd>{{ detailRow.socialServiceFollowUp.trackingPeriodCode || 'Sin periodo activo' }}</dd></div>
             <div><dt>Semestres desde la aptitud</dt><dd>{{ detailRow.socialServiceFollowUp.elapsedSemesters ?? 'Pendiente' }}</dd></div>
             <div><dt>Evidencias aprobadas</dt><dd>{{ detailRow.socialServiceFollowUp.approvedDocumentsCount }}</dd></div>
             <div><dt>Última evidencia aprobada</dt><dd>{{ displayDate(detailRow.socialServiceFollowUp.lastApprovedAt) }}</dd></div>
-            <div><dt>Observación de seguimiento</dt><dd>{{ detailRow.socialServiceFollowUp.notes || 'Sin observaciones' }}</dd></div>
-            <div><dt>Última valoración</dt><dd>{{ displayDate(detailRow.socialServiceFollowUp.reviewedAt) }}</dd></div>
           </dl>
-          <UiButton v-if="canAssess && detailRow.socialServiceFollowUp.status === 'in_progress' && detailRow.socialServiceFollowUp.trackingPeriodId" variant="secondary" @click="detailOpen = false; openAssessment(detailRow)">Valorar seguimiento</UiButton>
         </section>
         <UiAlert v-if="detailRow.canReadProfile === false" tone="info">Este candidato dispone de un resumen de seguimiento. Los datos personales y académicos completos requieren acceso a su expediente.</UiAlert>
         <section v-for="section in detailSections" :key="section.title" class="detail-section">
@@ -665,20 +662,12 @@ watchValidation(isStudentModalOpen, () => { studentValidation.reset(); errorMess
       <template #footer><UiButton variant="secondary" @click="detailOpen = false">Cerrar detalle</UiButton></template>
     </UiDialog>
 
-    <UiDialog v-model="assessmentOpen" title="Valorar seguimiento SS">
-      <p>{{ assessmentCandidate?.fullName }}</p>
-      <UiFormErrors :validation="assessmentValidation" />
-      <UiField v-bind="assessmentValidation.field('assessment', 'Constancia')" label="Constancia" v-slot="{ controlAttrs }"><select v-bind="controlAttrs" v-model="assessment" :disabled="savingAssessment"><option value="consistent">Constante</option><option value="low_progress">Con poco avance</option></select></UiField>
-      <UiField v-bind="assessmentValidation.field('notes', 'Observación')" label="Observación" v-slot="{ controlAttrs }"><textarea v-bind="controlAttrs" v-model="assessmentNotes" maxlength="1000" :disabled="savingAssessment" /></UiField>
-      <p v-if="assessmentError && !assessmentValidation.hasErrors.value" role="alert">{{ assessmentError }}</p>
-      <UiButton :disabled="savingAssessment" @click="saveAssessment">{{ savingAssessment ? 'Guardando…' : 'Guardar valoración' }}</UiButton>
-    </UiDialog>
     <UiDialog
       v-model="isStudentModalOpen"
       size="lg"
       :title="isEditing ? `Expediente · ${studentForm.controlNumber}` : 'Agregar Alumno (Caso Específico)'"
     >
-      <UiAlert v-if="errorMessage && !(studentValidation.hasErrors.value || assessmentValidation.hasErrors.value || importValidation.hasErrors.value)" tone="danger">{{ errorMessage }}</UiAlert>
+      <UiAlert v-if="errorMessage && !(studentValidation.hasErrors.value || importValidation.hasErrors.value)" tone="danger">{{ errorMessage }}</UiAlert>
       <fieldset class="modal-form-grid" :disabled="isEditing ? !canRegister : !canCreate" style="border:0;padding:0;margin:0">
         <UiFormErrors :validation="studentValidation" />
         <UiField label="Primer periodo de aptitud SS" hint="Primer semestre como candidato" v-bind="studentValidation.field('socialServiceEligiblePeriodId', 'Primer periodo de aptitud SS')" v-slot="{ controlAttrs }"><select v-bind="controlAttrs" v-model="studentForm.socialServiceEligiblePeriodId" class="modern-select"><option :value="undefined">Activo al crear / conservar al editar</option><option v-for="p in periodOptions" :key="p.id" :value="p.id">{{ p.label }}</option></select></UiField>
@@ -1440,7 +1429,10 @@ watchValidation(isStudentModalOpen, () => { studentValidation.reset(); errorMess
 .roster-control { font-variant-numeric: tabular-nums; }
 .roster-career, .roster-status { display: flex; flex-direction: column; align-items: start; gap: 6px; }
 .roster-career small, .roster-status small { color: var(--color-text-secondary); font-size: 13px; }
+.roster-status .roster-status-process { color: var(--color-text-primary); font-weight: 500; }
 .roster-status :deep(.badge) { max-width: 100%; white-space: normal; line-height: 1.4; }
+.detail-status-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.detail-status-secondary { font-size: 14px; font-weight: 500; color: var(--color-text-secondary); }
 .roster-feedback { margin: 0; padding: 24px; color: var(--color-text-secondary); }
 .roster-pagination { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); font-size: 14px; }
 .roster-pagination > div, .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }

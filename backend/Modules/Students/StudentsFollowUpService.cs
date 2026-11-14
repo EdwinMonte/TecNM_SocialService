@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TecNM.Api.Core.Entities;
 using TecNM.Api.Core.Exceptions;
-using TecNM.Api.Core.Security;
 namespace TecNM.Api.Modules.Students;
 
 public partial class StudentsService
@@ -14,20 +13,49 @@ public partial class StudentsService
         if (active != null && period.StartDate > active.StartDate) throw new ValidationException(new Dictionary<string, string[]> { { "socialServiceEligiblePeriodId", ["El periodo no puede ser posterior al activo."] } });
         return period.Id;
     }
-    private static SocialServiceFollowUpDto FollowUpDto(StudentSocialServiceFollowUp f) => new(f.SocialServiceId, f.EligiblePeriodId, f.EligiblePeriodCode, f.TrackingPeriodId, f.TrackingPeriodCode, f.ElapsedSemesters, f.ApprovedDocumentsCount, f.LastApprovedAt, f.Status, f.Status == "in_progress" ? f.ProgressAssessment : null, f.Status == "in_progress" ? f.Notes : null, f.Status == "in_progress" ? f.ReviewedAt : null);
-    public async Task<SocialServiceFollowUpDto> ReviewFollowUpAsync(long id, FollowUpReviewRequest request, CancellationToken ct)
+    private sealed record SocialServiceFollowUpSnapshot(string Status, DateOnly StartDate);
+
+    private static (string? Assessment, string? AutoReason) ResolveFollowUpAssessment(
+        StudentSocialServiceFollowUp f,
+        SocialServiceFollowUpSnapshot? service,
+        DateTimeOffset? activePeriodStartUtc,
+        DateOnly graceStartDate,
+        DateTimeOffset cutoffUtc)
     {
-        currentUser.RequireProcess("social_service");
-        if (!currentUser.IsInRole("admin") && !currentUser.IsInRole("social_service_officer")) throw new AppException(403, "auth.forbidden", "No puedes valorar seguimiento.");
-        if (request.Assessment is not ("consistent" or "low_progress") || request.Notes?.Length > 1000) throw new ValidationException(new Dictionary<string, string[]> { { "assessment", ["Valoración inválida u observación mayor a 1000 caracteres."] } });
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
-        var f = await dbContext.StudentSocialServiceFollowUps.SingleOrDefaultAsync(f => f.StudentId == id, ct) ?? throw new NotFoundException("students.not_found", "Alumno no encontrado.");
-        if (f.TrackingPeriodId != request.PeriodId || f.Status != "in_progress" || f.SocialServiceId == null) throw new ConflictException("students.follow_up_not_reviewable", "Se requiere el periodo activo y evidencia SS aprobada.");
-        var review = await dbContext.SocialServiceFollowUpReviews.SingleOrDefaultAsync(r => r.SocialServiceId == f.SocialServiceId && r.PeriodId == request.PeriodId, ct);
-        if (review == null) { review = new SocialServiceFollowUpReview { SocialServiceId = f.SocialServiceId.Value, PeriodId = request.PeriodId }; dbContext.SocialServiceFollowUpReviews.Add(review); }
-        review.Assessment = request.Assessment; review.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-        try { await dbContext.SaveChangesAsync(ct); await transaction.CommitAsync(ct); }
-        catch (Exception ex) when (ex is DbUpdateException || ex is Npgsql.PostgresException { SqlState: "40001" }) { throw new ConflictException("students.follow_up_conflict", "La valoración cambió. Actualiza e inténtalo de nuevo."); }
-        return FollowUpDto(await dbContext.StudentSocialServiceFollowUps.AsNoTracking().SingleAsync(x => x.StudentId == id, ct));
+        if (f.Status != "in_progress") return (null, null);
+        if (f.TrackingPeriodId == null || f.SocialServiceId == null || service == null) return (null, null);
+        if (service.Status == "completed_pending_review") return ("consistent", "Trámite concluido pendiente de revisión");
+        if (service.StartDate >= graceStartDate) return ("consistent", "Inicio reciente del servicio social (primeros 60 días)");
+        if (f.LastApprovedAt.HasValue && ((activePeriodStartUtc.HasValue && f.LastApprovedAt.Value >= activePeriodStartUtc.Value) || f.LastApprovedAt.Value >= cutoffUtc))
+            return ("consistent", "Con documento aprobado recientemente");
+        return ("low_progress", "Sin documentos aprobados en el periodo activo o últimos 75 días");
+    }
+
+    private static SocialServiceFollowUpDto FollowUpDto(
+        StudentSocialServiceFollowUp f,
+        SocialServiceFollowUpSnapshot? service = null,
+        DateTimeOffset? activePeriodStartUtc = null,
+        DateOnly? graceStartDate = null,
+        DateTimeOffset? cutoffUtc = null)
+    {
+        var nowUtc = DateTimeOffset.UtcNow;
+        var (assessment, autoReason) = ResolveFollowUpAssessment(
+            f,
+            service,
+            activePeriodStartUtc,
+            graceStartDate ?? DateOnly.FromDateTime(nowUtc.UtcDateTime).AddDays(-60),
+            cutoffUtc ?? nowUtc.AddDays(-75));
+        return new(
+            f.SocialServiceId,
+            f.EligiblePeriodId,
+            f.EligiblePeriodCode,
+            f.TrackingPeriodId,
+            f.TrackingPeriodCode,
+            f.ElapsedSemesters,
+            f.ApprovedDocumentsCount,
+            f.LastApprovedAt,
+            f.Status,
+            assessment,
+            autoReason);
     }
 }
