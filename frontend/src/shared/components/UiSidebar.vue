@@ -52,14 +52,16 @@ withDefaults(
   position: sticky;
   top: 0;
   align-self: start;
-  height: 100dvh;
+  height: 100%;
+  max-height: 100dvh;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+  scrollbar-width: thin;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 14px;
+  gap: 10px;
+  padding: 12px 12px;
   background: var(--color-bg-light);
   border-right: 1px solid var(--color-border);
 }
@@ -70,17 +72,22 @@ withDefaults(
 }
 
 .ui-sidebar :deep(.brand) {
-  padding: 8px 10px 14px;
-  margin-bottom: 10px;
+  padding: 4px 8px 10px;
+  margin-bottom: 6px;
   border-bottom: 1px solid var(--color-border);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
+.ui-sidebar :deep(.brand-logo) {
+  width: 34px;
+  height: 46px;
+}
+
 .ui-sidebar :deep(.brand small) {
   color: var(--color-accent);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -91,11 +98,11 @@ withDefaults(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 10px 8px;
+  padding: 2px 8px 6px;
 }
 
 .sidebar-section-label {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--color-text-muted);
@@ -103,28 +110,34 @@ withDefaults(
 
 .sidebar-year-pill {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   color: var(--color-accent);
   background: var(--color-accent-light);
   border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 4px;
 }
 
 .sidebar-bottom {
   display: grid;
-  gap: 10px;
-  padding-top: 10px;
+  gap: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--color-border);
 }
 
 .normateca-card {
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
   background: var(--color-surface-white);
   border: 1px solid var(--color-border);
   box-shadow: var(--card-shadow);
+}
+
+@media (max-height: 820px) {
+  .normateca-card {
+    display: none;
+  }
 }
 
 .normateca-card__head {

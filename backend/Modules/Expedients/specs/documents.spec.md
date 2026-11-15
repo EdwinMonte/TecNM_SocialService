@@ -25,3 +25,5 @@ Aplicar la matriz de prellenado del contrato documental v2: reportes con evaluad
 CT descarga el Anexo XIX prellenado mediante pdfKey termination_letter. Reutiliza alumno, programa, actividades, fechas, horas registradas, ciudad y supervisor según el contrato documental v2. Conserva destinatarios impresos, firmas/sello manuales vacíos y carga/revisión del PDF firmado; descargar no altera el trámite.
 
 Carta Compromiso: descarga directa con domicilio de solicitud, teléfono del perfil y domicilio de la dependencia, usando respaldos registrados cuando falten. La fecha impresa se calcula al descargar en America/Mexico_City, sin reutilizar la fecha guardada. No exige captura previa de CC; firma del alumno vacía y ninguna escritura al descargar.
+
+Bandeja de revisión (`GET /api/documents/review-queue`): ordena los documentos desde el más reciente hasta el más antiguo (`CreatedAt DESC, Id DESC`) y admite búsqueda por matrícula, nombre/apellidos, código de documento o clave de carrera.

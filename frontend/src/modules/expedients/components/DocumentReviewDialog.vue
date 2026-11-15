@@ -64,7 +64,7 @@ async function submit(status: 'approved' | 'rejected') {
 </script>
 
 <template>
-  <UiDialog v-model="open" :title="`Revisar ${document?.tramiteType === 'social_service' ? socialDocumentLabel(document.documentCode) : document?.documentCode || 'documento'}${studentName ? ` · ${studentName}` : ''}`" size="xl">
+  <UiDialog v-model="open" :title="`Revisar ${document?.tramiteType === 'social_service' ? socialDocumentLabel(document.documentCode) : document?.documentCode || 'documento'}${studentName ? ` · ${studentName}` : ''}`" size="full">
     <div class="review-content" :aria-busy="loading || submitting">
       <UiFormErrors :validation="validation" />
       <UiAlert v-if="error" tone="danger" role="alert">{{ error }}</UiAlert>
@@ -94,7 +94,7 @@ async function submit(status: 'approved' | 'rejected') {
 
 <style scoped>
 .review-content { display: grid; gap: 1rem; }
-.review-pdf { width: 100%; height: min(48vh, 32rem); border: 1px solid var(--color-border); }
+.review-pdf { width: 100%; height: min(62dvh, 42rem); border: 1px solid var(--color-border); border-radius: 8px; }
 .review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .75rem; width: 100%; }
 @media (max-width: 600px) { .review-actions { flex-direction: column; align-items: stretch; } }
 </style>

@@ -10,14 +10,31 @@ watch([open, () => props.blob], () => { release(); if (open.value && props.blob)
 onBeforeUnmount(release)
 </script>
 <template>
-  <UiDialog v-model="open" :title="title" size="xl">
-    <UiAlert v-if="error">{{ error }}</UiAlert>
-    <iframe v-if="url" :src="url" :title="title" style="width:100%;height:70vh;border:0" />
-    <UiAlert v-else>No se pudo abrir el PDF.</UiAlert>
+  <UiDialog v-model="open" :title="title" size="full">
+    <UiAlert v-if="error" tone="danger">{{ error }}</UiAlert>
+    <iframe
+      v-if="url"
+      :src="url"
+      :title="title"
+      style="width: 100%; height: min(72dvh, 720px); border: 1px solid var(--color-border-medium); border-radius: 8px"
+    />
+    <UiAlert v-else tone="warning">No se pudo abrir el PDF.</UiAlert>
     <template #footer>
-      <UiButton v-if="confirmUpload" :disabled="busy || !url" @click="emit('confirm')">{{ busy ? 'Enviando…' : 'Confirmar y enviar a revisión' }}</UiButton>
-      <a v-if="url && !confirmUpload" :href="url" :download="`${title}.pdf`" style="margin-right:auto">Descargar PDF</a>
-      <UiButton :disabled="busy" @click="open = false">{{ confirmUpload ? 'Cancelar' : 'Cerrar' }}</UiButton>
+      <a
+        v-if="url && !confirmUpload"
+        :href="url"
+        :download="`${title}.pdf`"
+        class="btn secondary btn--sm"
+        style="margin-right: auto"
+      >
+        Descargar PDF
+      </a>
+      <UiButton v-if="confirmUpload" size="sm" :disabled="busy || !url" @click="emit('confirm')">
+        {{ busy ? 'Enviando…' : 'Confirmar y enviar a revisión' }}
+      </UiButton>
+      <UiButton variant="secondary" size="sm" :disabled="busy" @click="open = false">
+        {{ confirmUpload ? 'Cancelar' : 'Cerrar' }}
+      </UiButton>
     </template>
   </UiDialog>
 </template>

@@ -46,7 +46,7 @@ Este componente se incrusta en el detalle de Servicio Social y Prácticas Profes
 ---
 
 ### 2.2 Modal `DocumentViewerModal.vue` (Visor de PDF)
-- **Contenedor:** `UiDialog` de gran tamaño (90% del viewport).
+- **Contenedor:** `UiDialog` de gran tamaño (`size="full"`, hasta 95vw × 94dvh del viewport) manteniendo visibles los controles de acción y cierre.
 - **Barra de Herramientas:**
   - Título con código y nombre original del archivo (ej. `I23050363_CA_Carta_Aceptacion.pdf`).
   - Botón de descarga directa (`/api/documents/{id}/file`).
@@ -58,13 +58,15 @@ Este componente se incrusta en el detalle de Servicio Social y Prácticas Profes
 ---
 
 ### 2.3 Vista `/documents/review-queue` (Bandeja de Vinculación)
-- **Contenedor:** `UiBasePage` (`fluid=true`, encabezado ejecutivo "Revisión y Dictamen de Expedientes" con 4 KPIs animados, respaldo operativo local cuando la API no está disponible, previsualización integrada en `UiDialog` y notificaciones `UiToast` sin usar `window.alert`).
+- **Contenedor:** `UiBasePage` (`fluid=true`, layout `fullscreen-page` 100dvh sin scroll exterior, encabezado ejecutivo "Revisión y Dictamen de Expedientes" con 4 KPIs de borde dorado activo, respaldo operativo local cuando la API no está disponible, previsualización integrada en `UiDialog` `size="full"` y notificaciones `UiToast` sin usar `window.alert`).
 - **Barra de Filtros:**
   - Selector de Trámite: Todos / Servicio Social / Prácticas Profesionales / Expediente General.
   - Selector de Código de Documento (ej. solo `CA`, solo `R1`, solo `CT`).
-  - Selector de Periodo Académico.
-  - Buscador libre (matrícula o nombre de estudiante).
+  - Sin filtro manual de `Id de periodo` en la interfaz.
+  - Buscador libre con autocompletado interactivo y debounce de `280 ms` (matrícula, nombre de estudiante, código de formato o carrera) y botón único azul (`✕`) para limpiar.
 - **Tabla de Revisión (`UiTable`):**
+  - Ordenamiento: Documentos ordenados desde el más reciente hasta el más antiguo (`createdAt` descendente).
+  - Paginación estandarizada: `10` registros por página (`pageSize = 10`) con controles `Anterior`, `Página X de Y` y `Siguiente`.
   - Columnas: Alumno (matrícula y nombre), Carrera, Trámite, Documento (código y nombre), Fecha de Envío, Acciones.
   - **Acciones Rápidas:**
     - Botón "Inspeccionar PDF": Abre `DocumentViewerModal.vue` en pantalla dividida o modal.
