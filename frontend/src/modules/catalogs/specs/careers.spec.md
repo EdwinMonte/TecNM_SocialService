@@ -16,11 +16,11 @@ Basado en `docs/specs/catalogs.spec.md`:
 ## Requerimientos de UI y Accesibilidad
 
 1. **Estructura base:**
-   - Contenedor raíz `UiBasePage` con `fluid=true`, título "Catálogo de Carreras" y descripción institucional.
-   - Botón de acción principal en encabezado: "Nueva Carrera" que abre `UiDialog`, acompañado de 4 KPIs compactos animados, cálculo de 70% de créditos para Servicio Social y respaldo local de las 6 carreras oficiales cuando la API no está en ejecución.
+   - Contenedor raíz `UiBasePage` con `fluid=true` y layout `fullscreen-page` (`100dvh` sin scroll exterior, con scroll interno en tabla y encabezados fijos).
+   - Encabezado ejecutivo con botón "Nueva Carrera" que abre `UiDialog` y 4 KPIs compactos neutros donde únicamente el KPI activo resalta con borde dorado (`var(--color-accent)`), cálculo de 70% de créditos para Servicio Social y respaldo local cuando la API no está en ejecución.
 
 2. **Filtros y Búsqueda:**
-   - Campo de búsqueda por clave (`code`) o nombre (`name`) con debounce.
+   - Campo de búsqueda con autocompletado interactivo y debounce de `280 ms` por clave (`code`) o nombre (`name`), con botón único azul (`✕`) para limpiar.
    - Filtro de estado: Todas / Activas / Inactivas.
 
 3. **Tabla de Datos (`UiTable`):**
@@ -29,8 +29,8 @@ Basado en `docs/specs/catalogs.spec.md`:
      - `name`: Nombre oficial de la carrera.
      - `totalCredits`: Créditos totales de la retícula (ej. 260).
      - `isActive`: Estado con `UiBadge` (`success` para Activa, `danger` para Inactiva).
-     - `actions`: Botones compactos para Editar, Cambiar Estado y Eliminar.
-   - Paginación accesible con selector de página y total de registros.
+     - `actions`: Botones compactos para Editar, Cambiar Estado y Baja, centrados bajo el encabezado.
+   - Paginación estandarizada de `10` registros por página (`pageSize = 10`) con barra fija inferior (`Mostrando X de Y carreras · Página P de T`, `Anterior`, `Siguiente`).
 
 4. **Modal de Creación / Edición (`UiDialog`):**
    - Campos (`UiField`):
