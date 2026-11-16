@@ -84,4 +84,4 @@ Alias para estudiante: `studentId` puede ser `me` (`/api/students/me/documents`)
 ## Flujos UI esperados
 
 - Estudiante: lista tipo checklist por trámite donde cada documento tiene dos acciones claras: **"1. Llenar e Imprimir Formato"** (si tiene plantilla del sistema) y **"2. Subir PDF firmado y sellado"**.
-- Staff: bandeja de revisión con visor PDF embebido para comprobar que el documento esté lleno, firmado y sellado, y botón Aprobar / Rechazar con motivo.
+- Staff: bandeja de revisión ordenada de más reciente a más antiguo (`createdAt DESC, id DESC`), con visor PDF embebido de pantalla amplia para comprobar que el documento esté lleno, firmado y sellado, y botón Aprobar / Rechazar con motivo.

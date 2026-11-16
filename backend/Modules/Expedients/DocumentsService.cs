@@ -422,20 +422,21 @@ public sealed class DocumentsService(
 
             var pattern = $"%{term}%";
             query = query.Where(d =>
-                d.Student != null && (
+                EF.Functions.ILike(d.DocumentCode, pattern) ||
+                (d.Student != null && (
                     EF.Functions.ILike(d.Student.ControlNumber, pattern) ||
                     EF.Functions.ILike(d.Student.FirstName, pattern) ||
                     EF.Functions.ILike(d.Student.FirstSurname, pattern) ||
-                    (d.Student.SecondSurname != null && EF.Functions.ILike(d.Student.SecondSurname, pattern))));
+                    (d.Student.SecondSurname != null && EF.Functions.ILike(d.Student.SecondSurname, pattern)) ||
+                    (d.Student.Career != null && EF.Functions.ILike(d.Student.Career.Code, pattern)))));
         }
 
         var totalItems = await query.CountAsync(cancellationToken);
         var totalPages = (int)Math.Ceiling(totalItems / (double)normalizedSize);
 
         var items = await query
-            .OrderBy(SocialServiceDocumentCatalog.SortExpression())
-            .ThenBy(d => d.CreatedAt)
-            .ThenBy(d => d.Id)
+            .OrderByDescending(d => d.CreatedAt)
+            .ThenByDescending(d => d.Id)
             .Skip((normalizedPage - 1) * normalizedSize)
             .Take(normalizedSize)
             .ToListAsync(cancellationToken);

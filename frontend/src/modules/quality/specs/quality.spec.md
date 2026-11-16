@@ -18,22 +18,23 @@
 ## 2. Requerimientos de UI y Componentes
 
 ### 2.1 Vista `/quality/pnc`
-- **Contenedor:** `UiBasePage` (`fluid=true`, título: "Gestión de Calidad — Producto No Conforme (PNC)").
-- **Barra de Métricas Superiores (`UiMetric`):**
-  - Total Abiertas (`open`).
+- **Contenedor:** `UiBasePage` (`fluid=true`, layout `fullscreen-page` `100dvh` sin scroll exterior, encabezado ejecutivo "Producto No Conforme (PNC - ISO 9001)" y notificaciones `UiToast`).
+- **Barra de KPIs Superiores (4 tarjetas interactivas con borde dorado activo):**
+  - Total PNC (`all`).
+  - Abiertos (`open`).
   - En Revisión (`under_review`).
-  - Resueltas (`resolved`).
-  - Canceladas (`cancelled`).
+  - Resueltos (`resolved`).
 - **Barra de Filtros:**
+  - Buscador con autocompletado interactivo y debounce de `280 ms` por código de incidencia (`PNC-SS-...`), matrícula o nombre del alumno, con botón único azul (`✕`) para limpiar.
   - Selector de Periodo Académico.
   - Selector de Trámite: Todos / Servicio Social / Prácticas Profesionales.
   - Selector de Estado del PNC.
   - Selector de Categoría (`desertion`, `delayed_reports`, `company_dismissal`, `insufficient_grade`, `invalid_documents`, `other`).
-  - Buscador por código de incidencia (`PNC-SS-...`), matrícula o nombre del alumno.
-- **Tabla de Incidencias (`UiTable`):**
-  - Columnas: Código de Incidencia, Trámite, Alumno (matrícula y nombre), Categoría (etiqueta legible), Estado (`UiBadge`), Fecha de Registro, Acciones.
+- **Tabla de Incidencias (scroll interno y encabezados fijos):**
+  - Paginación estandarizada de `10` registros por página (`pageSize = 10`) con controles `Anterior`, `Página X de Y` y `Siguiente`.
+  - Columnas: Código de Incidencia, Periodo, Trámite, Alumno (nombre y matrícula), Categoría (etiqueta legible), Estado (`UiBadge`), Fecha de Registro, Acciones (centrada).
   - Botón "Registrar PNC" en encabezado (para `admin`, `social_service_officer` e `internship_coordinator`) que abre modal de alta.
-  - Acción de fila: Botón "Ver / Gestionar" -> abre modal de seguimiento con plan de acción y transiciones según rol y proceso.
+  - Acción de fila: Botón "Gestionar" / "Ver detalle" -> abre modal de seguimiento con plan de acción y transiciones según rol y proceso.
 
 ---
 

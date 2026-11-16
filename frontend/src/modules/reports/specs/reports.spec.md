@@ -38,20 +38,23 @@
 
 ### 2.2 Vista `/reports/tracking` (Sábana de Seguimiento de Vinculación)
 Reemplaza las hojas `SERVICIO SOCIAL`, `PRÁCTICAS` y `PRINCIPAL CONSULTA` de `SEGUIMIENTO VINCULACIÓN1.xlsx`:
+- **Diseño a Pantalla Completa (`100dvh`):**
+  - Contenedor `UiBasePage` (`fluid=true`, `class="fullscreen-page"`) sin scroll exterior de ventana y con scroll interno tanto horizontal como vertical dentro de la tabla.
+  - Encabezado ejecutivo con 4 KPIs de resumen (Total en Matriz, En Proceso, Avance 100%, Con Constancia) en superficie neutra donde únicamente el KPI activo presenta borde dorado (`var(--color-accent)`).
 - **Barra Superior de Herramientas:**
   - Selector de Trámite: Pestaña "Servicio Social" / Pestaña "Prácticas Profesionales".
-  - Selector de Periodo Académico.
-  - Selector de Carrera y Estado.
-  - Buscador rápido con debounce por matrícula o nombre.
-  - Botón principal: **"Exportar a Excel (.xlsx)"** (usa SheetJS co-localizado en frontend).
-- **Tabla Dinámica de Seguimiento (`UiTable` con scroll horizontal):**
-  - Columnas del Estudiante: No., Matrícula, Nombre Completo, Carrera, Semestre, Sexo, Turno, Teléfono.
-  - Columnas de la Empresa: Dependencia / Empresa, Sector, Titular / Responsable, Convenio.
-  - **Columna de Avance General:** Barra de progreso visual con porcentaje numérico (`progressPercentage%`, de 0% a 100%).
-  - **Matriz de Documentos (Pills verdes "SI" / grises "—"):**
+  - Selector de Periodo Académico y Selector de Carrera.
+  - Buscador rápido con autocompletado interactivo, debounce de `280 ms` (por matrícula, nombre, carrera o dependencia/empresa) y botón único azul (`✕`) para limpiar.
+  - Botón principal: **"Exportar Sábana (.CSV)"**.
+- **Tabla Dinámica de Seguimiento (con scroll interno y encabezados fijos):**
+  - Paginación estandarizada de **`10` registros por página** (`pageSize = 10`) con controles `Anterior`, `Página X de Y` y `Siguiente` sincronizados con búsqueda y filtros.
+  - Columnas del Estudiante: No. Control, Nombre del Alumno (con botón compacto `Ver expediente`), Carrera.
+  - Columnas de la Empresa y Trámite: Dependencia / Empresa, Folio C.P.
+  - **Matriz de Documentos (Pills semánticos mate "SI" / "—"):**
     - En Servicio Social (10 columnas): `C.P.`, `C.A.`, `SOL.`, `C.C.`, `REP. 1`, `REP. 2`, `REP. 3`, `EV1..3`, `CTA. TERM.`, `CONST.TERM`.
     - En Prácticas Profesionales (5 columnas): `C.P.`, `C.A.`, `EV.`, `C.T.`, `CC`.
-  - Columnas de Folios y Cierre: Folio CP, Folio Liberación, Fecha Término, Calificación, PNC (`SI`/`NO`), Acta Enviada.
+  - **Columna de Avance General:** Barra de progreso visual con porcentaje numérico (`progressPercentage%`, de 0% a 100%).
+  - Columnas de Folios de Cierre: Const. Term. y Acta Escolares.
 
 #### Consulta de expediente desde la matriz actual
 - Incorporar únicamente un botón compacto con ícono de ver, tooltip «Ver expediente» y nombre accesible que identifique al alumno, junto al nombre en la celda existente. Mantener estructura, columnas, estilos y disposición de la matriz implementada.

@@ -215,7 +215,7 @@ onMounted(syncDialog)
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
-  padding: 1rem 0.5rem;
+  padding: 1rem 0.15rem;
   flex: 1 1 auto;
 }
 

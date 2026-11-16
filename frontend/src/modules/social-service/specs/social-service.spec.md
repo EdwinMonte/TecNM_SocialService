@@ -71,12 +71,14 @@ Formulario por pasos (`UiCard` o stepper):
 
 ### 2.3 Detalle Administrativo para Vinculación (`/social-service/:id`)
 - **Panel de Acciones Rápidas (según `allowedActions`):**
-  - Si `requested`: Botón "Aprobar Solicitud" (emite folio `SS_CP...` y fija fecha) o "Rechazar Solicitud" (con observaciones).
+  - Si `requested`: Botón "Dictaminar Solicitud (Anexo XVIII)" que abre un modal institucional (`UiDialog`) para aprobar (emite folio `SS_CP...` y fija fecha) o rechazar la solicitud capturando las observaciones con validación y estado de carga.
   - Si `approved`: Botón "Registrar Aceptación" (requiere documento `CA` aprobado).
   - Si `accepted`: Botón "Activar Servicio Social" (requiere documento `CC` aprobado).
   - Si `active`: Botón "Marcar Concluido" (verifica documentos `R1..R3`, `EV1..EV3`, `CT` aprobados).
   - Si `completed_pending_review`: Botón "Liberar Servicio Social" (genera folio atómico `SSC...`, fija calificación cualitativa "Excelente" y fecha de liberación).
   - Si `released`: Botón "Enviar Acta a Escolares" (genera folio `DGTV...`).
+  - Gestión de **Observaciones Generales del Expediente** y **Dictamen / Observaciones de Documentos** mediante modales (`UiDialog` / `DocumentReviewDialog.vue`), sin usar `window.prompt`.
+  - Buscador con autocompletado dinámico y debounce (250 ms) y paginación estandarizada de **10 registros por página**.
   - Botón "Registrar Producto No Conforme (PNC)": Abre modal para registrar incidencia ISO 9001.
   - Botón "Ver Historial de Estados": Abre línea de tiempo de auditoría (`tramite_status_logs`).
 
