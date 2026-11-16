@@ -34,11 +34,12 @@ const layoutClass = computed(() => ({
 }
 
 .layout {
-  --sidebar-width: 272px;
+  --sidebar-width: 256px;
   width: 100%;
   max-width: none;
   margin: 0;
   flex: 1;
+  min-height: 0;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
 }
 
@@ -48,21 +49,43 @@ const layoutClass = computed(() => ({
 
 .ui-main {
   width: 100%;
-  padding: 18px 26px;
+  padding: 14px 22px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ui-footer {
-  padding: 10px 26px;
-  font-size: 11.5px;
+  padding: 6px 22px;
+  font-size: 11px;
   border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+@media (min-width: 901px) {
+  .app-shell {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .layout {
+    overflow: hidden;
+  }
+
+  .ui-main {
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
 }
 
 @media (max-width: 1100px) {
   .layout {
-    --sidebar-width: 248px;
+    --sidebar-width: 236px;
   }
   .ui-main {
-    padding: 16px 20px;
+    padding: 12px 16px;
   }
 }
 

@@ -1,7 +1,7 @@
 import { http } from '../../shared/api/http'
 import type { Company, CompanyRequest, Page } from './types'
 
-export async function getCompanies(params: { page: number; search?: string; companyType?: string; isActive?: boolean }, signal?: AbortSignal) {
+export async function getCompanies(params: { page: number; pageSize?: number; search?: string; companyType?: string; isActive?: boolean }, signal?: AbortSignal) {
   return (await http.get<Page<Company>>('/companies', { params, signal })).data
 }
 export async function saveCompany(id: number | null, payload: CompanyRequest) {

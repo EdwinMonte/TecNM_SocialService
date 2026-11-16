@@ -60,12 +60,12 @@ nav a {
 
 .sidenav {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .navigation-group {
-  margin: 4px 0 0;
-  padding: 4px 0 0;
+  margin: 2px 0 0;
+  padding: 3px 0 0;
   border-top: 1px solid var(--color-border-light);
   position: relative;
 }
@@ -75,18 +75,15 @@ nav a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  min-height: 32px;
-  font-size: 10.5px;
+  gap: 6px;
+  padding: 4px 8px;
+  min-height: 26px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--color-text-muted);
   border-radius: 6px;
-  transition:
-    color 160ms ease,
-    background 160ms ease;
 }
 
 .navigation-group summary::-webkit-details-marker {

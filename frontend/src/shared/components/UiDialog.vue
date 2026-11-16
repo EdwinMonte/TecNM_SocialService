@@ -6,7 +6,7 @@ defineOptions({ inheritAttrs: false })
 const props = withDefaults(
   defineProps<{
     title: string
-    size?: 'sm' | 'md' | 'lg' | 'xl'
+    size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   }>(),
   {
     size: 'md',
@@ -25,6 +25,8 @@ async function openDialog(): Promise<void> {
 
   previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
   dialog.value.showModal()
+  dialog.value.scrollLeft = 0
+  dialog.value.scrollTop = 0
 }
 
 function restoreFocus(): void {
@@ -114,10 +116,11 @@ onMounted(syncDialog)
   border-radius: 14px;
   box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
   padding: 0;
-  overflow: hidden;
+  overflow: clip;
   position: fixed;
   inset: 0;
   margin: auto;
+  box-sizing: border-box;
 }
 
 .ui-dialog-root::backdrop {
@@ -126,30 +129,43 @@ onMounted(syncDialog)
 }
 
 .size-sm {
-  width: min(440px, calc(100% - 32px));
+  width: min(440px, calc(100vw - 32px));
   max-width: 440px;
 }
 
 .size-md {
-  width: min(600px, calc(100% - 32px));
+  width: min(600px, calc(100vw - 32px));
   max-width: 600px;
 }
 
 .size-lg {
-  width: min(800px, calc(100% - 32px));
+  width: min(800px, calc(100vw - 32px));
   max-width: 800px;
 }
 
 .size-xl {
-  width: min(980px, calc(100% - 32px));
+  width: min(980px, calc(100vw - 32px));
   max-width: 980px;
+}
+
+.size-full {
+  width: min(1240px, calc(100vw - 32px));
+  max-width: 1240px;
 }
 
 .dialog-inner {
   display: flex;
   flex-direction: column;
-  max-height: 88vh;
-  padding: 1.5rem;
+  width: 100%;
+  min-width: 0;
+  max-height: 90dvh;
+  padding: 1.25rem 1.5rem;
+  box-sizing: border-box;
+}
+
+.size-full .dialog-inner {
+  max-height: 94dvh;
+  padding: 1rem 1.35rem;
 }
 
 .dialog-header {
@@ -157,17 +173,22 @@ onMounted(syncDialog)
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-bottom: 1rem;
+  min-width: 0;
+  padding-bottom: 0.85rem;
   border-bottom: 1px solid var(--color-border-light, #e2e8f0);
   flex-shrink: 0;
 }
 
 .dialog-title {
   margin: 0;
-  font-size: 1.25rem;
+  min-width: 0;
+  flex: 1;
+  font-size: 1.12rem;
   font-weight: 700;
   color: var(--color-text-primary, #0f172a);
   line-height: 1.3;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .dialog-close-btn {
@@ -179,20 +200,22 @@ onMounted(syncDialog)
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   flex-shrink: 0;
 }
 
 .dialog-close-btn:hover {
-  background: rgba(15, 23, 42, 0.08);
-  color: #0f172a;
+  background: var(--secondary-hover, rgba(15, 23, 42, 0.08));
+  color: var(--color-text-primary, #0f172a);
 }
 
 .dialog-body {
   overflow-y: auto;
-  padding: 1.25rem 0.25rem;
+  overflow-x: hidden;
+  min-width: 0;
+  padding: 1rem 0.5rem;
   flex: 1 1 auto;
 }
 
