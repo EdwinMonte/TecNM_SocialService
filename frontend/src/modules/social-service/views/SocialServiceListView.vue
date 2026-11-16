@@ -190,6 +190,7 @@ function toggleKpiStatus(targetStatus: string): void {
 
 // Modal de Gestión de Trámite
 const isDetailOpen = ref(false)
+const detailTab = ref<'uploaded' | 'checklist'>('uploaded')
 const selectedDetail = ref<SocialServiceDetail | null>(null)
 const studentDocs = ref<ExpedientDocument[]>([])
 const isActionRunning = ref(false)
@@ -330,6 +331,7 @@ async function openDetailModal(row: SocialServiceListItem): Promise<void> {
     ])
     selectedDetail.value = detail
     studentDocs.value = docs
+    detailTab.value = docs.length > 0 ? 'uploaded' : 'checklist'
     reviewObservations.value =
       detail.application?.officeObservations ||
       detail.application?.rejectionReason ||
@@ -785,7 +787,7 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
     <!-- ================================================================== -->
     <UiDialog
       v-model="isDetailOpen"
-      size="xl"
+      size="full"
       :title="
         selectedDetail
           ? `Expediente SS · ${selectedDetail.student.controlNumber} — ${selectedDetail.student.fullName}`
@@ -795,27 +797,42 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
       <div v-if="selectedDetail" class="detail-modal-stack">
         <UiFormErrors :validation="actionValidation" />
 
-        <!-- Resumen de Folios, Estado y Observaciones -->
+        <!-- Resumen Ejecutivo de Folios, Estatus y Avance -->
         <div class="summary-grid">
           <div class="summary-item">
             <small>Estatus Actual</small>
-            <strong>{{ formatStatus(selectedDetail.status) }}</strong>
+            <div class="summary-badge-row">
+              <UiBadge
+                :tone="
+                  selectedDetail.status === 'released'
+                    ? 'success'
+                    : selectedDetail.status === 'requested'
+                      ? 'info'
+                      : 'warning'
+                "
+              >
+                {{ formatStatus(selectedDetail.status) }}
+              </UiBadge>
+              <span class="summary-pct">{{ selectedDetail.documentProgressPercentage }}% avance</span>
+            </div>
           </div>
           <div class="summary-item">
-            <small>Dependencia</small>
+            <small>Dependencia Receptora</small>
             <strong>{{ selectedDetail.company.name }}</strong>
           </div>
           <div class="summary-item">
             <small>Folio Carta Presentación</small>
-            <strong>{{ selectedDetail.presentationLetterFolio || 'Pendiente' }}</strong>
+            <strong class="mono-folio">{{ selectedDetail.presentationLetterFolio || 'Pendiente' }}</strong>
           </div>
           <div class="summary-item">
             <small>Folio Constancia Terminación</small>
-            <strong class="text-emerald">{{ selectedDetail.releaseCertificateFolio || 'Pendiente' }}</strong>
+            <strong class="mono-folio text-emerald">
+              {{ selectedDetail.releaseCertificateFolio || 'Pendiente' }}
+            </strong>
           </div>
         </div>
 
-        <!-- Barra de Acciones de Plantillas, Acta Individual y Modal de Observaciones -->
+        <!-- Barra Unificada de Formatos, Dictamen y Pestañas de Vista -->
         <div class="detail-toolbar">
           <div class="detail-toolbar__group">
             <UiButton variant="secondary" size="sm" @click="handlePrint('application')">
@@ -844,11 +861,8 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
               :disabled="isActDownloading"
               @click="downloadIndividualAct"
             >
-              {{ isActDownloading ? 'Descargando Acta Individual…' : 'Descargar Acta Individual' }}
+              {{ isActDownloading ? 'Descargando Acta…' : 'Descargar Acta Individual' }}
             </UiButton>
-          </div>
-
-          <div class="detail-toolbar__group">
             <UiButton
               v-if="selectedDetail.status === 'requested'"
               variant="primary"
@@ -865,78 +879,107 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
               Observaciones del Expediente
             </UiButton>
           </div>
+
+          <div class="modal-tabs" role="tablist" aria-label="Secciones del expediente">
+            <button
+              type="button"
+              class="modal-tab"
+              :class="{ 'modal-tab--active': detailTab === 'uploaded' }"
+              @click="detailTab = 'uploaded'"
+            >
+              PDFs Subidos ({{ studentDocs.length }})
+            </button>
+            <button
+              type="button"
+              class="modal-tab"
+              :class="{ 'modal-tab--active': detailTab === 'checklist' }"
+              @click="detailTab = 'checklist'"
+            >
+              Checklist Normativo ({{ selectedDetail.documentRequirements.length }})
+            </button>
+          </div>
         </div>
 
         <!-- Resumen de Observaciones vigentes (si existen) -->
         <div
-          v-if="selectedDetail.observations || selectedDetail.application?.officeObservations || selectedDetail.application?.rejectionReason"
+          v-if="
+            selectedDetail.observations ||
+            selectedDetail.application?.officeObservations ||
+            selectedDetail.application?.rejectionReason
+          "
           class="observations-banner"
         >
           <div class="observations-banner__text">
             <strong>Observaciones registradas:</strong>
             <span v-if="selectedDetail.observations">{{ selectedDetail.observations }}</span>
-            <span v-else>{{ selectedDetail.application?.officeObservations || selectedDetail.application?.rejectionReason }}</span>
+            <span v-else>
+              {{
+                selectedDetail.application?.officeObservations ||
+                selectedDetail.application?.rejectionReason
+              }}
+            </span>
           </div>
-          <UiButton variant="secondary" size="sm" @click="openObservationsModal(selectedDetail.status === 'requested' ? 'application' : 'general')">
+          <UiButton
+            variant="secondary"
+            size="sm"
+            @click="
+              openObservationsModal(
+                selectedDetail.status === 'requested' ? 'application' : 'general',
+              )
+            "
+          >
             Editar observaciones
           </UiButton>
         </div>
 
-        <!-- Checklist Documental Guiado -->
-        <ExpedientChecklist
-          :application-accepted="selectedDetail.application?.isAcceptedByOffice"
-          :requirements="selectedDetail.documentRequirements"
-          :documents="studentDocs"
-          tramite-type="social_service"
-          :tramite-id="selectedDetail.id"
-          :student-id="selectedDetail.student.id"
-          :can-edit="false"
-          @changed="refreshCurrentDetail"
-        />
-
-        <!-- Lista de Documentos Subidos por el Alumno para Validar mediante Modal -->
-        <div class="uploaded-docs-section">
-          <strong class="section-heading">
-            Documentos Subidos en el Expediente ({{ studentDocs.length }})
-          </strong>
-          <div
-            v-if="studentDocs.length === 0"
-            class="empty-docs-note"
-          >
+        <!-- Pestaña 1: PDFs Subidos por el Alumno para Dictamen -->
+        <div v-if="detailTab === 'uploaded'" class="modal-tab-panel">
+          <div v-if="studentDocs.length === 0" class="empty-docs-note">
             El alumno aún no ha subido archivos PDF a este trámite.
           </div>
-          <div v-else class="uploaded-docs-list">
-            <div
-              v-for="doc in [...studentDocs].sort((a, b) => socialDocumentOrder(a.documentCode) - socialDocumentOrder(b.documentCode))"
+          <div v-else class="uploaded-docs-grid">
+            <article
+              v-for="doc in [...studentDocs].sort(
+                (a, b) => socialDocumentOrder(a.documentCode) - socialDocumentOrder(b.documentCode),
+              )"
               :key="doc.id"
-              class="uploaded-doc-row"
+              class="uploaded-doc-card"
             >
-              <div class="uploaded-doc-info">
-                <div>
-                  <strong>{{ socialDocumentLabel(doc.documentCode) }} {{ socialDocumentPeriod(doc.documentCode) }}</strong> — {{ doc.originalFileName }}
-                  <UiBadge
-                    :tone="
-                      doc.status === 'approved'
-                        ? 'success'
-                        : doc.status === 'rejected'
-                          ? 'danger'
-                          : 'warning'
-                    "
-                    style="margin-left: 0.4rem;"
-                  >
-                    {{
-                      doc.status === 'approved'
-                        ? 'Aprobado (SI)'
-                        : doc.status === 'rejected'
-                          ? 'Observado'
-                          : 'En Revisión'
-                    }}
-                  </UiBadge>
+              <div class="uploaded-doc-top">
+                <div class="uploaded-doc-title">
+                  <span class="doc-code-pill">{{ doc.documentCode }}</span>
+                  <strong>{{ socialDocumentLabel(doc.documentCode) }}</strong>
                 </div>
-                <small v-if="doc.rejectionReason" class="doc-rejection-note">
-                  Observación: {{ doc.rejectionReason }}
-                </small>
+                <UiBadge
+                  :tone="
+                    doc.status === 'approved'
+                      ? 'success'
+                      : doc.status === 'rejected'
+                        ? 'danger'
+                        : 'warning'
+                  "
+                >
+                  {{
+                    doc.status === 'approved'
+                      ? 'Aprobado (SI)'
+                      : doc.status === 'rejected'
+                        ? 'Observado'
+                        : 'En Revisión'
+                  }}
+                </UiBadge>
               </div>
+
+              <div class="uploaded-doc-file" :title="doc.originalFileName">
+                {{ doc.originalFileName }}
+                <template v-if="socialDocumentPeriod(doc.documentCode)">
+                  · {{ socialDocumentPeriod(doc.documentCode) }}
+                </template>
+              </div>
+
+              <small v-if="doc.rejectionReason" class="doc-rejection-note">
+                Observación: {{ doc.rejectionReason }}
+              </small>
+
               <div class="uploaded-doc-actions">
                 <UiButton variant="secondary" size="sm" @click="handleViewDocPdf(doc.id)">
                   Ver PDF
@@ -959,69 +1002,84 @@ watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
                   Ver Dictamen
                 </UiButton>
               </div>
-            </div>
+            </article>
           </div>
         </div>
 
-        <!-- Botones de Avance de Etapa y Emisión de Constancia de Liberación -->
-        <div class="stage-actions-bar">
-          <UiButton
-            v-if="selectedDetail.status === 'approved'"
-            variant="primary"
-            size="sm"
-            :disabled="isActionRunning"
-            @click="handleAdvanceAcceptance"
-          >
-            Confirmar Recepción de Carta Aceptación (CA)
-          </UiButton>
-
-          <UiButton
-            v-if="selectedDetail.status === 'accepted'"
-            variant="primary"
-            size="sm"
-            :disabled="isActionRunning"
-            @click="handleActivate"
-          >
-            Activar Servicio Social (Con CC aprobada)
-          </UiButton>
-
-          <UiButton
-            v-if="selectedDetail.status === 'active'"
-            variant="primary"
-            size="sm"
-            :disabled="isActionRunning"
-            @click="handleComplete"
-          >
-            Validar Cierre Documental (R1..R3 y CT)
-          </UiButton>
-
-          <UiButton
-            v-if="
-              selectedDetail.status === 'completed_pending_review' ||
-              selectedDetail.status === 'active'
-            "
-            variant="primary"
-            size="sm"
-            :disabled="isActionRunning"
-            @click="handleRelease"
-          >
-            Emitir Constancia de Liberación (Folio SSC)
-          </UiButton>
-
-          <UiButton
-            v-if="selectedDetail.status === 'released' && !selectedDetail.schoolServicesActSent"
-            variant="secondary"
-            size="sm"
-            :disabled="isActionRunning"
-            @click="handleSendSchoolAct"
-          >
-            Generar Acta para Servicios Escolares (DGTV)
-          </UiButton>
+        <!-- Pestaña 2: Checklist Normativo TecNM en 2 Columnas -->
+        <div v-else class="modal-tab-panel">
+          <ExpedientChecklist
+            :application-accepted="selectedDetail.application?.isAcceptedByOffice"
+            :requirements="selectedDetail.documentRequirements"
+            :documents="studentDocs"
+            tramite-type="social_service"
+            :tramite-id="selectedDetail.id"
+            :student-id="selectedDetail.student.id"
+            :can-edit="false"
+            @changed="refreshCurrentDetail"
+          />
         </div>
       </div>
 
       <template #footer>
-        <UiButton variant="secondary" @click="isDetailOpen = false">Cerrar</UiButton>
+        <div v-if="selectedDetail" class="modal-footer-actions">
+          <div class="stage-footer-group">
+            <UiButton
+              v-if="selectedDetail.status === 'approved'"
+              variant="primary"
+              size="sm"
+              :disabled="isActionRunning"
+              @click="handleAdvanceAcceptance"
+            >
+              Confirmar Recepción de Carta Aceptación (CA)
+            </UiButton>
+
+            <UiButton
+              v-if="selectedDetail.status === 'accepted'"
+              variant="primary"
+              size="sm"
+              :disabled="isActionRunning"
+              @click="handleActivate"
+            >
+              Activar Servicio Social (Con CC aprobada)
+            </UiButton>
+
+            <UiButton
+              v-if="selectedDetail.status === 'active'"
+              variant="primary"
+              size="sm"
+              :disabled="isActionRunning"
+              @click="handleComplete"
+            >
+              Validar Cierre Documental (R1..R3 y CT)
+            </UiButton>
+
+            <UiButton
+              v-if="
+                selectedDetail.status === 'completed_pending_review' ||
+                selectedDetail.status === 'active'
+              "
+              variant="primary"
+              size="sm"
+              :disabled="isActionRunning"
+              @click="handleRelease"
+            >
+              Emitir Constancia de Liberación (Folio SSC)
+            </UiButton>
+
+            <UiButton
+              v-if="selectedDetail.status === 'released' && !selectedDetail.schoolServicesActSent"
+              variant="secondary"
+              size="sm"
+              :disabled="isActionRunning"
+              @click="handleSendSchoolAct"
+            >
+              Generar Acta para Servicios Escolares (DGTV)
+            </UiButton>
+          </div>
+
+          <UiButton variant="secondary" size="sm" @click="isDetailOpen = false">Cerrar</UiButton>
+        </div>
       </template>
     </UiDialog>
 
@@ -1619,27 +1677,57 @@ select.modern-select:focus {
 .detail-modal-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.75rem;
 }
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 0.75rem;
-  background: var(--color-bg-light);
-  padding: 0.8rem 0.95rem;
-  border-radius: 8px;
+  background: var(--surface-toolbar);
+  padding: 0.75rem 0.95rem;
+  border-radius: 9px;
   border: 1px solid var(--color-border);
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .summary-item small {
   color: var(--color-text-secondary);
-  display: block;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.summary-item strong {
+  font-size: 0.88rem;
+  color: var(--color-text-primary);
+}
+
+.summary-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.summary-pct {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.mono-folio {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .text-emerald {
-  color: var(--color-success);
+  color: var(--color-success-text) !important;
 }
 
 .detail-toolbar {
@@ -1656,80 +1744,169 @@ select.modern-select:focus {
   flex-wrap: wrap;
 }
 
+.modal-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 7px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+}
+
+.modal-tab {
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.modal-tab:hover {
+  color: var(--color-text-primary);
+  background: var(--secondary-hover);
+}
+
+.modal-tab--active {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-color: var(--color-accent);
+}
+
+.modal-tab-panel {
+  min-height: 0;
+}
+
 .observations-banner {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.65rem 0.9rem;
+  padding: 0.6rem 0.9rem;
   border-radius: 8px;
   background: var(--color-warning-bg);
   border: 1px solid var(--color-warning-border);
   color: var(--color-warning-text);
-  font-size: 0.84rem;
+  font-size: 0.83rem;
   flex-wrap: wrap;
 }
 
 .observations-banner__text {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-}
-
-.section-heading {
-  display: block;
-  margin-bottom: 0.45rem;
-  font-size: 0.9rem;
+  gap: 0.12rem;
 }
 
 .empty-docs-note {
-  padding: 0.65rem;
+  padding: 1.5rem;
+  text-align: center;
+  border-radius: 8px;
+  background: var(--surface-toolbar);
+  border: 1px solid var(--color-border);
   color: var(--color-text-secondary);
   font-size: 0.85rem;
 }
 
-.uploaded-docs-list {
+.uploaded-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.uploaded-doc-card {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  max-height: 220px;
-  overflow-y: auto;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--color-border);
+  background: var(--surface-toolbar);
+  border-radius: 8px;
+  transition: border-color 140ms ease;
 }
 
-.uploaded-doc-row {
+.uploaded-doc-card:hover {
+  border-color: var(--color-border-medium);
+}
+
+.uploaded-doc-top {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 0.55rem 0.8rem;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-light);
-  border-radius: 8px;
+  align-items: flex-start;
   gap: 0.5rem;
-  flex-wrap: wrap;
 }
 
-.uploaded-doc-info {
+.uploaded-doc-title {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.uploaded-doc-title strong {
+  font-size: 0.82rem;
+  color: var(--color-text-primary);
+}
+
+.doc-code-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.08rem 0.38rem;
+  border-radius: 4px;
+  background: var(--color-info-badge);
+  color: var(--color-info-text);
+  border: 1px solid var(--color-info-border);
+  flex-shrink: 0;
+}
+
+.uploaded-doc-file {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.73rem;
+  color: var(--color-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .doc-rejection-note {
   color: var(--color-danger-text);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
 }
 
 .uploaded-doc-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
 }
 
-.stage-actions-bar {
+.modal-footer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.stage-footer-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--color-border);
+  gap: 0.45rem;
+}
+
+@media (max-width: 780px) {
+  .uploaded-docs-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .observations-modal-body {

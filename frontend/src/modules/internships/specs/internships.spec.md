@@ -70,6 +70,7 @@ Automatiza el formulario oficial de Microsoft Forms:
   - Si `completed_pending_review`: Botón "Liberar y Acreditar (PPC)" (asigna folio `PPC...`, marca expediente completo y acredita los 2 créditos).
   - Si `released`: Botón "Enviar Acta a Escolares" (genera folio `DGTV...`).
   - Gestión de **Observaciones Generales del Expediente** y **Dictamen / Observaciones de Documentos** mediante modales (`UiDialog` / `DocumentReviewDialog.vue`), sin usar `window.prompt`.
+  - Modal de gestión integral de prácticas (`UiDialog` `size="full"`): resumen superior de estatus/folios, barra unificada de formatos y observaciones, pestañas segmentadas (**PDFs Subidos para Dictamen** y **Checklist Normativo**) y acciones de cierre/liberación alineadas en pie de modal.
   - Buscador con autocompletado dinámico y debounce (250 ms) y paginación estandarizada de **10 registros por página**.
   - Botón "Registrar Producto No Conforme (PNC)".
   - Botón "Ver Historial de Auditoría".

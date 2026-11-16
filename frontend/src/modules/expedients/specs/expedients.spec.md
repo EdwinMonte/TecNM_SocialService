@@ -22,7 +22,7 @@
 ## 2. Requerimientos de UI y Componentes
 
 ### 2.1 Componente `ExpedientChecklist.vue`
-Este componente se incrusta en el detalle de Servicio Social y Prácticas Profesionales:
+Este componente se incrusta en el detalle de Servicio Social y Prácticas Profesionales en una cuadrícula responsiva de dos columnas (`checklist-grid`) adaptada al tema claro/oscuro mate:
 - **Encabezado del Checklist:**
   - Barra de progreso visual con porcentaje de avance (`documentProgressPercentage%`).
   - Contador de documentos aprobados (ej. `4 de 10 completados`).
