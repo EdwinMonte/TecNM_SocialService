@@ -21,7 +21,7 @@ export async function getSocialServices(params?: {
   companyId?: number
   programId?: number
   search?: string
-}): Promise<{ items: SocialServiceListItem[]; totalItems: number; page: number; pageSize: number }> {
+}): Promise<{ items: SocialServiceListItem[]; totalItems: number; totalPages: number; page: number; pageSize: number }> {
   return (await http.get('/social-services', { params })).data
 }
 
@@ -106,6 +106,18 @@ export async function upsertActivityAssessment(
   payload: ActivityAssessmentRequest,
 ): Promise<ActivityAssessment> {
   return (await http.put<ActivityAssessment>(`/social-services/${id}/activity-assessment`, payload)).data
+}
+
+export async function updateSocialServiceImpact(
+  id: number,
+  payload: {
+    beneficiariesCount: number
+    hasInclusionActivities: boolean
+    targetCommunity?: string | null
+    observations?: string | null
+  },
+): Promise<SocialServiceDetail> {
+  return (await http.patch<SocialServiceDetail>(`/social-services/${id}/impact`, payload)).data
 }
 
 export async function completeSocialService(

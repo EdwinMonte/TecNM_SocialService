@@ -72,19 +72,15 @@ const active = computed(() => {
 a {
   display: flex !important;
   align-items: center;
-  gap: 10px;
-  padding: 8px 11px;
-  min-height: 38px !important;
+  gap: 9px;
+  padding: 5px 10px;
+  min-height: 32px !important;
   border-left: 3px solid transparent;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 7px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--color-text-secondary);
-  transition:
-    background 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    color 180ms ease,
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 180ms ease;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 a:hover {
@@ -95,14 +91,10 @@ a:hover {
 
 a.active {
   background: var(--color-primary-subtle);
-  color: var(--color-primary);
+  color: var(--nav-active-text);
   border-left-color: var(--color-accent);
   font-weight: 600;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
-}
-
-[data-theme="dark"] a.active {
-  color: var(--color-white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 28%, transparent);
 }
 
 .nav-icon {

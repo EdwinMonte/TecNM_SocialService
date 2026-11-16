@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { watch as watchValidation } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch as watchValidation } from 'vue'
 import { useFormValidation } from '../../../shared/composables/useFormValidation'
 import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
 import { problemMessage } from '../../../shared/api/problemDetails'
 import { socialDocumentLabel, socialDocumentOrder, socialDocumentPeriod } from '../../../shared/utils/socialServiceDocuments'
 import ExpedientChecklist from '../../expedients/components/ExpedientChecklist.vue'
+import DocumentReviewDialog from '../../expedients/components/DocumentReviewDialog.vue'
 import { http } from '../../../shared/api/http'
-import { computed, onMounted, ref } from 'vue'
 import {
   UiAlert,
   UiBadge,
@@ -21,7 +21,6 @@ import { openPrintableDocument } from '../../../shared/utils/printDocument'
 import {
   getDocumentBlob,
   getStudentDocuments,
-  reviewDocument,
 } from '../../expedients/api/expedientsApi'
 import type { ExpedientDocument } from '../../expedients/types/expedients'
 import {
@@ -34,6 +33,7 @@ import {
   releaseSocialService,
   reviewSocialServiceApplication,
   sendSocialServiceSchoolAct,
+  updateSocialServiceImpact,
 } from '../api/socialServiceApi'
 import type { SocialServiceDetail, SocialServiceListItem } from '../types/socialService'
 
@@ -47,11 +47,75 @@ const isLoading = ref(true)
 const errorMessage = ref('')
 const successMessage = ref('')
 
-// Filtros y Autocomplete
+// Paginación estandarizada (10 por página)
+const currentPage = ref(1)
+const pageSize = 10
+const totalItems = ref(0)
+const totalPages = ref(1)
+
+// Filtros y Autocomplete con Debounce
 const searchQuery = ref('')
 const statusFilter = ref('')
 const isAutocompleteOpen = ref(false)
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// KPIs animados compactos (sin parpadeo ni reinicio a 0)
+const animatedKpis = reactive({
+  total: 0,
+  requested: 0,
+  active: 0,
+  released: 0,
+})
+let kpiRafId = 0
+
+function updateAnimatedKpis(): void {
+  const source = allItemsCache.value.length > 0 ? allItemsCache.value : items.value
+  const targets = {
+    total: allItemsCache.value.length || totalItems.value || source.length,
+    requested: source.filter((s) => s.status === 'requested').length,
+    active: source.filter((s) => s.status === 'active' || s.status === 'approved' || s.status === 'accepted').length,
+    released: source.filter((s) => s.status === 'released').length,
+  }
+
+  if (kpiRafId) {
+    cancelAnimationFrame(kpiRafId)
+    kpiRafId = 0
+  }
+
+  const prefersReduced =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  if (
+    prefersReduced ||
+    (animatedKpis.total === targets.total &&
+      animatedKpis.requested === targets.requested &&
+      animatedKpis.active === targets.active &&
+      animatedKpis.released === targets.released)
+  ) {
+    Object.assign(animatedKpis, targets)
+    return
+  }
+
+  const startValues = { ...animatedKpis }
+  const duration = 360
+  const start = performance.now()
+  function tick(now: number): void {
+    const progress = Math.min((now - start) / duration, 1)
+    const ease = 1 - Math.pow(1 - progress, 3)
+    animatedKpis.total = Math.round(startValues.total + (targets.total - startValues.total) * ease)
+    animatedKpis.requested = Math.round(startValues.requested + (targets.requested - startValues.requested) * ease)
+    animatedKpis.active = Math.round(startValues.active + (targets.active - startValues.active) * ease)
+    animatedKpis.released = Math.round(startValues.released + (targets.released - startValues.released) * ease)
+    if (progress < 1) {
+      kpiRafId = requestAnimationFrame(tick)
+    } else {
+      kpiRafId = 0
+    }
+  }
+  kpiRafId = requestAnimationFrame(tick)
+}
 
 const autocompleteSuggestions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -69,11 +133,16 @@ const autocompleteSuggestions = computed(() => {
         s.careerCode.toLowerCase().includes(query) ||
         (s.companyName && s.companyName.toLowerCase().includes(query)),
     )
-    .slice(0, 8)
+    .slice(0, 7)
 })
 
 function handleSearchInput(): void {
   isAutocompleteOpen.value = searchQuery.value.trim().length > 0
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    currentPage.value = 1
+    void loadData()
+  }, 260)
 }
 
 function handleSearchFocus(): void {
@@ -85,26 +154,38 @@ function handleSearchFocus(): void {
 function handleSearchBlur(): void {
   setTimeout(() => {
     isAutocompleteOpen.value = false
-  }, 220)
+  }, 200)
 }
 
 function selectSuggestion(suggestion: SocialServiceListItem): void {
+  if (debounceTimer) clearTimeout(debounceTimer)
   searchQuery.value = suggestion.studentFullName
   isAutocompleteOpen.value = false
-  loadData()
+  currentPage.value = 1
+  void loadData()
 }
 
 function clearSearch(): void {
+  if (debounceTimer) clearTimeout(debounceTimer)
   searchQuery.value = ''
   isAutocompleteOpen.value = false
-  loadData()
+  currentPage.value = 1
+  void loadData()
 }
 
 function resetFilters(): void {
+  if (debounceTimer) clearTimeout(debounceTimer)
   searchQuery.value = ''
   statusFilter.value = ''
   isAutocompleteOpen.value = false
-  loadData()
+  currentPage.value = 1
+  void loadData()
+}
+
+function toggleKpiStatus(targetStatus: string): void {
+  statusFilter.value = statusFilter.value === targetStatus ? '' : targetStatus
+  currentPage.value = 1
+  void loadData()
 }
 
 // Modal de Gestión de Trámite
@@ -112,7 +193,77 @@ const isDetailOpen = ref(false)
 const selectedDetail = ref<SocialServiceDetail | null>(null)
 const studentDocs = ref<ExpedientDocument[]>([])
 const isActionRunning = ref(false)
+
+// Modal de Observaciones y Dictamen de Apertura (Anexo XVIII) + Notas del Expediente
+const isObservationsModalOpen = ref(false)
+const observationsModalMode = ref<'application' | 'general'>('general')
 const reviewObservations = ref('Cumple con requisitos y vigencia IMSS.')
+const generalObservations = ref('')
+const isSavingObservations = ref(false)
+const applicationDecision = ref<'approve' | 'reject'>('approve')
+
+const observationsValidation = useFormValidation(() => {
+  const errors: Record<string, string[]> = {}
+  if (observationsModalMode.value === 'application') {
+    const trimmed = reviewObservations.value.trim()
+    if (applicationDecision.value === 'reject' && !trimmed) {
+      errors.rejectionReason = ['Indica el motivo de observación o rechazo de la solicitud.']
+    } else if (trimmed.length > 1000) {
+      errors.rejectionReason = ['Las observaciones no pueden exceder 1000 caracteres.']
+    }
+  } else {
+    if (generalObservations.value.trim().length > 2000) {
+      errors.observations = ['Las observaciones del expediente admiten máximo 2000 caracteres.']
+    }
+  }
+  return errors
+})
+
+// Modal de Dictamen / Observación de Documento individual
+const isDocReviewOpen = ref(false)
+const selectedDocForReview = ref<ExpedientDocument | null>(null)
+
+function openObservationsModal(mode: 'application' | 'general'): void {
+  if (!selectedDetail.value) return
+  observationsModalMode.value = mode
+  observationsValidation.reset()
+  if (mode === 'application') {
+    reviewObservations.value =
+      selectedDetail.value.application?.officeObservations ||
+      selectedDetail.value.application?.rejectionReason ||
+      'Cumple con requisitos y vigencia IMSS.'
+  } else {
+    generalObservations.value = selectedDetail.value.observations || ''
+  }
+  isObservationsModalOpen.value = true
+}
+
+function openDocReviewModal(doc: ExpedientDocument): void {
+  selectedDocForReview.value = doc
+  isDocReviewOpen.value = true
+}
+
+async function handleSaveGeneralObservations(): Promise<void> {
+  if (!selectedDetail.value || isSavingObservations.value) return
+  if (!observationsValidation.validate()) return
+  isSavingObservations.value = true
+  errorMessage.value = ''
+  try {
+    await updateSocialServiceImpact(selectedDetail.value.id, {
+      beneficiariesCount: selectedDetail.value.beneficiariesCount ?? 0,
+      hasInclusionActivities: Boolean(selectedDetail.value.hasInclusionActivities),
+      targetCommunity: selectedDetail.value.targetCommunity ?? null,
+      observations: generalObservations.value.trim() || null,
+    })
+    successMessage.value = 'Observaciones del expediente guardadas correctamente.'
+    isObservationsModalOpen.value = false
+    await refreshCurrentDetail()
+  } catch (err: any) {
+    observationsValidation.apply(err, 'No se pudieron guardar las observaciones.')
+  } finally {
+    isSavingObservations.value = false
+  }
+}
 
 const columns: { key: keyof SocialServiceRow & string; label: string }[] = [
   { key: 'studentControlNumber', label: 'Control' },
@@ -145,16 +296,21 @@ async function loadData(): Promise<void> {
   errorMessage.value = ''
   try {
     const res = await getSocialServices({
-      pageSize: 50,
+      page: currentPage.value,
+      pageSize,
       status: statusFilter.value || undefined,
       search: searchQuery.value.trim() || undefined,
     })
     items.value = res.items || []
+    totalItems.value = res.totalItems ?? items.value.length
+    totalPages.value = Math.max(1, res.totalPages ?? Math.ceil(totalItems.value / pageSize))
+
     if (allItemsCache.value.length === 0 && items.value.length > 0) {
       allItemsCache.value = [...items.value]
     } else if (!searchQuery.value && !statusFilter.value && items.value.length > 0) {
       allItemsCache.value = [...items.value]
     }
+    updateAnimatedKpis()
   } catch (err: any) {
     errorMessage.value =
       problemMessage(err, 'Error al cargar trámites de Servicio Social.')
@@ -174,6 +330,11 @@ async function openDetailModal(row: SocialServiceListItem): Promise<void> {
     ])
     selectedDetail.value = detail
     studentDocs.value = docs
+    reviewObservations.value =
+      detail.application?.officeObservations ||
+      detail.application?.rejectionReason ||
+      'Cumple con requisitos y vigencia IMSS.'
+    generalObservations.value = detail.observations || ''
     isDetailOpen.value = true
   } catch (err: any) {
     errorMessage.value = problemMessage(err, 'No se pudo cargar el detalle del trámite.')
@@ -198,20 +359,25 @@ async function refreshCurrentDetail(): Promise<void> {
 async function handleApproveApplication(isAccepted: boolean): Promise<void> {
   if (!selectedDetail.value) return
   if (isActionRunning.value) return
+  applicationDecision.value = isAccepted ? 'approve' : 'reject'
+  observationsModalMode.value = 'application'
+  if (!observationsValidation.validate()) return
   actionValidation.reset()
   isActionRunning.value = true
   errorMessage.value = ''
   try {
     await reviewSocialServiceApplication(selectedDetail.value.id, {
       isAccepted,
-      rejectionReason: isAccepted ? null : reviewObservations.value,
-      officeObservations: reviewObservations.value,
+      rejectionReason: isAccepted ? null : reviewObservations.value.trim(),
+      officeObservations: reviewObservations.value.trim(),
     })
     successMessage.value = isAccepted
       ? 'Solicitud aprobada. La Carta de Presentación firmada se carga y revisa en el expediente.'
       : 'Solicitud rechazada con observaciones.'
+    isObservationsModalOpen.value = false
     await refreshCurrentDetail()
   } catch (err: any) {
+    observationsValidation.apply(err, 'No se pudo dictaminar la solicitud.')
     actionValidation.apply(err, 'No se pudo completar la operación.')
     errorMessage.value = problemMessage(err, 'No se pudo dictaminar la solicitud.')
   } finally {
@@ -219,27 +385,9 @@ async function handleApproveApplication(isAccepted: boolean): Promise<void> {
   }
 }
 
-async function handleReviewDoc(doc: ExpedientDocument, status: 'approved' | 'rejected'): Promise<void> {
-  let reason: string | undefined
-  if (status === 'rejected') {
-    const input = window.prompt('Indica el motivo de observación / rechazo del documento:')
-    if (!input) return
-    reason = input
-  }
-  if (isActionRunning.value) return
-  actionValidation.reset()
-  isActionRunning.value = true
-  errorMessage.value = ''
-  try {
-    await reviewDocument(doc.id, { status, rejectionReason: reason })
-    successMessage.value = `Documento ${doc.documentCode} ${status === 'approved' ? 'aprobado' : 'observado'}.`
-    await refreshCurrentDetail()
-  } catch (err: any) {
-    actionValidation.apply(err, 'No se pudo completar la operación.')
-    errorMessage.value = problemMessage(err, 'No se pudo dictaminar el documento.')
-  } finally {
-    isActionRunning.value = false
-  }
+async function handleDocReviewed(reviewedDoc: ExpedientDocument): Promise<void> {
+  successMessage.value = `Documento ${reviewedDoc.documentCode} ${reviewedDoc.status === 'approved' ? 'aprobado' : 'observado'}.`
+  await refreshCurrentDetail()
 }
 
 async function handleViewDocPdf(docId: number): Promise<void> {
@@ -280,10 +428,14 @@ async function downloadIndividualAct(): Promise<void> {
 async function handlePrint(docKey: string): Promise<void> {
   if (!selectedDetail.value) return
   try {
-    if (docKey !== 'release_certificate' ) {
+    if (docKey !== 'release_certificate') {
       const response = await http.get(`/social-services/${selectedDetail.value.id}/pdf/${docKey}`, { responseType: 'blob' })
       const url = URL.createObjectURL(response.data)
-      const link = document.createElement('a'); link.href = url; link.download = `${docKey}.pdf`; link.click(); URL.revokeObjectURL(url)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${docKey}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
       return
     }
     const data = await getSocialServicePrintData(selectedDetail.value.id, docKey)
@@ -388,51 +540,102 @@ async function handleSendSchoolAct(): Promise<void> {
   }
 }
 
+onBeforeUnmount(() => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+})
+
 onMounted(() => {
   void loadData()
 })
+
 const actionValidation = useFormValidation()
 watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => actionValidation.reset())
+watchValidation(isObservationsModalOpen, () => observationsValidation.reset())
 </script>
 
 <template>
-  <UiBasePage :fluid="true">
-    <div style="margin-bottom: 1.5rem;">
-      <h1 style="font-size: 1.5rem; font-weight: 700; margin: 0;">
-        Gestión de Servicio Social (Vinculación)
-      </h1>
-      <p style="color: var(--color-text-muted, #6c757d); margin: 0.25rem 0 0;">
-        Dictamen de solicitudes Anexo XVIII, revisión de Cartas de Presentación firmadas, validación de
-        expediente documental y liberación
-      </p>
-    </div>
+  <UiBasePage :fluid="true" class="fullscreen-page">
+    <!-- Encabezado Ejecutivo Compacto -->
+    <header class="exec-header">
+      <div class="exec-header__left">
+        <div class="exec-eyebrow">
+          <span class="exec-badge">DEPARTAMENTO DE GESTIÓN TECNOLÓGICA Y VINCULACIÓN</span>
+          <span class="exec-period">· Servicio Social (480 h)</span>
+        </div>
+        <h1 class="exec-title">Gestión de Servicio Social (Vinculación)</h1>
+        <p class="exec-subtitle">
+          Dictamen de solicitudes Anexo XVIII, revisión de Cartas de Presentación firmadas, validación de expediente documental y liberación
+        </p>
+      </div>
 
-    <UiAlert v-if="errorMessage && !(actionValidation.hasErrors.value)" tone="danger" style="margin-bottom: 1rem;">
+      <div class="exec-kpis">
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--total"
+          :class="{ 'mini-kpi--active': statusFilter === '' }"
+          @click="resetFilters"
+        >
+          <span class="mini-kpi__label">Total Padrón</span>
+          <strong class="mini-kpi__value">{{ animatedKpis.total }}</strong>
+        </button>
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--gold"
+          :class="{ 'mini-kpi--active': statusFilter === 'requested' }"
+          @click="toggleKpiStatus('requested')"
+        >
+          <span class="mini-kpi__label">Por Dictaminar</span>
+          <strong class="mini-kpi__value">{{ animatedKpis.requested }}</strong>
+        </button>
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--navy"
+          :class="{ 'mini-kpi--active': statusFilter === 'active' }"
+          @click="toggleKpiStatus('active')"
+        >
+          <span class="mini-kpi__label">En Curso</span>
+          <strong class="mini-kpi__value">{{ animatedKpis.active }}</strong>
+        </button>
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--emerald"
+          :class="{ 'mini-kpi--active': statusFilter === 'released' }"
+          @click="toggleKpiStatus('released')"
+        >
+          <span class="mini-kpi__label">Liberados</span>
+          <strong class="mini-kpi__value">{{ animatedKpis.released }}</strong>
+        </button>
+      </div>
+    </header>
+
+    <UiAlert v-if="errorMessage && !(actionValidation.hasErrors.value || observationsValidation.hasErrors.value)" tone="danger" class="compact-alert">
       {{ errorMessage }}
     </UiAlert>
-    <UiAlert v-if="successMessage" tone="success" style="margin-bottom: 1rem;">
+    <UiAlert v-if="successMessage" tone="success" class="compact-alert">
       {{ successMessage }}
     </UiAlert>
 
-    <UiCard>
+    <UiCard class="workspace-card">
       <div class="filters-bar">
         <div class="search-box">
-          <label class="filter-label">Buscar por Matrícula o Alumno</label>
+          <label class="filter-label" for="ss-search-input">Buscar por Matrícula, Alumno, Carrera o Dependencia</label>
           <div class="autocomplete-container">
             <div class="input-wrapper">
-              <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+              <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" aria-hidden="true">
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
               <input
+                id="ss-search-input"
                 v-model="searchQuery"
                 type="text"
                 class="modern-input"
-                placeholder="Ej. I22050114 o Mariana..."
+                placeholder="Ej. I22050114, Mariana, IINF o Presidencia..."
+                autocomplete="off"
                 @input="handleSearchInput"
                 @focus="handleSearchFocus"
                 @blur="handleSearchBlur"
-                @keyup.enter="isAutocompleteOpen = false; loadData()"
+                @keyup.enter="isAutocompleteOpen = false; currentPage = 1; loadData()"
               />
               <button
                 v-if="searchQuery"
@@ -446,11 +649,12 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
             </div>
 
             <!-- Sugerencias Flotantes Autocomplete -->
-            <div v-if="isAutocompleteOpen && autocompleteSuggestions.length > 0" class="suggestions-dropdown">
+            <div v-if="isAutocompleteOpen && autocompleteSuggestions.length > 0" class="suggestions-dropdown" role="listbox">
               <div
                 v-for="item in autocompleteSuggestions"
                 :key="item.id"
                 class="suggestion-item"
+                role="option"
                 @mousedown.prevent="selectSuggestion(item)"
               >
                 <div class="suggestion-left">
@@ -467,9 +671,14 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
         </div>
 
         <div class="select-box">
-          <label class="filter-label">Filtrar por Estatus</label>
+          <label class="filter-label" for="ss-status-select">Filtrar por Estatus</label>
           <div class="select-wrapper">
-            <select v-model="statusFilter" class="modern-select" @change="loadData">
+            <select
+              id="ss-status-select"
+              v-model="statusFilter"
+              class="modern-select"
+              @change="currentPage = 1; loadData()"
+            >
               <option value="">Todos los estatus</option>
               <option value="requested">Solicitud Recibida (Por Dictaminar)</option>
               <option value="approved">Solicitud aprobada</option>
@@ -478,7 +687,7 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
               <option value="completed_pending_review">Listo para Liberar</option>
               <option value="released">Liberado (100%)</option>
             </select>
-            <svg class="select-chevron" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+            <svg class="select-chevron" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" aria-hidden="true">
               <polyline points="6 9 12 15 18 9" />
             </svg>
           </div>
@@ -488,19 +697,32 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
           <UiButton
             v-if="searchQuery || statusFilter"
             variant="secondary"
+            size="sm"
             class="reset-btn"
             title="Restablecer filtros"
             @click="resetFilters"
           >
             Limpiar
           </UiButton>
-          <UiButton variant="primary" class="filter-btn" :disabled="isLoading" @click="loadData">
+          <UiButton variant="primary" size="sm" class="filter-btn" :disabled="isLoading" @click="currentPage = 1; loadData()">
             {{ isLoading ? 'Buscando...' : 'Buscar' }}
           </UiButton>
         </div>
       </div>
 
-      <UiTable label="Trámites de Servicio Social" :columns="columns" :rows="items">
+      <UiTable class="compact-table" label="Trámites de Servicio Social" :columns="columns" :rows="items">
+        <template #cell-studentControlNumber="{ row }">
+          <span class="control-code">{{ row.studentControlNumber }}</span>
+        </template>
+
+        <template #cell-studentFullName="{ row }">
+          <span class="student-name-cell">{{ row.studentFullName }}</span>
+        </template>
+
+        <template #cell-companyName="{ row }">
+          <span class="company-name-cell" :title="row.companyName">{{ row.companyName }}</span>
+        </template>
+
         <template #cell-modality="{ row }">
           <UiBadge :tone="row.modality === 'internal' ? 'info' : 'purple'">
             {{ row.modality === 'internal' ? 'Local (TecNM)' : 'Externo' }}
@@ -508,26 +730,19 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
         </template>
 
         <template #cell-documentProgressPercentage="{ row }">
-          <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <div
-              style="flex: 1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; min-width: 60px;"
-            >
+          <div class="progress-cell">
+            <div class="progress-track">
               <div
-                :style="{
-                  width: `${row.documentProgressPercentage}%`,
-                  height: '100%',
-                  background: '#0284c7',
-                }"
-              ></div>
+                class="progress-fill"
+                :style="{ width: `${row.documentProgressPercentage}%` }"
+              />
             </div>
-            <span style="font-size: 0.85rem; font-weight: 600;">
-              {{ row.documentProgressPercentage }}%
-            </span>
+            <span class="progress-text">{{ row.documentProgressPercentage }}%</span>
           </div>
         </template>
 
         <template #cell-status="{ row }">
-          <UiBadge :tone="row.status === 'released' ? 'success' : 'warning'">
+          <UiBadge :tone="row.status === 'released' ? 'success' : row.status === 'requested' ? 'info' : 'warning'">
             {{ formatStatus(row.status) }}
           </UiBadge>
         </template>
@@ -538,10 +753,35 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
           </UiButton>
         </template>
       </UiTable>
+
+      <!-- Barra de Paginación Estandarizada (10 por página) -->
+      <nav class="pagination-bar" aria-label="Paginación de trámites de Servicio Social">
+        <span class="pagination-info">
+          Mostrando <strong>{{ items.length }}</strong> de <strong>{{ totalItems }}</strong> trámites · Página <strong>{{ currentPage }}</strong> de <strong>{{ totalPages }}</strong>
+        </span>
+        <div class="pagination-controls">
+          <UiButton
+            variant="secondary"
+            size="sm"
+            :disabled="isLoading || currentPage <= 1"
+            @click="currentPage--; loadData()"
+          >
+            Anterior
+          </UiButton>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            :disabled="isLoading || currentPage >= totalPages"
+            @click="currentPage++; loadData()"
+          >
+            Siguiente
+          </UiButton>
+        </div>
+      </nav>
     </UiCard>
 
     <!-- ================================================================== -->
-    <!-- MODAL DE GESTIÓN INTEGRAL DEL TRÁMITE DE SERVICIO SOCIAL           -->
+    <!-- MODAL 1: GESTIÓN INTEGRAL DEL TRÁMITE DE SERVICIO SOCIAL           -->
     <!-- ================================================================== -->
     <UiDialog
       v-model="isDetailOpen"
@@ -552,132 +792,152 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
           : 'Detalle de Servicio Social'
       "
     >
-      <div v-if="selectedDetail" style="display: flex; flex-direction: column; gap: 1rem;">
+      <div v-if="selectedDetail" class="detail-modal-stack">
         <UiFormErrors :validation="actionValidation" />
-        <ExpedientChecklist :application-accepted="selectedDetail.application?.isAcceptedByOffice" :requirements="selectedDetail.documentRequirements" :documents="studentDocs" tramite-type="social_service" :tramite-id="selectedDetail.id" :student-id="selectedDetail.student.id" :can-edit="false" @changed="refreshCurrentDetail" />
-        <div
-          style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; background: #f8fafc; padding: 0.85rem; border-radius: 8px;"
-        >
-          <div>
-            <small style="color: #6b7280; display: block;">Estatus Actual</small>
+
+        <!-- Resumen de Folios, Estado y Observaciones -->
+        <div class="summary-grid">
+          <div class="summary-item">
+            <small>Estatus Actual</small>
             <strong>{{ formatStatus(selectedDetail.status) }}</strong>
           </div>
-          <div>
-            <small style="color: #6b7280; display: block;">Dependencia</small>
+          <div class="summary-item">
+            <small>Dependencia</small>
             <strong>{{ selectedDetail.company.name }}</strong>
           </div>
-          <div>
-            <small style="color: #6b7280; display: block;">Folio Carta Presentación</small>
+          <div class="summary-item">
+            <small>Folio Carta Presentación</small>
             <strong>{{ selectedDetail.presentationLetterFolio || 'Pendiente' }}</strong>
           </div>
-          <div>
-            <small style="color: #6b7280; display: block;">Folio Constancia Terminación</small>
-            <strong style="color: #16a34a;">
-              {{ selectedDetail.releaseCertificateFolio || 'Pendiente' }}
-            </strong>
+          <div class="summary-item">
+            <small>Folio Constancia Terminación</small>
+            <strong class="text-emerald">{{ selectedDetail.releaseCertificateFolio || 'Pendiente' }}</strong>
           </div>
         </div>
 
-        <!-- Botones de Impresión de Plantillas -->
-        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-          <UiButton variant="secondary" size="sm" @click="handlePrint('application')">
-            Ver {{ socialDocumentLabel('SOL') }}
-          </UiButton>
-          <UiButton
-            v-if="selectedDetail.presentationLetterFolio"
-            variant="secondary"
-            size="sm"
-            @click="handlePrint('presentation_letter')"
-          >
-            Imprimir Carta Presentación (CP)
-          </UiButton>
-          <UiButton
-            v-if="selectedDetail.status === 'released'"
-            variant="secondary"
-            size="sm"
-            @click="handlePrint('release_certificate')"
-          >
-            Imprimir Constancia Liberación (SSC)
-          </UiButton>
-        </div>
-
-        <UiButton v-if="selectedDetail.status === 'released'" variant="secondary" size="sm"
-          :disabled="isActDownloading" @click="downloadIndividualAct">
-          {{ isActDownloading ? 'Descargando Acta Individual…' : 'Descargar Acta Individual' }}
-        </UiButton>
-
-        <!-- Paso 1: Si está en 'requested', permitir Dictaminar y Emitir CP -->
-        <div
-          v-if="selectedDetail.status === 'requested'"
-          style="padding: 0.9rem; border: 1px solid #bae6fd; background: #f0f9ff; border-radius: 8px;"
-        >
-          <strong>Dictamen de Apertura (Anexo XVIII)</strong>
-          <p style="margin: 0.25rem 0 0.6rem; font-size: 0.85rem;">
-            Aprueba primero la Solicitud firmada y la vigencia IMSS. La Carta de Presentación
-            firmada se carga como PDF y recibe su propio dictamen documental.
-          </p>
-          <UiField label="Observaciones de Vinculación" v-slot="{ controlAttrs }" v-bind="actionValidation.field('rejectionReason', 'Observaciones')">
-            <input v-bind="controlAttrs" v-model="reviewObservations" type="text" />
-          </UiField>
-          <div style="display: flex; gap: 0.5rem; margin-top: 0.6rem;">
+        <!-- Barra de Acciones de Plantillas, Acta Individual y Modal de Observaciones -->
+        <div class="detail-toolbar">
+          <div class="detail-toolbar__group">
+            <UiButton variant="secondary" size="sm" @click="handlePrint('application')">
+              Ver {{ socialDocumentLabel('SOL') }}
+            </UiButton>
             <UiButton
+              v-if="selectedDetail.presentationLetterFolio"
+              variant="secondary"
+              size="sm"
+              @click="handlePrint('presentation_letter')"
+            >
+              Imprimir Carta Presentación (CP)
+            </UiButton>
+            <UiButton
+              v-if="selectedDetail.status === 'released'"
+              variant="secondary"
+              size="sm"
+              @click="handlePrint('release_certificate')"
+            >
+              Imprimir Constancia Liberación (SSC)
+            </UiButton>
+            <UiButton
+              v-if="selectedDetail.status === 'released'"
+              variant="secondary"
+              size="sm"
+              :disabled="isActDownloading"
+              @click="downloadIndividualAct"
+            >
+              {{ isActDownloading ? 'Descargando Acta Individual…' : 'Descargar Acta Individual' }}
+            </UiButton>
+          </div>
+
+          <div class="detail-toolbar__group">
+            <UiButton
+              v-if="selectedDetail.status === 'requested'"
               variant="primary"
               size="sm"
-              :disabled="isActionRunning"
-              @click="handleApproveApplication(true)"
+              @click="openObservationsModal('application')"
             >
-              Aprobar Solicitud
+              Dictaminar Solicitud (Anexo XVIII)
             </UiButton>
             <UiButton
               variant="secondary"
               size="sm"
-              :disabled="isActionRunning"
-              @click="handleApproveApplication(false)"
+              @click="openObservationsModal('general')"
             >
-              Rechazar Solicitud
+              Observaciones del Expediente
             </UiButton>
           </div>
         </div>
 
-        <!-- Lista de Documentos Subidos por el Alumno para Validar -->
-        <div>
-          <strong style="display: block; margin-bottom: 0.5rem;">
+        <!-- Resumen de Observaciones vigentes (si existen) -->
+        <div
+          v-if="selectedDetail.observations || selectedDetail.application?.officeObservations || selectedDetail.application?.rejectionReason"
+          class="observations-banner"
+        >
+          <div class="observations-banner__text">
+            <strong>Observaciones registradas:</strong>
+            <span v-if="selectedDetail.observations">{{ selectedDetail.observations }}</span>
+            <span v-else>{{ selectedDetail.application?.officeObservations || selectedDetail.application?.rejectionReason }}</span>
+          </div>
+          <UiButton variant="secondary" size="sm" @click="openObservationsModal(selectedDetail.status === 'requested' ? 'application' : 'general')">
+            Editar observaciones
+          </UiButton>
+        </div>
+
+        <!-- Checklist Documental Guiado -->
+        <ExpedientChecklist
+          :application-accepted="selectedDetail.application?.isAcceptedByOffice"
+          :requirements="selectedDetail.documentRequirements"
+          :documents="studentDocs"
+          tramite-type="social_service"
+          :tramite-id="selectedDetail.id"
+          :student-id="selectedDetail.student.id"
+          :can-edit="false"
+          @changed="refreshCurrentDetail"
+        />
+
+        <!-- Lista de Documentos Subidos por el Alumno para Validar mediante Modal -->
+        <div class="uploaded-docs-section">
+          <strong class="section-heading">
             Documentos Subidos en el Expediente ({{ studentDocs.length }})
           </strong>
           <div
             v-if="studentDocs.length === 0"
-            style="padding: 0.75rem; color: #6b7280; font-size: 0.88rem;"
+            class="empty-docs-note"
           >
             El alumno aún no ha subido archivos PDF a este trámite.
           </div>
-          <div v-else style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 240px; overflow-y: auto;">
+          <div v-else class="uploaded-docs-list">
             <div
-              v-for="doc in [...studentDocs].sort((a,b) => socialDocumentOrder(a.documentCode) - socialDocumentOrder(b.documentCode))"
+              v-for="doc in [...studentDocs].sort((a, b) => socialDocumentOrder(a.documentCode) - socialDocumentOrder(b.documentCode))"
               :key="doc.id"
-              style="display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0.8rem; border: 1px solid #e5e7eb; border-radius: 6px; gap: 0.5rem; flex-wrap: wrap;"
+              class="uploaded-doc-row"
             >
-              <div>
-                <strong>{{ socialDocumentLabel(doc.documentCode) }} {{ socialDocumentPeriod(doc.documentCode) }}</strong> — {{ doc.originalFileName }}
-                <UiBadge
-                  :tone="
-                    doc.status === 'approved'
-                      ? 'success'
-                      : doc.status === 'rejected'
-                        ? 'danger'
-                        : 'warning'
-                  "
-                  style="margin-left: 0.4rem;"
-                >
-                  {{
-                    doc.status === 'approved'
-                      ? 'Aprobado (SI)'
-                      : doc.status === 'rejected'
-                        ? 'Observado'
-                        : 'En Revisión'
-                  }}
-                </UiBadge>
+              <div class="uploaded-doc-info">
+                <div>
+                  <strong>{{ socialDocumentLabel(doc.documentCode) }} {{ socialDocumentPeriod(doc.documentCode) }}</strong> — {{ doc.originalFileName }}
+                  <UiBadge
+                    :tone="
+                      doc.status === 'approved'
+                        ? 'success'
+                        : doc.status === 'rejected'
+                          ? 'danger'
+                          : 'warning'
+                    "
+                    style="margin-left: 0.4rem;"
+                  >
+                    {{
+                      doc.status === 'approved'
+                        ? 'Aprobado (SI)'
+                        : doc.status === 'rejected'
+                          ? 'Observado'
+                          : 'En Revisión'
+                    }}
+                  </UiBadge>
+                </div>
+                <small v-if="doc.rejectionReason" class="doc-rejection-note">
+                  Observación: {{ doc.rejectionReason }}
+                </small>
               </div>
-              <div style="display: flex; gap: 0.4rem;">
+              <div class="uploaded-doc-actions">
                 <UiButton variant="secondary" size="sm" @click="handleViewDocPdf(doc.id)">
                   Ver PDF
                 </UiButton>
@@ -686,18 +946,17 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
                   variant="primary"
                   size="sm"
                   :disabled="isActionRunning"
-                  @click="handleReviewDoc(doc, 'approved')"
+                  @click="openDocReviewModal(doc)"
                 >
-                  Aprobar
+                  Dictaminar / Observar
                 </UiButton>
                 <UiButton
-                  v-if="doc.status === 'pending'"
+                  v-else
                   variant="secondary"
                   size="sm"
-                  :disabled="isActionRunning"
-                  @click="handleReviewDoc(doc, 'rejected')"
+                  @click="openDocReviewModal(doc)"
                 >
-                  Observar
+                  Ver Dictamen
                 </UiButton>
               </div>
             </div>
@@ -705,9 +964,7 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
         </div>
 
         <!-- Botones de Avance de Etapa y Emisión de Constancia de Liberación -->
-        <div
-          style="display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid #e5e7eb;"
-        >
+        <div class="stage-actions-bar">
           <UiButton
             v-if="selectedDetail.status === 'approved'"
             variant="primary"
@@ -767,38 +1024,299 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
         <UiButton variant="secondary" @click="isDetailOpen = false">Cerrar</UiButton>
       </template>
     </UiDialog>
+
+    <!-- ================================================================== -->
+    <!-- MODAL 2: GESTIÓN DE OBSERVACIONES Y DICTAMEN DE SOLICITUD          -->
+    <!-- ================================================================== -->
+    <UiDialog
+      v-model="isObservationsModalOpen"
+      size="md"
+      :title="
+        observationsModalMode === 'application'
+          ? 'Dictamen y Observaciones de Apertura (Anexo XVIII)'
+          : 'Observaciones del Expediente de Servicio Social'
+      "
+    >
+      <div v-if="selectedDetail" class="observations-modal-body">
+        <UiFormErrors :validation="observationsValidation" />
+
+        <div class="observations-student-pill">
+          <strong>{{ selectedDetail.student.controlNumber }}</strong> · {{ selectedDetail.student.fullName }}
+          <span>({{ selectedDetail.company.name }})</span>
+        </div>
+
+        <template v-if="observationsModalMode === 'application'">
+          <p class="observations-helper">
+            Revisa la Solicitud (Anexo XVIII) y la vigencia IMSS del estudiante. Registra las observaciones de Vinculación para aprobar o rechazar la apertura del trámite.
+          </p>
+
+          <div v-if="selectedDetail.application?.reviewedByName" class="previous-review-box">
+            <small>Última revisión por {{ selectedDetail.application.reviewedByName }}:</small>
+            <p>{{ selectedDetail.application.officeObservations || selectedDetail.application.rejectionReason || 'Sin observaciones previas.' }}</p>
+          </div>
+
+          <UiField
+            v-model="reviewObservations"
+            as="textarea"
+            label="Observaciones de Vinculación *"
+            placeholder="Describe las observaciones del dictamen o el motivo de rechazo..."
+            maxlength="1000"
+            v-bind="observationsValidation.field('rejectionReason', 'Observaciones de Vinculación')"
+            :disabled="isActionRunning"
+          />
+        </template>
+
+        <template v-else>
+          <p class="observations-helper">
+            Consulta, redacta o actualiza las observaciones administrativas de seguimiento del expediente de Servicio Social.
+          </p>
+
+          <UiField
+            v-model="generalObservations"
+            as="textarea"
+            label="Observaciones Administrativas del Expediente"
+            placeholder="Escribe notas de seguimiento, acuerdos con la dependencia o aclaraciones..."
+            maxlength="2000"
+            v-bind="observationsValidation.field('observations', 'Observaciones del expediente')"
+            :disabled="isSavingObservations"
+          />
+        </template>
+      </div>
+
+      <template #footer>
+        <UiButton
+          variant="secondary"
+          :disabled="isActionRunning || isSavingObservations"
+          @click="isObservationsModalOpen = false"
+        >
+          Cancelar
+        </UiButton>
+
+        <template v-if="observationsModalMode === 'application'">
+          <UiButton
+            variant="danger"
+            :disabled="isActionRunning"
+            :loading="isActionRunning && applicationDecision === 'reject'"
+            @click="handleApproveApplication(false)"
+          >
+            Rechazar con Observaciones
+          </UiButton>
+          <UiButton
+            variant="primary"
+            :disabled="isActionRunning"
+            :loading="isActionRunning && applicationDecision === 'approve'"
+            @click="handleApproveApplication(true)"
+          >
+            Aprobar Solicitud
+          </UiButton>
+        </template>
+
+        <template v-else>
+          <UiButton
+            variant="primary"
+            :disabled="isSavingObservations"
+            :loading="isSavingObservations"
+            @click="handleSaveGeneralObservations"
+          >
+            {{ isSavingObservations ? 'Guardando...' : 'Guardar Observaciones' }}
+          </UiButton>
+        </template>
+      </template>
+    </UiDialog>
+
+    <!-- ================================================================== -->
+    <!-- MODAL 3: DICTAMEN Y OBSERVACIONES DE DOCUMENTO INDIVIDUAL (PDF)    -->
+    <!-- ================================================================== -->
+    <DocumentReviewDialog
+      v-model="isDocReviewOpen"
+      :document="selectedDocForReview"
+      :student-name="selectedDetail?.student.fullName"
+      @reviewed="handleDocReviewed"
+    />
   </UiBasePage>
 </template>
 
 <style scoped>
+.fullscreen-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.exec-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.exec-header__left {
+  flex: 1;
+  min-width: 260px;
+}
+
+.exec-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.15rem;
+  flex-wrap: wrap;
+}
+
+.exec-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.14rem 0.5rem;
+  border-radius: 5px;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.exec-period {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.exec-title {
+  font-size: 1.22rem;
+  font-weight: 800;
+  margin: 0;
+  color: var(--color-text-primary);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.exec-subtitle {
+  color: var(--color-text-secondary);
+  margin: 0.12rem 0 0;
+  font-size: 0.79rem;
+  line-height: 1.3;
+}
+
+.exec-kpis {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* KPIs institucionales con fondo neutro y borde dorado al estar activo */
+.mini-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.42rem 0.85rem;
+  min-width: 112px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-surface-white);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mini-kpi:hover {
+  background: var(--secondary-hover);
+  border-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-border-medium));
+  transform: translateY(-2px);
+}
+
+.mini-kpi:hover .mini-kpi__label,
+.mini-kpi--active .mini-kpi__label {
+  color: var(--color-text-primary);
+}
+
+.mini-kpi__label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  transition: color 180ms ease;
+}
+
+.mini-kpi__value {
+  font-size: 1.18rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  line-height: 1.15;
+}
+
+.mini-kpi--gold .mini-kpi__value {
+  color: var(--color-warning);
+}
+
+.mini-kpi--navy .mini-kpi__value {
+  color: var(--color-info);
+}
+
+.mini-kpi--emerald .mini-kpi__value {
+  color: var(--color-success);
+}
+
+.mini-kpi--active {
+  background: var(--kpi-active-bg);
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-accent) !important;
+}
+
+.compact-alert {
+  margin-bottom: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  flex-shrink: 0;
+}
+
+/* Tarjeta principal ajustada para pantalla completa sin scroll externo */
+.workspace-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px !important;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+}
+
+/* Barra de filtros con superficie institucional contrastada */
 .filters-bar {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
   align-items: flex-end;
-  margin-bottom: 1rem;
+  margin-bottom: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-toolbar);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .search-box {
-  flex: 1.5;
+  flex: 1.7;
   min-width: 240px;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.22rem;
 }
 
 .select-box {
-  flex: 1.2;
-  min-width: 220px;
+  flex: 1.1;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.22rem;
 }
 
 .filter-label {
-  font-size: 0.8rem;
+  font-size: 0.73rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--color-text-secondary);
 }
 
 .input-wrapper,
@@ -812,54 +1330,62 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
 .search-icon {
   position: absolute;
   left: 0.75rem;
-  color: #94a3b8;
+  color: var(--color-text-secondary);
   pointer-events: none;
+  z-index: 2;
 }
 
-.modern-input {
+input.modern-input {
   width: 100%;
-  height: 38px;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  padding: 0 1rem 0 2.25rem;
-  font-size: 0.85rem;
-  color: #0f172a;
+  min-height: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--input-border) !important;
+  background: var(--input-bg) !important;
+  padding: 0 2rem 0 2.35rem !important;
+  font-size: 0.81rem;
+  color: var(--color-text-primary) !important;
   outline: none;
-  transition: all 0.15s ease;
   box-sizing: border-box;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
-.modern-input:focus {
-  border-color: #0284c7;
-  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+input.modern-input:hover,
+select.modern-select:hover {
+  border-color: var(--color-gray-400) !important;
 }
 
-.modern-select {
+input.modern-input:focus {
+  border-color: var(--color-border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-focus) 22%, transparent);
+}
+
+select.modern-select {
   width: 100%;
-  height: 38px;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  padding: 0 2rem 0 0.75rem;
-  font-size: 0.85rem;
-  color: #0f172a;
+  min-height: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--input-border) !important;
+  background: var(--input-bg) !important;
+  padding: 0 2rem 0 0.75rem !important;
+  font-size: 0.81rem;
+  color: var(--color-text-primary) !important;
   outline: none;
   appearance: none;
   cursor: pointer;
-  transition: all 0.15s ease;
   box-sizing: border-box;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
-.modern-select:focus {
-  border-color: #0284c7;
-  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+select.modern-select:focus {
+  border-color: var(--color-border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-focus) 22%, transparent);
 }
 
 .select-chevron {
   position: absolute;
   right: 0.75rem;
-  color: #64748b;
+  color: var(--color-text-secondary);
   pointer-events: none;
 }
 
@@ -867,19 +1393,15 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  height: 38px;
+  height: 34px;
 }
 
-.reset-btn {
-  height: 38px;
-  padding: 0 0.85rem;
-  font-size: 0.85rem;
-}
-
+.reset-btn,
 .filter-btn {
-  height: 38px;
-  padding: 0 1.25rem;
-  font-size: 0.85rem;
+  min-height: 34px !important;
+  height: 34px !important;
+  padding: 0 0.9rem !important;
+  font-size: 0.8rem !important;
 }
 
 .autocomplete-container {
@@ -889,12 +1411,12 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
 
 .clear-search-btn {
   position: absolute;
-  right: 0.6rem;
+  right: 0.5rem;
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   padding: 0.2rem;
   display: inline-flex;
   align-items: center;
@@ -903,8 +1425,8 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
 }
 
 .clear-search-btn:hover {
-  color: #0f172a;
-  background: #f1f5f9;
+  color: var(--color-text-primary);
+  background: var(--secondary-hover);
 }
 
 .suggestions-dropdown {
@@ -912,12 +1434,12 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--floating-bg);
+  border: 1px solid var(--floating-border);
   border-radius: 8px;
-  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--floating-shadow);
   z-index: 999;
-  max-height: 250px;
+  max-height: 220px;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -926,10 +1448,10 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.6rem 0.85rem;
+  padding: 0.45rem 0.75rem;
   cursor: pointer;
-  border-bottom: 1px solid #f1f5f9;
-  transition: background 0.12s ease;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background-color 140ms ease;
 }
 
 .suggestion-item:last-child {
@@ -937,45 +1459,311 @@ watchValidation(() => [isDetailOpen.value, selectedDetail.value?.id], () => acti
 }
 
 .suggestion-item:hover {
-  background: #f8fafc;
+  background: var(--color-primary-subtle);
 }
 
 .suggestion-left {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.08rem;
 }
 
 .suggestion-control {
   font-family: monospace;
   font-weight: 700;
-  font-size: 0.82rem;
-  color: #0284c7;
+  font-size: 0.78rem;
+  color: var(--color-info-text);
 }
 
 .suggestion-name {
-  font-size: 0.82rem;
-  color: #1e293b;
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
 }
 
 .suggestion-right {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .suggestion-career {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 700;
   padding: 0.1rem 0.4rem;
-  background: #f1f5f9;
+  background: var(--color-primary-subtle);
   border-radius: 4px;
-  color: #475569;
+  color: var(--color-info-text);
 }
 
 .suggestion-progress {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/* Tabla compacta institucional que se ajusta a la vista completa */
+.compact-table {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -16px !important;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0 !important;
+}
+
+.compact-table :deep(th) {
+  padding: 8px 12px;
+  font-size: 0.69rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: var(--surface-table-head);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-medium);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.compact-table :deep(td) {
+  padding: 7px 12px;
+  font-size: 0.81rem;
+  white-space: normal;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.compact-table :deep(tbody tr) {
+  transition: background-color 150ms ease;
+}
+
+.compact-table :deep(tbody tr:hover) {
+  background: var(--color-primary-subtle);
+}
+
+.control-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+
+.student-name-cell {
   font-weight: 600;
-  color: #0f172a;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+
+.company-name-cell {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 260px;
+  line-height: 1.3;
+  color: var(--color-text-secondary);
+  font-size: 0.79rem;
+}
+
+.progress-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 98px;
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  background: var(--color-gray-200);
+  border-radius: 999px;
+  overflow: hidden;
+  min-width: 48px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-info);
+  border-radius: 999px;
+  transition: width 300ms ease;
+}
+
+.progress-text {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.6rem;
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.pagination-info {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Modal Detalle y Observaciones */
+.detail-modal-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+  background: var(--color-bg-light);
+  padding: 0.8rem 0.95rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.summary-item small {
+  color: var(--color-text-secondary);
+  display: block;
+  font-size: 0.75rem;
+}
+
+.text-emerald {
+  color: var(--color-success);
+}
+
+.detail-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.detail-toolbar__group {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.observations-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 8px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-warning-text);
+  font-size: 0.84rem;
+  flex-wrap: wrap;
+}
+
+.observations-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.section-heading {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.9rem;
+}
+
+.empty-docs-note {
+  padding: 0.65rem;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.uploaded-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.uploaded-doc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-light);
+  border-radius: 8px;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.uploaded-doc-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.doc-rejection-note {
+  color: var(--color-danger-text);
+  font-size: 0.78rem;
+}
+
+.uploaded-doc-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.stage-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.observations-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.observations-student-pill {
+  padding: 0.55rem 0.75rem;
+  background: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.84rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.observations-helper {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.previous-review-box {
+  padding: 0.55rem 0.75rem;
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-primary-subtle);
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+
+.previous-review-box p {
+  margin: 0.2rem 0 0;
 }
 </style>

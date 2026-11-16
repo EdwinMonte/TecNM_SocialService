@@ -64,11 +64,13 @@ Automatiza el formulario oficial de Microsoft Forms:
 
 ### 2.3 Detalle Administrativo para Vinculación (`/internships/:id`)
 - **Acciones Rápidas del Coordinador:**
-  - Si `requested`: Botón "Aprobar y Emitir Carta de Presentación" (genera automáticamente el folio `EJ26/PR...` y fecha de oficio).
+  - Si `requested`: Botón "Dictaminar y Emitir Carta de Presentación" que abre un modal (`UiDialog`) para capturar observaciones de coordinación y aprobar la solicitud (genera automáticamente el folio `EJ26/PR...` y fecha de oficio).
   - Si `approved`: Botón "Registrar / Validar Aceptación" (asigna empresa, supervisor y activa las prácticas al verificar el PDF `CA`).
   - Si `active`: Botón "Completar Prácticas" (verifica documentos `EV` y `CT` aprobados).
   - Si `completed_pending_review`: Botón "Liberar y Acreditar (PPC)" (asigna folio `PPC...`, marca expediente completo y acredita los 2 créditos).
   - Si `released`: Botón "Enviar Acta a Escolares" (genera folio `DGTV...`).
+  - Gestión de **Observaciones Generales del Expediente** y **Dictamen / Observaciones de Documentos** mediante modales (`UiDialog` / `DocumentReviewDialog.vue`), sin usar `window.prompt`.
+  - Buscador con autocompletado dinámico y debounce (250 ms) y paginación estandarizada de **10 registros por página**.
   - Botón "Registrar Producto No Conforme (PNC)".
   - Botón "Ver Historial de Auditoría".
 
