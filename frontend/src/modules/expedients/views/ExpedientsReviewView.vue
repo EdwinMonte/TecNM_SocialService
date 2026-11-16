@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { socialDocumentLabel, socialDocumentPeriod, socialServiceDocuments } from '../../../shared/utils/socialServiceDocuments'
+import {
+  socialDocumentLabel,
+  socialDocumentPeriod,
+  socialServiceDocuments,
+} from '../../../shared/utils/socialServiceDocuments'
 import DocumentReviewDialog from '../components/DocumentReviewDialog.vue'
 import { canReadProcess } from '../../../shared/composables/useSession'
 import {
@@ -10,7 +14,6 @@ import {
   UiButton,
   UiCard,
   UiDialog,
-  UiField,
   UiToast,
 } from '../../../shared/components'
 import { getDocumentBlob, getReviewQueuePage } from '../api/expedientsApi'
@@ -31,21 +34,33 @@ const loadError = ref(false)
 const isLoading = ref(true)
 const toast = ref<InstanceType<typeof UiToast> | null>(null)
 
-// Filtros reactivos
+// Filtros reactivos y paginación estandarizada (10 por página, sin filtro por ID de periodo)
 const searchQuery = ref('')
 const modalityFilter = ref<'all' | 'social_service' | 'internship' | 'general'>('all')
 const statusFilter = ref<'all' | ExpedientDocumentStatus>('all')
 const docCodeFilter = ref<string | null>(null)
-const page = ref(1), totalPages = ref(0), totalItems = ref(0)
-const periodId = ref<number | undefined>()
+const page = ref(1)
+const pageSize = 10
+const totalPages = ref(1)
+const totalItems = ref(0)
+
+// Autocomplete con Debounce (280 ms)
+const autocompleteSuggestions = ref<ReviewQueueItem[]>([])
+const isAutocompleteOpen = ref(false)
 let requestSequence = 0
 let filterTimer: ReturnType<typeof setTimeout> | undefined
-watch([searchQuery, modalityFilter, statusFilter, docCodeFilter, periodId], () => {
+
+watch([modalityFilter, statusFilter, docCodeFilter], () => {
   clearTimeout(filterTimer)
+  isAutocompleteOpen.value = false
   page.value = 1
-  filterTimer = setTimeout(() => { void loadQueue() }, 250)
+  void loadQueue()
 })
-onBeforeUnmount(() => { clearTimeout(filterTimer); requestSequence++ })
+
+onBeforeUnmount(() => {
+  clearTimeout(filterTimer)
+  requestSequence++
+})
 
 // Contadores KPI animados
 const animatedCounts = reactive({
@@ -74,7 +89,7 @@ function updateAnimatedKpis(): void {
     return
   }
 
-  const duration = 640
+  const duration = 520
   const start = performance.now()
 
   function tick(now: number): void {
@@ -95,21 +110,35 @@ function updateAnimatedKpis(): void {
   requestAnimationFrame(tick)
 }
 
+function sortNewestFirst(items: ReviewQueueItem[]): ReviewQueueItem[] {
+  return [...items].sort((a, b) => {
+    const timeDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    if (timeDiff !== 0) return timeDiff
+    return b.id - a.id
+  })
+}
+
 async function loadQueue(): Promise<void> {
   const sequence = ++requestSequence
   isLoading.value = true
   try {
-    const data = await getReviewQueuePage({ page: page.value, pageSize: 20, status: statusFilter.value,
+    const data = await getReviewQueuePage({
+      page: page.value,
+      pageSize,
+      status: statusFilter.value,
       tramiteType: modalityFilter.value === 'all' ? undefined : modalityFilter.value,
-      documentCode: docCodeFilter.value || undefined, search: searchQuery.value || undefined, periodId: periodId.value })
+      documentCode: docCodeFilter.value || undefined,
+      search: searchQuery.value.trim() || undefined,
+    })
     if (sequence !== requestSequence) return
-    totalPages.value = data.totalPages
+    totalPages.value = Math.max(1, data.totalPages || Math.ceil((data.totalItems || 0) / pageSize))
     totalItems.value = data.totalItems
     loadError.value = false
-    queue.value = data.items
+    queue.value = sortNewestFirst(data.items || [])
   } catch {
     if (sequence !== requestSequence) return
-    totalItems.value = 0; totalPages.value = 0
+    totalItems.value = 0
+    totalPages.value = 1
     loadError.value = true
     queue.value = []
     toast.value?.show('No fue posible cargar la bandeja. Actualiza para intentar nuevamente.')
@@ -119,11 +148,98 @@ async function loadQueue(): Promise<void> {
   }
 }
 
-const filteredQueue = computed(() => queue.value)
+async function fetchSuggestions(query: string): Promise<void> {
+  const q = query.trim()
+  if (!q) {
+    autocompleteSuggestions.value = []
+    isAutocompleteOpen.value = false
+    return
+  }
+  try {
+    const data = await getReviewQueuePage({
+      page: 1,
+      pageSize: 6,
+      status: statusFilter.value,
+      tramiteType: modalityFilter.value === 'all' ? undefined : modalityFilter.value,
+      documentCode: docCodeFilter.value || undefined,
+      search: q,
+    })
+    autocompleteSuggestions.value = sortNewestFirst(data.items || []).slice(0, 6)
+    isAutocompleteOpen.value = autocompleteSuggestions.value.length > 0
+  } catch {
+    autocompleteSuggestions.value = []
+    isAutocompleteOpen.value = false
+  }
+}
+
+function handleSearchInput(): void {
+  clearTimeout(filterTimer)
+  filterTimer = setTimeout(() => {
+    page.value = 1
+    void fetchSuggestions(searchQuery.value)
+    void loadQueue()
+  }, 280)
+}
+
+function selectSuggestion(item: ReviewQueueItem): void {
+  searchQuery.value = item.studentControlNumber
+  isAutocompleteOpen.value = false
+  page.value = 1
+  void loadQueue()
+}
+
+function clearSearch(): void {
+  searchQuery.value = ''
+  autocompleteSuggestions.value = []
+  isAutocompleteOpen.value = false
+  page.value = 1
+  void loadQueue()
+}
+
+function handleSearchFocus(): void {
+  if (searchQuery.value.trim().length > 0 && autocompleteSuggestions.value.length > 0) {
+    isAutocompleteOpen.value = true
+  }
+}
+
+function handleSearchBlur(): void {
+  setTimeout(() => {
+    isAutocompleteOpen.value = false
+  }, 180)
+}
+
+function resetAllFilters(): void {
+  searchQuery.value = ''
+  autocompleteSuggestions.value = []
+  isAutocompleteOpen.value = false
+  modalityFilter.value = 'all'
+  statusFilter.value = 'all'
+  docCodeFilter.value = null
+  page.value = 1
+  void loadQueue()
+}
+
+const filteredQueue = computed(() => sortNewestFirst(queue.value))
 
 function formatFileSize(bytes: number): string {
   const kb = Math.round(bytes / 1024)
   return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
+}
+
+function formatSubmittedDate(isoString: string | undefined): string {
+  if (!isoString) return 'Sin fecha'
+  try {
+    return new Date(isoString).toLocaleString('es-MX', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Mexico_City',
+    })
+  } catch {
+    return isoString.slice(0, 10)
+  }
 }
 
 function getDocMeta(code: string): { title: string; anexo: string } {
@@ -135,7 +251,7 @@ function getDocMeta(code: string): { title: string; anexo: string } {
   )
 }
 
-// Visor / Previsualización de PDF en Modal
+// Visor / Previsualización de PDF en Modal Amplio (size="full")
 const isPdfViewerOpen = ref(false)
 const pdfPreviewItem = ref<ReviewQueueItem | null>(null)
 const pdfBlobUrl = ref<string | null>(null)
@@ -144,7 +260,9 @@ function releasePdfUrl(): void {
   if (pdfBlobUrl.value) window.URL.revokeObjectURL(pdfBlobUrl.value)
   pdfBlobUrl.value = null
 }
-watch(isPdfViewerOpen, open => { if (!open) releasePdfUrl() })
+watch(isPdfViewerOpen, (open) => {
+  if (!open) releasePdfUrl()
+})
 onBeforeUnmount(releasePdfUrl)
 
 async function handleViewPdf(doc: ReviewQueueItem): Promise<void> {
@@ -180,7 +298,7 @@ function openReview(item: ReviewQueueItem): void {
 }
 
 function openNextPending(): void {
-  const nextDoc = queue.value.find((d) => d.status === 'pending')
+  const nextDoc = filteredQueue.value.find((d) => d.status === 'pending')
   if (nextDoc) {
     openReview(nextDoc)
   } else {
@@ -189,9 +307,16 @@ function openNextPending(): void {
 }
 
 // Códigos rápidos en panel lateral
-const documentCodeChips = computed(() => [...socialServiceDocuments.flatMap(item => item.codes), 'EV', 'IMSS'].map(code => ({
-  code, period: socialDocumentPeriod(code), label: socialServiceDocuments.some(item => item.codes.includes(code)) ? socialDocumentLabel(code) : documentCatalog[code]?.title || code, count: queue.value.filter(d => d.documentCode === code).length,
-})))
+const documentCodeChips = computed(() =>
+  [...socialServiceDocuments.flatMap((item) => item.codes), 'EV', 'IMSS'].map((code) => ({
+    code,
+    period: socialDocumentPeriod(code),
+    label: socialServiceDocuments.some((item) => item.codes.includes(code))
+      ? socialDocumentLabel(code)
+      : documentCatalog[code]?.title || code,
+    count: queue.value.filter((d) => d.documentCode === code).length,
+  })),
+)
 
 onMounted(() => {
   void loadQueue()
@@ -199,241 +324,244 @@ onMounted(() => {
 </script>
 
 <template>
-  <UiBasePage fluid>
-    <!-- Encabezado Ejecutivo Compacto -->
-    <template #header>
-      <header class="ctrl-header reveal-step reveal-1">
-        <div class="ctrl-header__left">
-          <div class="ctrl-eyebrow">
-            <span class="ctrl-badge">BANDEJA UNIFICADA DE VALIDACIÓN DOCUMENTAL</span>
-            <span class="ctrl-period">· Control SGC ISO 9001:2015</span>
-            <span class="ctrl-status-pill">
-              <span class="ctrl-live-dot" aria-hidden="true" />
-              Plantel <code>05DIT0001V</code>
-            </span>
+  <UiBasePage :fluid="true" class="fullscreen-page">
+    <!-- Encabezado Ejecutivo Compacto con 4 KPIs de borde dorado activo -->
+    <header class="exec-header">
+      <div class="exec-header__left">
+        <div class="exec-eyebrow">
+          <span class="exec-badge">BANDEJA UNIFICADA DE VALIDACIÓN DOCUMENTAL</span>
+          <span class="exec-period">· Control SGC ISO 9001:2015 · Ordenado del más reciente al más antiguo</span>
+        </div>
+        <div class="title-row">
+          <h1 class="exec-title">Revisión y Dictamen de Expedientes</h1>
+          <div class="header-quick-actions">
+            <UiButton variant="secondary" size="sm" :disabled="isLoading" @click="loadQueue">
+              Actualizar Cola
+            </UiButton>
+            <UiButton variant="primary" size="sm" @click="openNextPending">
+              Dictaminar Siguiente
+            </UiButton>
           </div>
-          <h1 class="ctrl-title">Revisión y Dictamen de Expedientes</h1>
         </div>
+      </div>
 
-        <div class="ctrl-header__actions">
-          <UiButton variant="secondary" class="ctrl-btn" @click="loadQueue">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="ctrl-btn__icon">
-              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-              <path d="M16 16h5v5" />
-            </svg>
-            Actualizar Cola
-          </UiButton>
+      <!-- 4 KPIs con fondo neutro y borde dorado al estar activos -->
+      <div class="exec-kpis" aria-label="Indicadores de revisión documental">
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--gold"
+          :class="{ 'mini-kpi--active': statusFilter === 'pending' }"
+          @click="statusFilter = statusFilter === 'pending' ? 'all' : 'pending'"
+        >
+          <span class="mini-kpi__label">En Espera</span>
+          <strong class="mini-kpi__value">{{ animatedCounts.pending }}</strong>
+        </button>
 
-          <UiButton variant="primary" class="ctrl-btn" @click="openNextPending">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="ctrl-btn__icon">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <path d="m9 15 2 2 4-4" />
-            </svg>
-            Dictaminar Siguiente
-          </UiButton>
-        </div>
-      </header>
-    </template>
+        <button
+          v-if="canReadProcess('social_service')"
+          type="button"
+          class="mini-kpi mini-kpi--navy"
+          :class="{ 'mini-kpi--active': modalityFilter === 'social_service' }"
+          @click="modalityFilter = modalityFilter === 'social_service' ? 'all' : 'social_service'"
+        >
+          <span class="mini-kpi__label">Servicio Social</span>
+          <strong class="mini-kpi__value">{{ animatedCounts.socialService }}</strong>
+        </button>
 
-    <!-- 1. Fila de 4 Recuadros KPI Compactos -->
-    <section class="compact-kpis reveal-step reveal-2" aria-label="Indicadores de revisión documental">
-      <!-- KPI 1: Por Dictaminar -->
-      <article
-        class="kpi-tile kpi-tile--gold"
-        :class="{ 'kpi-tile--selected': statusFilter === 'pending' }"
-        @click="statusFilter = statusFilter === 'pending' ? 'all' : 'pending'"
-      >
-        <div class="kpi-tile__top">
-          <span class="kpi-tile__label">
-            <span class="kpi-dot kpi-dot--gold" aria-hidden="true" />
-            En Espera de Dictamen
-          </span>
-          <span class="kpi-tag-gold">Prioritario</span>
-        </div>
+        <button
+          v-if="canReadProcess('internship')"
+          type="button"
+          class="mini-kpi mini-kpi--navy"
+          :class="{ 'mini-kpi--active': modalityFilter === 'internship' }"
+          @click="modalityFilter = modalityFilter === 'internship' ? 'all' : 'internship'"
+        >
+          <span class="mini-kpi__label">Prácticas Prof.</span>
+          <strong class="mini-kpi__value">{{ animatedCounts.internship }}</strong>
+        </button>
 
-        <div class="kpi-tile__main">
-          <strong class="kpi-tile__value kpi-tile__value--gold">
-            {{ animatedCounts.pending }}
-          </strong>
-          <span class="kpi-tile__unit">documentos por firmar</span>
-        </div>
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--emerald"
+          :class="{ 'mini-kpi--active': statusFilter === 'approved' }"
+          @click="statusFilter = statusFilter === 'approved' ? 'all' : 'approved'"
+        >
+          <span class="mini-kpi__label">Validados</span>
+          <strong class="mini-kpi__value">{{ animatedCounts.approved }}</strong>
+        </button>
+      </div>
+    </header>
 
-        <div class="kpi-tile__foot">
-          <span>Tiempo meta: <strong>&lt; 24 h</strong></span>
-          <span class="kpi-highlight--gold">Revisión SGC</span>
-        </div>
-      </article>
-
-      <!-- KPI 2: Servicio Social -->
-      <article
-        class="kpi-tile"
-        v-if="canReadProcess('social_service')"
-        :class="{ 'kpi-tile--selected': modalityFilter === 'social_service' }"
-        @click="
-          modalityFilter = modalityFilter === 'social_service' ? 'all' : 'social_service'
-        "
-      >
-        <div class="kpi-tile__top">
-          <span class="kpi-tile__label">
-            <span class="kpi-dot kpi-dot--navy" aria-hidden="true" />
-            Servicio Social
-          </span>
-          <span class="kpi-meta kpi-meta--sky">Anexos XVIII–XXV</span>
-        </div>
-
-        <div class="kpi-tile__main">
-          <strong class="kpi-tile__value">{{ animatedCounts.socialService }}</strong>
-          <span class="kpi-tile__unit">entregas registradas</span>
-        </div>
-
-        <div class="kpi-tile__foot">
-          <span>Reportes y Cartas 480h</span>
-          <span>Filtro rápido</span>
-        </div>
-      </article>
-
-      <!-- KPI 3: Prácticas Profesionales -->
-      <article
-        class="kpi-tile"
-        v-if="canReadProcess('internship')"
-        :class="{ 'kpi-tile--selected': modalityFilter === 'internship' }"
-        @click="modalityFilter = modalityFilter === 'internship' ? 'all' : 'internship'"
-      >
-        <div class="kpi-tile__top">
-          <span class="kpi-tile__label">
-            <span class="kpi-dot kpi-dot--sky" aria-hidden="true" />
-            Prácticas Prof.
-          </span>
-          <span class="kpi-meta kpi-meta--sky">Sector Industrial</span>
-        </div>
-
-        <div class="kpi-tile__main">
-          <strong class="kpi-tile__value">{{ animatedCounts.internship }}</strong>
-          <span class="kpi-tile__unit">entregas vinculadas</span>
-        </div>
-
-        <div class="kpi-tile__foot">
-          <span>Planes y Evaluaciones</span>
-          <span>Empresas convenio</span>
-        </div>
-      </article>
-
-      <!-- KPI 4: Aprobados / Sellados -->
-      <article
-        class="kpi-tile"
-        :class="{ 'kpi-tile--selected': statusFilter === 'approved' }"
-        @click="statusFilter = statusFilter === 'approved' ? 'all' : 'approved'"
-      >
-        <div class="kpi-tile__top">
-          <span class="kpi-tile__label">
-            <span class="kpi-dot kpi-dot--emerald" aria-hidden="true" />
-            Expedientes Validados
-          </span>
-          <span class="kpi-meta kpi-meta--emerald">• Dictamen aprobado</span>
-        </div>
-
-        <div class="kpi-tile__main">
-          <strong class="kpi-tile__value">{{ animatedCounts.approved }}</strong>
-          <span class="kpi-tile__unit">aprobados en bandeja</span>
-        </div>
-
-        <div class="kpi-tile__foot">
-          <span>Trazabilidad completa</span>
-          <span class="kpi-highlight--emerald">ISO 9001:2015</span>
-        </div>
-      </article>
-    </section>
-
-    <!-- 2. Área Principal en 2 Columnas -->
-    <div class="workspace-grid reveal-step reveal-3">
+    <!-- Área Principal en 2 Columnas a Pantalla Completa -->
+    <div class="workspace-grid">
       <!-- Columna Izquierda: Tabla Unificada de Revisión -->
       <UiCard class="tray-card">
-        <div class="tray-toolbar">
+        <div class="filters-bar">
+          <!-- Buscador con Autocompletado y Debounce -->
           <div class="search-box">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="search-box__icon">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              v-model="searchQuery"
-              type="search"
-              class="search-box__input"
-              placeholder="Buscar por no. control, alumno, carrera o código (CA, R1, CT)..."
-              aria-label="Buscar documento en cola de revisión"
-            />
-            <button
-              v-if="searchQuery"
-              type="button"
-              class="search-box__clear"
-              aria-label="Limpiar búsqueda"
-              @click="searchQuery = ''"
-            >
-              ✕
-            </button>
+            <label class="filter-label" for="review-search-input">
+              Buscar por Matrícula, Alumno, Carrera o Clave (CA, R1, CT, IMSS)
+            </label>
+            <div class="autocomplete-container">
+              <div class="input-wrapper">
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  class="search-icon"
+                  width="15"
+                  height="15"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  id="review-search-input"
+                  v-model="searchQuery"
+                  type="search"
+                  class="modern-input"
+                  placeholder="Ej. I23050363, Mariana, INF o CA..."
+                  aria-label="Buscar documento en cola de revisión"
+                  autocomplete="off"
+                  @input="handleSearchInput"
+                  @focus="handleSearchFocus"
+                  @blur="handleSearchBlur"
+                  @keyup.enter="isAutocompleteOpen = false; page = 1; loadQueue()"
+                />
+                <button
+                  v-if="searchQuery"
+                  type="button"
+                  class="clear-search-btn"
+                  aria-label="Limpiar búsqueda"
+                  @click="clearSearch"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <!-- Sugerencias Flotantes Autocomplete -->
+              <div
+                v-if="isAutocompleteOpen && autocompleteSuggestions.length > 0"
+                class="suggestions-dropdown"
+                role="listbox"
+              >
+                <div
+                  v-for="item in autocompleteSuggestions"
+                  :key="item.id"
+                  class="suggestion-item"
+                  role="option"
+                  @mousedown.prevent="selectSuggestion(item)"
+                >
+                  <div class="suggestion-left">
+                    <span class="suggestion-control">
+                      {{ item.studentControlNumber }} · {{ item.documentCode }}
+                    </span>
+                    <span class="suggestion-name">{{ item.studentFullName }}</span>
+                  </div>
+                  <div class="suggestion-right">
+                    <span class="suggestion-career">{{ item.careerCode }}</span>
+                    <span class="suggestion-date">{{ formatSubmittedDate(item.createdAt) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="toolbar-right">
-            <div class="status-tabs" role="tablist" aria-label="Filtrar por estatus">
-              <button
-                type="button"
-                class="status-tab"
-                :class="{ 'status-tab--active': statusFilter === 'all' }"
-                @click="statusFilter = 'all'"
+          <!-- Selector de Tipo de Trámite (sin filtro de Id de periodo) -->
+          <div class="select-box">
+            <label class="filter-label" for="review-tramite-type">Tipo de trámite</label>
+            <div class="select-wrapper">
+              <select
+                id="review-tramite-type"
+                v-model="modalityFilter"
+                class="modern-select"
               >
-                Todos
-              </button>
-              <button
-                type="button"
-                class="status-tab"
-                :class="{ 'status-tab--active': statusFilter === 'pending' }"
-                @click="statusFilter = 'pending'"
+                <option value="all">Todos los trámites</option>
+                <option value="general">General / IMSS</option>
+                <option v-if="canReadProcess('social_service')" value="social_service">
+                  Servicio Social
+                </option>
+                <option v-if="canReadProcess('internship')" value="internship">
+                  Prácticas Profesionales
+                </option>
+              </select>
+              <svg
+                class="select-chevron"
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                stroke="currentColor"
+                stroke-width="2"
+                fill="none"
+                aria-hidden="true"
               >
-                Pendientes
-              </button>
-              <button
-                type="button"
-                class="status-tab"
-                :class="{ 'status-tab--active': statusFilter === 'approved' }"
-                @click="statusFilter = 'approved'"
-              >
-                Aprobados
-              </button>
-              <button
-                type="button"
-                class="status-tab"
-                :class="{ 'status-tab--active': statusFilter === 'rejected' }"
-                @click="statusFilter = 'rejected'"
-              >
-                Observados
-              </button>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             </div>
+          </div>
 
-            <button
-              v-if="modalityFilter !== 'all' || docCodeFilter"
-              type="button"
-              class="clear-chip"
-              @click="
-                modalityFilter = 'all';
-                docCodeFilter = null
-              "
-            >
-              Limpiar filtro ✕
-            </button>
+          <!-- Pestañas de Estatus -->
+          <div class="toolbar-right">
+            <span class="filter-label">Estatus de dictamen</span>
+            <div class="status-tabs-row">
+              <div class="status-tabs" role="tablist" aria-label="Filtrar por estatus">
+                <button
+                  type="button"
+                  class="status-tab"
+                  :class="{ 'status-tab--active': statusFilter === 'all' }"
+                  @click="statusFilter = 'all'"
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  class="status-tab"
+                  :class="{ 'status-tab--active': statusFilter === 'pending' }"
+                  @click="statusFilter = 'pending'"
+                >
+                  Pendientes
+                </button>
+                <button
+                  type="button"
+                  class="status-tab"
+                  :class="{ 'status-tab--active': statusFilter === 'approved' }"
+                  @click="statusFilter = 'approved'"
+                >
+                  Aprobados
+                </button>
+                <button
+                  type="button"
+                  class="status-tab"
+                  :class="{ 'status-tab--active': statusFilter === 'rejected' }"
+                  @click="statusFilter = 'rejected'"
+                >
+                  Observados
+                </button>
+              </div>
+
+              <UiButton
+                v-if="searchQuery || modalityFilter !== 'all' || statusFilter !== 'all' || docCodeFilter"
+                variant="secondary"
+                size="sm"
+                @click="resetAllFilters"
+              >
+                Limpiar
+              </UiButton>
+            </div>
           </div>
         </div>
 
+        <!-- Tabla de Revisión con scroll interno y orden más reciente primero -->
         <div class="tray-table-wrap" role="region" aria-label="Cola de Documentos">
           <table class="tray-table">
             <thead>
               <tr>
                 <th scope="col">ESTUDIANTE / CARRERA</th>
                 <th scope="col">DOCUMENTO &amp; MODALIDAD</th>
-                <th scope="col">ARCHIVO PDF</th>
+                <th scope="col">ARCHIVO &amp; FECHA DE ENVÍO</th>
                 <th scope="col">ESTATUS SGC</th>
-                <th scope="col" class="th-right">ACCIÓN</th>
+                <th scope="col" class="th-actions">ACCIÓN</th>
               </tr>
             </thead>
             <TransitionGroup name="tray-row" tag="tbody">
@@ -449,44 +577,59 @@ onMounted(() => {
                   <div class="cell-doc">
                     <div class="doc-head-line">
                       <span class="doc-code-badge">{{ row.documentCode }}</span>
-                      <strong>{{ row.tramiteType === 'social_service' ? socialDocumentLabel(row.documentCode) : getDocMeta(row.documentCode).title }}</strong>
+                      <strong>
+                        {{
+                          row.tramiteType === 'social_service'
+                            ? socialDocumentLabel(row.documentCode)
+                            : getDocMeta(row.documentCode).title
+                        }}
+                      </strong>
                     </div>
                     <span
                       :class="
-                        row.tramiteType === 'social_service'
-                          ? 'mod-sub--navy'
-                          : 'mod-sub--gold'
+                        row.tramiteType === 'social_service' ? 'mod-sub--navy' : 'mod-sub--gold'
                       "
                     >
                       {{
                         row.tramiteType === 'social_service'
                           ? 'Servicio Social (480h)'
-                          : row.tramiteType === 'general' ? 'General / IMSS' : 'Prácticas Profesionales'
+                          : row.tramiteType === 'general'
+                            ? 'General / IMSS'
+                            : 'Prácticas Profesionales'
                       }}
-                      · {{ row.tramiteType === 'social_service' ? socialDocumentPeriod(row.documentCode) : getDocMeta(row.documentCode).anexo }}
+                      ·
+                      {{
+                        row.tramiteType === 'social_service'
+                          ? socialDocumentPeriod(row.documentCode)
+                          : getDocMeta(row.documentCode).anexo
+                      }}
                     </span>
                   </div>
                 </td>
 
                 <td>
                   <div class="cell-file">
-                    <span class="file-name">{{ row.originalFileName }}</span>
-                    <small class="file-meta">PDF · {{ formatFileSize(row.fileSizeBytes) }}</small>
+                    <span class="file-name" :title="row.originalFileName">
+                      {{ row.originalFileName }}
+                    </span>
+                    <small class="file-meta">
+                      Enviado: <strong>{{ formatSubmittedDate(row.createdAt) }}</strong> · PDF ({{
+                        formatFileSize(row.fileSizeBytes)
+                      }})
+                    </small>
                   </div>
                 </td>
 
                 <td>
-                  <span
-                    class="status-box"
-                    :class="
+                  <UiBadge
+                    :tone="
                       row.status === 'approved'
-                        ? 'status-box--success'
+                        ? 'success'
                         : row.status === 'rejected'
-                          ? 'status-box--danger'
-                          : 'status-box--warning'
+                          ? 'danger'
+                          : 'warning'
                     "
                   >
-                    <span class="status-box__dot" aria-hidden="true" />
                     {{
                       row.status === 'approved'
                         ? 'Aprobado SGC'
@@ -494,30 +637,21 @@ onMounted(() => {
                           ? 'Observado'
                           : 'Por Dictaminar'
                     }}
-                  </span>
+                  </UiBadge>
                 </td>
 
-                <td class="td-right">
+                <td class="td-actions">
                   <div class="row-actions">
-                    <button
-                      type="button"
-                      class="row-btn row-btn--outline"
-                      @click="handleViewPdf(row)"
-                    >
+                    <UiButton variant="secondary" size="sm" @click="handleViewPdf(row)">
                       Ver PDF
-                    </button>
-                    <button
-                      type="button"
-                      class="row-btn"
-                      :class="
-                        row.status === 'pending'
-                          ? 'row-btn--primary'
-                          : 'row-btn--outline'
-                      "
+                    </UiButton>
+                    <UiButton
+                      :variant="row.status === 'pending' ? 'primary' : 'secondary'"
+                      size="sm"
                       @click="openReview(row)"
                     >
                       Dictaminar
-                    </button>
+                    </UiButton>
                   </div>
                 </td>
               </tr>
@@ -526,33 +660,45 @@ onMounted(() => {
 
           <div v-if="!isLoading && filteredQueue.length === 0" class="empty-queue">
             <p>No hay documentos que coincidan con los filtros seleccionados.</p>
-            <UiButton
-              variant="secondary"
-              @click="
-                searchQuery = '';
-                modalityFilter = 'all';
-                statusFilter = 'all';
-                docCodeFilter = null
-              "
-            >
+            <UiButton variant="secondary" size="sm" @click="resetAllFilters">
               Restablecer bandeja
             </UiButton>
           </div>
         </div>
 
-        <footer class="tray-footer">
-          <span>
-            Mostrando <strong>{{ filteredQueue.length }}</strong> de {{ queue.length }} documentos en cola ·
-            {{ loadError ? 'Error al cargar. Actualiza la bandeja para reintentar.' : isLoading ? 'Cargando repositorio documental…' : 'Conectado al repositorio documental' }}
+        <!-- Barra de Paginación Estandarizada (10 por página) -->
+        <footer class="pagination-bar">
+          <span class="pagination-info">
+            Mostrando <strong>{{ filteredQueue.length }}</strong> de <strong>{{ totalItems }}</strong> documentos · Página <strong>{{ page }}</strong> de <strong>{{ Math.max(1, totalPages) }}</strong>
+            <template v-if="loadError">
+              · Error al cargar. Actualiza la bandeja para reintentar.
+            </template>
           </span>
-          <span class="footer-iso-tag">Verificación SGC TecNM</span>
+          <div class="pagination-controls">
+            <UiButton
+              variant="secondary"
+              size="sm"
+              :disabled="page <= 1 || isLoading"
+              @click="page--; loadQueue()"
+            >
+              Anterior
+            </UiButton>
+            <UiButton
+              variant="secondary"
+              size="sm"
+              :disabled="page >= totalPages || isLoading"
+              @click="page++; loadQueue()"
+            >
+              Siguiente
+            </UiButton>
+          </div>
         </footer>
       </UiCard>
 
       <!-- Columna Derecha: Filtro por Código de Anexo + Criterios de Validación -->
       <aside class="right-stack">
         <!-- Tarjeta Superior: Filtro por Código de Formato -->
-        <UiCard class="side-card">
+        <UiCard class="side-card side-card--codes">
           <div class="side-card__head">
             <h2 class="side-card__title">FORMATOS OFICIALES</h2>
             <span class="side-card__meta">Filtrar por clave</span>
@@ -568,14 +714,17 @@ onMounted(() => {
               @click="docCodeFilter = docCodeFilter === item.code ? null : item.code"
             >
               <span class="doc-chip-btn__code">{{ item.code }}</span>
-              <span class="doc-chip-btn__label">{{ item.label }} <small v-if="item.period">{{ item.period }}</small></span>
+              <span class="doc-chip-btn__label">
+                {{ item.label }}
+                <small v-if="item.period">{{ item.period }}</small>
+              </span>
               <span class="doc-chip-btn__count">{{ item.count }}</span>
             </button>
           </div>
         </UiCard>
 
         <!-- Tarjeta Inferior: Reglas de Dictamen SGC -->
-        <UiCard class="side-card">
+        <UiCard class="side-card side-card--criteria">
           <div class="side-card__head">
             <div class="side-card__title-group">
               <svg viewBox="0 0 24 24" aria-hidden="true" class="side-card__icon">
@@ -588,7 +737,7 @@ onMounted(() => {
           </div>
 
           <div class="criteria-list">
-            <article class="criteria-box criteria-box--gold">
+            <article class="criteria-box">
               <div class="criteria-box__top">
                 <span class="criteria-tag criteria-tag--gold">SELLO Y FIRMA</span>
                 <span class="criteria-scope">Obligatorio</span>
@@ -599,7 +748,7 @@ onMounted(() => {
               </p>
             </article>
 
-            <article class="criteria-box criteria-box--blue">
+            <article class="criteria-box">
               <div class="criteria-box__top">
                 <span class="criteria-tag criteria-tag--blue">INTEGRIDAD PDF</span>
                 <span class="criteria-scope">≤ 5.0 MB</span>
@@ -614,9 +763,10 @@ onMounted(() => {
       </aside>
     </div>
 
-    <!-- Modal 1: Previsualizador Institucional de PDF -->
+    <!-- Modal 1: Previsualizador Institucional de PDF Ampliado (size="full") -->
     <UiDialog
       v-model="isPdfViewerOpen"
+      size="full"
       :title="
         pdfPreviewItem
           ? `Inspección PDF · ${pdfPreviewItem.originalFileName}`
@@ -625,100 +775,963 @@ onMounted(() => {
     >
       <div v-if="pdfPreviewItem" class="pdf-preview-sheet">
         <div class="pdf-preview-header">
-          <span class="doc-code-badge">{{ pdfPreviewItem.documentCode }}</span>
-          <span class="pdf-preview-student">
-            {{ pdfPreviewItem.studentFullName }} ({{ pdfPreviewItem.studentControlNumber }})
-          </span>
-          <UiBadge
-            :tone="
-              pdfPreviewItem.status === 'approved'
-                ? 'success'
-                : pdfPreviewItem.status === 'rejected'
-                  ? 'danger'
-                  : 'warning'
-            "
-          >
-            {{
-              pdfPreviewItem.status === 'approved'
-                ? 'Aprobado'
-                : pdfPreviewItem.status === 'rejected'
-                  ? 'Observado'
-                  : 'En Revisión'
-            }}
-          </UiBadge>
+          <div class="pdf-preview-meta">
+            <span class="doc-code-badge">{{ pdfPreviewItem.documentCode }}</span>
+            <span class="pdf-preview-student">
+              {{ pdfPreviewItem.studentFullName }} ({{ pdfPreviewItem.studentControlNumber }} · {{ pdfPreviewItem.careerCode }})
+            </span>
+            <span class="pdf-preview-date">
+              Enviado: {{ formatSubmittedDate(pdfPreviewItem.createdAt) }} · {{ formatFileSize(pdfPreviewItem.fileSizeBytes) }}
+            </span>
+          </div>
+          <div class="pdf-preview-header-right">
+            <a
+              v-if="pdfBlobUrl"
+              :href="pdfBlobUrl"
+              :download="pdfPreviewItem.originalFileName"
+              class="pdf-download-link"
+            >
+              Descargar PDF
+            </a>
+            <UiBadge
+              :tone="
+                pdfPreviewItem.status === 'approved'
+                  ? 'success'
+                  : pdfPreviewItem.status === 'rejected'
+                    ? 'danger'
+                    : 'warning'
+              "
+            >
+              {{
+                pdfPreviewItem.status === 'approved'
+                  ? 'Aprobado'
+                  : pdfPreviewItem.status === 'rejected'
+                    ? 'Observado'
+                    : 'En Revisión'
+              }}
+            </UiBadge>
+          </div>
         </div>
 
-        <iframe
-          v-if="pdfBlobUrl"
-          :src="pdfBlobUrl"
-          class="pdf-iframe"
-          title="Vista previa del documento PDF"
-        />
+        <div v-if="pdfBlobUrl" class="pdf-iframe-container">
+          <iframe
+            :src="pdfBlobUrl"
+            class="pdf-iframe"
+            title="Vista previa del documento PDF"
+          />
+        </div>
 
-        <!-- Hoja de Inspección Técnica cuando no hay servidor de blobs activo -->
-        <UiAlert v-else>No fue posible abrir el PDF. Cierra y vuelve a intentar.</UiAlert>
+        <UiAlert v-else tone="warning">
+          No fue posible abrir el PDF. Cierra el visor y vuelve a intentar.
+        </UiAlert>
       </div>
 
       <template #actions>
-        <UiButton variant="secondary" @click="isPdfViewerOpen = false">
+        <UiButton variant="secondary" size="sm" @click="isPdfViewerOpen = false">
           Cerrar Visor
         </UiButton>
-        <UiButton variant="primary" @click="proceedFromViewerToReview">
+        <UiButton variant="primary" size="sm" @click="proceedFromViewerToReview">
           Ir a Dictaminar →
         </UiButton>
       </template>
     </UiDialog>
 
     <!-- Modal 2: Dictamen Técnico de Documento -->
-    <DocumentReviewDialog v-model="isDialogOpen" :document="selectedItem" :student-name="selectedItem?.studentFullName" @reviewed="loadQueue" />
+    <DocumentReviewDialog
+      v-model="isDialogOpen"
+      :document="selectedItem"
+      :student-name="selectedItem?.studentFullName"
+      @reviewed="loadQueue"
+    />
 
     <UiToast ref="toast" />
-  <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-top:1rem">
-      <UiButton variant="secondary" :disabled="page <= 1 || isLoading" @click="page--; loadQueue()">Anterior</UiButton>
-      <span>Página {{ page }} de {{ Math.max(1, totalPages) }} · {{ totalItems }} documentos. Contadores de esta página.</span>
-      <UiButton variant="secondary" :disabled="page >= totalPages || isLoading" @click="page++; loadQueue()">Siguiente</UiButton>
-      <label for="review-tramite-type">Tipo</label>
-      <select id="review-tramite-type" v-model="modalityFilter"><option value="all">Todos</option><option value="general">General / IMSS</option><option v-if="canReadProcess('social_service')" value="social_service">Servicio Social</option><option v-if="canReadProcess('internship')" value="internship">Prácticas Profesionales</option></select>
-      <label>Id de periodo <input v-model.number="periodId" type="number" min="1" /></label>
-      <UiButton variant="secondary" :disabled="isLoading" @click="loadQueue">Actualizar bandeja</UiButton>
-    </div>
   </UiBasePage>
 </template>
 
 <style scoped>
-/* ==========================================================================
-   Animaciones Escalonadas y Transición de Filas
-   ========================================================================== */
-@keyframes slideInPanel {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Estructura a pantalla completa sin scroll externo */
+.fullscreen-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 22px 10px !important;
 }
 
-.reveal-step {
-  animation: slideInPanel 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+.exec-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
-.reveal-1 {
-  animation-delay: 15ms;
+.exec-header__left {
+  flex: 1;
+  min-width: 280px;
 }
-.reveal-2 {
-  animation-delay: 55ms;
+
+.exec-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.15rem;
+  flex-wrap: wrap;
 }
-.reveal-3 {
-  animation-delay: 95ms;
+
+.exec-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.14rem 0.5rem;
+  border-radius: 5px;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.exec-period {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.exec-title {
+  font-size: 1.22rem;
+  font-weight: 800;
+  margin: 0;
+  color: var(--color-text-primary);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.header-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* 4 KPIs con fondo neutro y borde dorado al estar activo */
+.exec-kpis {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mini-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.42rem 0.85rem;
+  min-width: 112px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-surface-white);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mini-kpi:hover {
+  background: var(--secondary-hover);
+  border-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-border-medium));
+  transform: translateY(-2px);
+}
+
+.mini-kpi:hover .mini-kpi__label,
+.mini-kpi--active .mini-kpi__label {
+  color: var(--color-text-primary);
+}
+
+.mini-kpi__label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  transition: color 180ms ease;
+}
+
+.mini-kpi__value {
+  font-size: 1.18rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-kpi--gold .mini-kpi__value {
+  color: var(--color-warning);
+}
+
+.mini-kpi--navy .mini-kpi__value {
+  color: var(--color-info);
+}
+
+.mini-kpi--emerald .mini-kpi__value {
+  color: var(--color-success);
+}
+
+.mini-kpi--active {
+  background: var(--kpi-active-bg);
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-accent) !important;
+}
+
+/* Grid Principal de 2 Columnas a Pantalla Completa */
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 295px;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.tray-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px !important;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+}
+
+/* Barra de filtros con superficie institucional contrastada */
+.filters-bar {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-toolbar);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.search-box {
+  flex: 1.6;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.select-box {
+  flex: 0.9;
+  min-width: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.toolbar-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.status-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.input-wrapper,
+.select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--color-text-secondary);
+  pointer-events: none;
+  z-index: 2;
+}
+
+input.modern-input {
+  width: 100%;
+  min-height: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--input-border) !important;
+  background: var(--input-bg) !important;
+  padding: 0 2rem 0 2.35rem !important;
+  font-size: 0.81rem;
+  color: var(--color-text-primary) !important;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+input.modern-input::-webkit-search-cancel-button,
+input.modern-input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+input.modern-input:hover,
+select.modern-select:hover {
+  border-color: var(--color-gray-400) !important;
+}
+
+input.modern-input:focus {
+  border-color: var(--color-border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-focus) 22%, transparent);
+}
+
+select.modern-select {
+  width: 100%;
+  min-height: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--input-border) !important;
+  background: var(--input-bg) !important;
+  padding: 0 2rem 0 0.75rem !important;
+  font-size: 0.81rem;
+  color: var(--color-text-primary) !important;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+select.modern-select:focus {
+  border-color: var(--color-border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-focus) 22%, transparent);
+}
+
+.select-chevron {
+  position: absolute;
+  right: 0.75rem;
+  color: var(--color-text-secondary);
+  pointer-events: none;
+}
+
+.autocomplete-container {
+  position: relative;
+  width: 100%;
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 0.55rem;
+  background: transparent;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 0.2rem 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.clear-search-btn:hover {
+  color: var(--color-primary-hover);
+  background: var(--color-primary-subtle);
+  transform: scale(1.08);
+}
+
+.suggestions-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--floating-bg);
+  border: 1px solid var(--floating-border);
+  border-radius: 8px;
+  box-shadow: var(--floating-shadow);
+  z-index: 999;
+  max-height: 220px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background-color 140ms ease;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover {
+  background: var(--color-primary-subtle);
+}
+
+.suggestion-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.suggestion-control {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--color-info-text);
+}
+
+.suggestion-name {
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+}
+
+.suggestion-right {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.suggestion-career {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  background: var(--color-primary-subtle);
+  border-radius: 4px;
+  color: var(--color-info-text);
+}
+
+.suggestion-date {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+/* Pestañas de Estatus */
+.status-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  height: 34px;
+  border-radius: 7px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+}
+
+.status-tab {
+  min-height: 26px !important;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.status-tab:hover {
+  color: var(--color-text-primary);
+  background: var(--secondary-hover);
+}
+
+.status-tab--active {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-color: var(--color-accent);
+}
+
+/* Tabla Unificada con scroll interno */
+.tray-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 -16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.tray-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: normal;
+}
+
+.tray-table th {
+  padding: 7px 12px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--surface-table-head);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-medium);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tray-table td {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.tray-tr {
+  transition: background-color 150ms ease;
+}
+
+.tray-tr:hover {
+  background: var(--color-primary-subtle);
+}
+
+.th-actions,
+.td-actions {
+  width: 176px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.cell-student {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.cell-student strong {
+  font-size: 0.81rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.cell-student span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+}
+
+.cell-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.doc-head-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.doc-code-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.08rem 0.4rem;
+  border-radius: 4px;
+  background: var(--color-info-badge);
+  color: var(--color-info-text);
+  border: 1px solid var(--color-info-border);
+}
+
+.doc-head-line strong {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.mod-sub--navy,
+.mod-sub--gold {
+  font-size: 0.73rem;
+  color: var(--color-text-secondary);
+}
+
+.cell-file {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.file-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+.file-meta strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.empty-queue {
+  padding: 1.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.6rem;
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.pagination-info {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Columna Derecha Compacta */
+.right-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.side-card {
+  padding: 10px 12px !important;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.side-card--codes {
+  flex: 1.15;
+}
+
+.side-card--criteria {
+  flex: 0.85;
+}
+
+.side-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.45rem;
+  margin-bottom: 0.45rem;
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+}
+
+.side-card__title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.side-card__icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+
+.side-card__title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--color-text-primary);
+}
+
+.side-card__meta,
+.official-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.code-filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.doc-chip-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 30px !important;
+  padding: 0.28rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-light);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 140ms ease;
+}
+
+.doc-chip-btn:hover {
+  background: var(--secondary-hover);
+  border-color: var(--color-accent);
+  transform: translateX(2px);
+}
+
+.doc-chip-btn--active {
+  background: var(--kpi-active-bg);
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.doc-chip-btn__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.08rem 0.35rem;
+  border-radius: 4px;
+  background: var(--color-info-badge);
+  color: var(--color-info-text);
+  border: 1px solid var(--color-info-border);
+  flex-shrink: 0;
+}
+
+.doc-chip-btn__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.73rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-chip-btn__label small {
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.doc-chip-btn__count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.criteria-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.criteria-box {
+  padding: 0.5rem 0.65rem;
+  border-radius: 7px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-light);
+}
+
+.criteria-box__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+
+.criteria-tag {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 0.08rem 0.38rem;
+  border-radius: 4px;
+}
+
+.criteria-tag--gold {
+  background: var(--color-warning-badge);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning-border);
+}
+
+.criteria-tag--blue {
+  background: var(--color-info-badge);
+  color: var(--color-info-text);
+  border: 1px solid var(--color-info-border);
+}
+
+.criteria-scope {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.criteria-title {
+  margin: 0 0 0.15rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.criteria-desc {
+  margin: 0;
+  font-size: 0.71rem;
+  line-height: 1.3;
+  color: var(--color-text-secondary);
+}
+
+/* Modal Visor de PDF Ampliado y Responsivo */
+.pdf-preview-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  gap: 0.65rem;
+}
+
+.pdf-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  background: var(--surface-toolbar);
+  border: 1px solid var(--color-border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.pdf-preview-meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.pdf-preview-student {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.pdf-preview-date {
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+}
+
+.pdf-preview-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pdf-download-link {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.22rem 0.6rem;
+  border-radius: 6px;
+  background: var(--color-surface-white);
+  border: 1px solid var(--color-border-medium);
+  color: var(--color-text-primary);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.pdf-download-link:hover {
+  background: var(--secondary-hover);
+  border-color: var(--color-accent);
+}
+
+.pdf-iframe-container {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-bg-light);
+}
+
+.pdf-iframe {
+  width: 100%;
+  height: min(72dvh, 720px);
+  border: 0;
 }
 
 .tray-row-enter-active,
 .tray-row-leave-active {
-  transition:
-    opacity 200ms ease,
-    transform 200ms ease;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .tray-row-enter-from,
@@ -727,935 +1740,12 @@ onMounted(() => {
   transform: translateY(4px);
 }
 
-/* ==========================================================================
-   Encabezado Compacto Institucional
-   ========================================================================== */
-.ctrl-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-
-.ctrl-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  flex-wrap: wrap;
-}
-
-.ctrl-badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.ctrl-period {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.ctrl-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  background: var(--color-surface-white);
-  border: 1px solid var(--color-border);
-  padding: 2px 8px;
-  border-radius: 99px;
-}
-
-.ctrl-status-pill code {
-  color: var(--color-accent);
-  font-weight: 700;
-}
-
-.ctrl-live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-success);
-}
-
-.ctrl-title {
-  font-size: clamp(20px, 2vw, 25px);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--color-text-primary);
-  line-height: 1.15;
-}
-
-.ctrl-header__actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ctrl-btn {
-  min-height: 36px !important;
-  padding: 6px 14px !important;
-  font-size: 12.5px !important;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.ctrl-btn__icon {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* ==========================================================================
-   1. Fila de 4 KPIs Compactos
-   ========================================================================== */
-.compact-kpis {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 14px;
-}
-
-.kpi-tile {
-  padding: 13px 16px;
-  border-radius: 10px;
-  background: var(--color-surface-white);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--card-shadow);
-  cursor: pointer;
-  transition:
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.kpi-tile:hover {
-  transform: translateY(-2px);
-  border-color: var(--color-primary);
-  box-shadow: var(--floating-shadow);
-}
-
-.kpi-tile--selected {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 22%, transparent);
-}
-
-.kpi-tile--gold:hover {
-  border-color: var(--color-accent);
-}
-
-.kpi-tile__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.kpi-tile__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.kpi-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.kpi-dot--navy {
-  background: var(--color-primary);
-}
-.kpi-dot--sky {
-  background: var(--color-info);
-}
-.kpi-dot--gold {
-  background: var(--color-accent);
-}
-.kpi-dot--emerald {
-  background: var(--color-success);
-}
-
-.kpi-meta {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.kpi-meta--emerald {
-  color: var(--color-success);
-}
-.kpi-meta--sky {
-  color: var(--color-info);
-}
-
-.kpi-tag-gold {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.kpi-tile__main {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  margin: 8px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.kpi-tile__value {
-  font-size: 27px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  color: var(--color-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.kpi-tile__value--gold {
-  color: var(--color-accent);
-}
-
-.kpi-tile__unit {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.kpi-tile__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.kpi-tile__foot strong {
-  color: var(--color-text-primary);
-}
-
-.kpi-highlight--gold {
-  color: var(--color-accent);
-  font-weight: 600;
-}
-
-.kpi-highlight--emerald {
-  color: var(--color-success);
-  font-weight: 600;
-}
-
-/* ==========================================================================
-   2. Área Principal en 2 Columnas
-   ========================================================================== */
-.workspace-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.95fr) minmax(0, 1fr);
-  gap: 14px;
-  align-items: stretch;
-}
-
-.tray-card {
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  overflow: hidden;
-}
-
-.tray-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--color-border);
-  flex-wrap: wrap;
-}
-
-.search-box {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 240px;
-}
-
-.search-box__icon {
-  position: absolute;
-  left: 11px;
-  width: 15px;
-  height: 15px;
-  stroke: var(--color-text-muted);
-  fill: none;
-  stroke-width: 2;
-  pointer-events: none;
-}
-
-.search-box__input {
-  width: 100%;
-  min-height: 36px !important;
-  padding: 6px 32px 6px 34px !important;
-  font-size: 12.5px !important;
-  border-radius: 8px !important;
-  background: var(--color-bg-light) !important;
-  border: 1px solid var(--color-border-medium) !important;
-}
-
-.search-box__clear {
-  position: absolute;
-  right: 8px;
-  background: transparent;
-  border: 0;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  padding: 4px;
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.status-tabs {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: 8px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-}
-
-.status-tab {
-  border: 0;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 6px;
-  transition:
-    background 150ms ease,
-    color 150ms ease;
-}
-
-.status-tab--active {
-  background: var(--color-primary);
-  color: var(--color-white);
-}
-
-.clear-chip {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  padding: 3px 8px;
-  border-radius: 5px;
-}
-
-/* Tabla de Documentos */
-.tray-table-wrap {
-  margin: 0;
-  overflow-x: auto;
-  flex: 1;
-}
-
-.tray-table {
-  width: 100%;
-  border-collapse: collapse;
-  white-space: normal;
-}
-
-.tray-table th {
-  padding: 9px 18px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  background: var(--color-bg-light);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.th-right,
-.td-right {
-  text-align: right;
-}
-
-.tray-tr {
-  transition: background 150ms ease;
-}
-
-.tray-tr:hover {
-  background: var(--color-primary-subtle);
-}
-
-.tray-tr td {
-  padding: 11px 18px;
-  vertical-align: middle;
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.tray-tr:last-child td {
-  border-bottom: 0;
-}
-
-.cell-student,
-.cell-doc,
-.cell-file {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.cell-student strong {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.cell-student span {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.doc-head-line {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.doc-head-line strong {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.doc-code-badge {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.mod-sub--navy {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  color: var(--color-info);
-}
-
-.mod-sub--gold {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  color: var(--color-text-secondary);
-}
-
-.file-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  color: var(--color-text-primary);
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-meta {
-  font-size: 10.5px;
-  color: var(--color-text-muted);
-}
-
-.status-box {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.status-box__dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.status-box--warning {
-  background: var(--color-warning-badge);
-  color: var(--color-warning-text);
-  border: 1px solid var(--color-warning-border);
-}
-
-.status-box--success {
-  background: var(--color-success-badge);
-  color: var(--color-success-text);
-  border: 1px solid var(--color-success-border);
-}
-
-.status-box--danger {
-  background: var(--color-danger-badge);
-  color: var(--color-danger-text);
-  border: 1px solid var(--color-danger-border);
-}
-
-.row-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.row-btn {
-  min-height: 28px;
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  transition:
-    transform 140ms ease,
-    background 160ms ease,
-    border-color 160ms ease;
-}
-
-.row-btn:active {
-  transform: scale(0.97);
-}
-
-.row-btn--primary {
-  background: var(--color-primary);
-  color: var(--color-white);
-  border: 1px solid transparent;
-}
-
-.row-btn--primary:hover {
-  background: var(--color-primary-hover);
-}
-
-.row-btn--outline {
-  background: var(--color-bg-light);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border-medium);
-}
-
-.row-btn--outline:hover {
-  background: var(--secondary-hover);
-  border-color: var(--color-accent);
-}
-
-.empty-queue {
-  padding: 28px;
-  text-align: center;
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-}
-
-.tray-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 18px;
-  background: var(--color-bg-light);
-  border-top: 1px solid var(--color-border);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.tray-footer strong {
-  color: var(--color-text-primary);
-}
-
-.footer-iso-tag {
-  color: var(--color-accent);
-  font-weight: 700;
-}
-
-/* ==========================================================================
-   Columna Derecha: Formatos Oficiales + Criterios de Dictamen
-   ========================================================================== */
-.right-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.side-card {
-  padding: 14px 16px;
-}
-
-.side-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.side-card__title-group {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.side-card__icon {
-  width: 14px;
-  height: 14px;
-  stroke: var(--color-accent);
-  fill: none;
-  stroke-width: 1.9;
-}
-
-.side-card__title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-primary);
-}
-
-.side-card__meta {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  color: var(--color-text-secondary);
-}
-
-.official-tag {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.code-filter-list {
-  display: grid;
-  gap: 6px;
-}
-
-.doc-chip-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: 7px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-  text-align: left;
-  transition:
-    background 150ms ease,
-    border-color 150ms ease,
-    transform 150ms ease;
-}
-
-.doc-chip-btn:hover {
-  background: var(--color-primary-subtle);
-  border-color: var(--color-primary);
-  transform: translateX(2px);
-}
-
-.doc-chip-btn--active {
-  background: var(--color-primary-subtle);
-  border-color: var(--color-accent);
-}
-
-.doc-chip-btn__code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-accent);
-  min-width: 32px;
-}
-
-.doc-chip-btn__label {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-  flex: 1;
-}
-
-.doc-chip-btn__count {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  color: var(--color-text-muted);
-}
-
-.criteria-list {
-  display: grid;
-  gap: 9px;
-}
-
-.criteria-box {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-  border-left-width: 3px;
-}
-
-.criteria-box--gold {
-  border-left-color: var(--color-accent);
-}
-
-.criteria-box--blue {
-  border-left-color: var(--color-info);
-}
-
-.criteria-box__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 3px;
-}
-
-.criteria-tag {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.criteria-tag--gold {
-  color: var(--color-accent);
-}
-
-.criteria-tag--blue {
-  color: var(--color-info);
-}
-
-.criteria-scope {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
-  color: var(--color-text-muted);
-}
-
-.criteria-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.criteria-desc {
-  font-size: 11px;
-  line-height: 1.38;
-  color: var(--color-text-secondary);
-  margin-top: 2px;
-}
-
-/* ==========================================================================
-   Modales de Previsualización PDF y Dictamen Técnico
-   ========================================================================== */
-.pdf-preview-sheet,
-.review-modal-body {
-  display: grid;
-  gap: 12px;
-  margin: 12px 0 18px;
-}
-
-.pdf-preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pdf-preview-student {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  flex: 1;
-}
-
-.pdf-iframe {
-  width: 100%;
-  height: 360px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-}
-
-.pdf-mock-canvas {
-  padding: 14px;
-  border-radius: 10px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-}
-
-.pdf-mock-sheet {
-  padding: 16px;
-  border-radius: 8px;
-  background: var(--color-surface-white);
-  border: 1px solid var(--color-border-medium);
-  display: grid;
-  gap: 12px;
-}
-
-.pdf-mock-sheet__top {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-accent);
-  border-bottom: 1px solid var(--color-border-light);
-  padding-bottom: 8px;
-}
-
-.pdf-mock-sheet__title {
-  font-size: 15px;
-  color: var(--color-text-primary);
-}
-
-.pdf-mock-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 0;
-}
-
-.pdf-mock-grid dt {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
-.pdf-mock-grid dd {
-  margin: 2px 0 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.pdf-mock-stamp {
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: var(--color-success-badge);
-  color: var(--color-success-text);
-  border: 1px solid var(--color-success-border);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.review-summary-box {
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-  display: grid;
-  gap: 6px;
-}
-
-.review-summary-box__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.review-summary-box__meta {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-.review-summary-box__meta code {
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.preset-observations {
-  display: grid;
-  gap: 6px;
-}
-
-.preset-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.preset-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.preset-chip {
-  font-size: 11px;
-  padding: 4px 9px;
-  border-radius: 6px;
-  background: var(--color-bg-light);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border-medium);
-  transition:
-    background 140ms ease,
-    border-color 140ms ease;
-}
-
-.preset-chip:hover {
-  background: var(--color-accent-light);
-  border-color: var(--color-accent);
-}
-
-@media (max-width: 1150px) {
-  .compact-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+@media (max-width: 1100px) {
   .workspace-grid {
     grid-template-columns: 1fr;
   }
-}
-
-@media (max-width: 640px) {
-  .compact-kpis {
-    grid-template-columns: 1fr;
-  }
-  .ctrl-header__actions {
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .pdf-mock-grid {
-    grid-template-columns: 1fr;
+  .right-stack {
+    display: none;
   }
 }
 </style>

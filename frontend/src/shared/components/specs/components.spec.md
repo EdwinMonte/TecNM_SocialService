@@ -60,7 +60,7 @@ Todas las vistas de página, públicas o autenticadas, deben usar `UiBasePage` c
 - `UiField` reenvía atributos nativos al control y expone método `focus()`.
 - `UiAlert`: `tone="success|warning|danger|info"`, `title` y contenido mediante slot.
 - `UiToast`: expone `show(texto)` mediante ref. Muestra aviso durante cuatro segundos en región accesible.
-- `UiDialog`: `v-model` boolean, `title`, slot principal y slot `actions`. Escape cierra y foco vuelve al elemento previo.
+- `UiDialog`: `v-model` boolean, `title`, `size="sm|md|lg|xl|full"`, slot principal y slot `actions`. Escape cierra y foco vuelve al elemento previo.
 
 ### Contenido y datos
 
