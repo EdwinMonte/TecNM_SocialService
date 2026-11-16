@@ -669,13 +669,23 @@ onMounted(async () => {
           {{ formError }}
         </UiAlert>
         <UiFormErrors :validation="companyValidation" />
-        <UiField
-          v-model="form.name"
-          label="Nombre o razón social"
-          required
-          maxlength="200"
-          v-bind="companyValidation.field('name', 'Nombre o razón social')"
-        />
+        <div class="form-grid-2">
+          <UiField
+            v-model="form.name"
+            label="Nombre o razón social"
+            required
+            maxlength="200"
+            v-bind="companyValidation.field('name', 'Nombre o razón social')"
+          />
+          <UiField
+            v-model="form.companyType"
+            label="Tipo de empresa"
+            as="select"
+            required
+            :options="[{ value: '', label: 'Selecciona un tipo' }, ...typeOptions]"
+            v-bind="companyValidation.field('companyType', 'Tipo de empresa')"
+          />
+        </div>
         <div class="form-grid-2">
           <UiField
             :model-value="form.rfc ?? ''"
@@ -692,14 +702,6 @@ onMounted(async () => {
             v-bind="companyValidation.field('commercialName', 'Nombre comercial')"
           />
         </div>
-        <UiField
-          v-model="form.companyType"
-          label="Tipo de empresa"
-          as="select"
-          required
-          :options="[{ value: '', label: 'Selecciona un tipo' }, ...typeOptions]"
-          v-bind="companyValidation.field('companyType', 'Tipo de empresa')"
-        />
         <div class="checkbox-row">
           <label class="check-option">
             <input
@@ -724,7 +726,7 @@ onMounted(async () => {
           label="Domicilio"
           v-bind="companyValidation.field('address', 'Domicilio')"
         />
-        <div class="form-grid-2">
+        <div class="form-grid-3">
           <UiField
             v-model="form.city"
             label="Ciudad"
@@ -739,8 +741,6 @@ onMounted(async () => {
             maxlength="100"
             v-bind="companyValidation.field('state', 'Estado')"
           />
-        </div>
-        <div class="form-grid-3">
           <UiField
             :model-value="form.postalCode ?? ''"
             @update:model-value="form.postalCode = $event"
@@ -748,6 +748,8 @@ onMounted(async () => {
             pattern="[0-9]{5}"
             v-bind="companyValidation.field('postalCode', 'Código postal')"
           />
+        </div>
+        <div class="form-grid-2">
           <UiField
             :model-value="form.phoneNumber ?? ''"
             @update:model-value="form.phoneNumber = $event"
@@ -1305,7 +1307,20 @@ select.modern-select {
 .company-form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.55rem;
+}
+
+.company-form :deep(.field) {
+  margin-bottom: 0;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.company-form :deep(input:not([type='checkbox']):not([type='radio'])),
+.company-form :deep(select) {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
 }
 
 .form-grid-2 {
