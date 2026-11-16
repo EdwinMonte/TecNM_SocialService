@@ -60,7 +60,9 @@ nav a {
 
 .sidenav {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
+  min-width: 0;
 }
 
 .navigation-group {
@@ -68,6 +70,7 @@ nav a {
   padding: 3px 0 0;
   border-top: 1px solid var(--color-border-light);
   position: relative;
+  min-width: 0;
 }
 
 .navigation-group summary {
@@ -76,14 +79,24 @@ nav a {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  padding: 4px 8px;
-  min-height: 26px;
+  padding: 3px 8px;
+  min-height: 24px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--color-text-muted);
   border-radius: 6px;
+  cursor: pointer;
+}
+
+.navigation-group summary:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.navigation-group summary:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
 }
 
 .navigation-group summary::-webkit-details-marker {
@@ -116,10 +129,12 @@ nav a {
 
 .navigation-children {
   display: grid;
-  gap: 2px;
-  padding: 2px 0 4px 8px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  padding: 1px 0 2px 7px;
   border-left: 1px solid var(--color-border);
-  margin-left: 10px;
+  margin-left: 8px;
+  min-width: 0;
 }
 
 .topnav {

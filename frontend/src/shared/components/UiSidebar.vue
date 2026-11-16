@@ -54,26 +54,26 @@ withDefaults(
   align-self: start;
   height: 100%;
   max-height: 100dvh;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  scrollbar-width: thin;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 10px;
-  padding: 12px 12px;
+  gap: 6px;
+  padding: 10px 10px;
   background: var(--color-bg-light);
   border-right: 1px solid var(--color-border);
+  min-width: 0;
 }
 
 .sidebar-top {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .ui-sidebar :deep(.brand) {
-  padding: 4px 8px 10px;
-  margin-bottom: 6px;
+  padding: 2px 6px 8px;
+  margin-bottom: 4px;
   border-bottom: 1px solid var(--color-border);
   font-size: 14px;
   font-weight: 700;
@@ -98,7 +98,7 @@ withDefaults(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 8px 6px;
+  padding: 2px 6px 4px;
 }
 
 .sidebar-section-label {
@@ -121,8 +121,8 @@ withDefaults(
 
 .sidebar-bottom {
   display: grid;
-  gap: 8px;
-  padding-top: 8px;
+  gap: 6px;
+  padding-top: 6px;
   border-top: 1px solid var(--color-border);
 }
 
@@ -134,7 +134,7 @@ withDefaults(
   box-shadow: var(--card-shadow);
 }
 
-@media (max-height: 820px) {
+@media (max-height: 920px) {
   .normateca-card {
     display: none;
   }
@@ -182,7 +182,7 @@ withDefaults(
 
 .sidebar-controls {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 @media (max-width: 640px) {

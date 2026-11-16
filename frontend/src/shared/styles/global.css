@@ -346,7 +346,6 @@ small,
 .ui-sidebar {
   background: var(--color-bg-light);
   border-right: 1px solid var(--color-border);
-  padding: 32px 16px;
 }
 
 .sidebar-title {
@@ -357,26 +356,7 @@ small,
 
 .sidenav {
   display: grid;
-  gap: 8px;
-}
-
-.sidenav a {
-  padding: 10px 12px;
-  border-left: 3px solid transparent;
-  border-radius: 0 8px 8px 0;
-  font-size: 14px;
-  color: var(--color-gray-600);
-}
-
-.sidenav a:hover,
-.sidenav a.active {
-  background: var(--color-primary-subtle);
-  color: var(--color-text-primary);
-}
-
-.sidenav a.active {
-  border-color: var(--color-accent);
-  font-weight: 600;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .side-note {
@@ -1090,10 +1070,6 @@ dialog p {
 
 .ui-toast {
   pointer-events: none;
-}
-
-.sidenav a {
-  min-height: 44px;
 }
 
 button:disabled,

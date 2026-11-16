@@ -51,6 +51,35 @@ const active = computed(() => {
           <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
           <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
         </svg>
+        <svg v-else-if="item.icon === 'companies'" viewBox="0 0 24 24">
+          <path d="M3 21h18" />
+          <path d="M5 21V7l8-4v18" />
+          <path d="M19 21V11l-6-4" />
+          <path d="M9 9v.01" />
+          <path d="M9 12v.01" />
+          <path d="M9 15v.01" />
+          <path d="M9 18v.01" />
+        </svg>
+        <svg v-else-if="item.icon === 'profile'" viewBox="0 0 24 24">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 20a8 8 0 0 1 16 0" />
+        </svg>
+        <svg v-else-if="item.icon === 'tracking'" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M3 10h18" />
+          <path d="M9 4v16" />
+        </svg>
+        <svg v-else-if="item.icon === 'stats'" viewBox="0 0 24 24">
+          <path d="M4 20V10" />
+          <path d="M10 20V4" />
+          <path d="M16 20v-7" />
+          <path d="M22 20H2" />
+        </svg>
+        <svg v-else-if="item.icon === 'pnc'" viewBox="0 0 24 24">
+          <path d="m10.29 3.86-8.48 14.7A2 2 0 0 0 3.53 21h16.94a2 2 0 0 0 1.72-2.44l-8.48-14.7a2 2 0 0 0-3.42 0Z" />
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+        </svg>
         <svg v-else viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="3" />
           <path d="M3 12h6m6 0h6" />
@@ -72,21 +101,30 @@ const active = computed(() => {
 a {
   display: flex !important;
   align-items: center;
-  gap: 9px;
-  padding: 5px 10px;
-  min-height: 32px !important;
+  gap: 8px;
+  padding: 4px 8px;
+  min-height: 28px !important;
+  min-width: 0;
   border-left: 3px solid transparent;
-  border-radius: 7px;
-  font-size: 12.5px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
-  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
 a:hover {
   background: var(--color-primary-subtle);
   color: var(--color-text-primary);
-  transform: translateX(3px);
+}
+
+a:focus:not(:focus-visible) {
+  outline: none;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
 }
 
 a.active {
@@ -98,8 +136,8 @@ a.active {
 }
 
 .nav-icon {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -113,8 +151,8 @@ a.active .nav-icon {
 }
 
 .nav-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.85;
@@ -125,9 +163,10 @@ a.active .nav-icon {
 .nav-label {
   flex: 1;
   min-width: 0;
-  white-space: normal;
-  line-height: 1.35;
-  word-break: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
 }
 
 .nav-badge {

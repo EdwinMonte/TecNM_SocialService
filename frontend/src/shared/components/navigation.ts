@@ -11,6 +11,7 @@ export type NavIconName =
   | 'stats'
   | 'pnc'
   | 'careers'
+  | 'companies'
   | 'profile'
 
 export interface NavigationLink {
