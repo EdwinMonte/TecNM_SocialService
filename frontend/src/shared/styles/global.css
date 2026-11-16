@@ -545,9 +545,10 @@ summary {
   line-height: 1.25;
   font-weight: 600;
   white-space: nowrap;
+  -webkit-font-smoothing: antialiased;
   background: var(--color-primary);
   color: var(--color-white);
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 140ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 160ms ease;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
 .btn--sm {
@@ -560,11 +561,11 @@ summary {
 
 .btn:hover:not(:disabled) {
   background: var(--color-primary-hover);
-  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.14);
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(0);
+  box-shadow: none;
 }
 
 .btn.accent {
