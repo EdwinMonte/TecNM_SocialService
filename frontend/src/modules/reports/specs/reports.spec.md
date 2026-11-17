@@ -67,22 +67,15 @@ Reemplaza las hojas `SERVICIO SOCIAL`, `PRÁCTICAS` y `PRINCIPAL CONSULTA` de `S
 
 ---
 
-### 2.3 Vista `/reports/statistics` (Estadístico Semestral y por Ciclo Escolar)
-Reemplaza las hojas `ESTADÍSTICO` y `PNC` de `SEGUIMIENTO VINCULACIÓN1.xlsx`:
-- **Selector de Comparativa:**
-  - Selector de Semestre Principal (ej. `FJ26`).
-  - Checkbox "Consolidar con semestre anterior para Ciclo Escolar" + selector de semestre previo (ej. `AD25`).
-- **Tabla de Resultados por Carrera:**
-  - Columnas oficiales:
-    - **Carrera:** Clave (`MEC, IND, ELE, INF, GE, ER`) y Nombre Oficial.
-    - **En condiciones (`CP = SI`):** Total de alumnos con Carta de Presentación.
-    - **Solicitantes (`CA = SI`):** Desglose Hombres (`M`), Mujeres (`F`) y Total.
-    - **Liberados:** Desglose Hombres (`M`), Mujeres (`F`) y Total.
-    - **PNC (`Solicitantes - Liberados`):** Diferencia calculada automáticamente.
-    - **% Eficiencia / Liberación:** `(Liberados / Solicitantes) * 100`.
-  - Fila de **Totales Generales Institucionales**.
-- **Tarjeta de Resumen de Ciclo Escolar:** Si se seleccionó comparar periodos, muestra los totales consolidados del año escolar.
-- **Botón "Descargar Informe Estadístico (.xlsx)":** Genera un libro de Excel con formato formal de Vinculación.
+### 2.3 Vista `/reports/statistics` (Estadístico Semestral y Formato 911.10)
+Reemplaza las hojas `ESTADÍSTICO`, `PNC` y `911.10` de `SEGUIMIENTO VINCULACIÓN1.xlsx`:
+- **Diseño a Pantalla Completa (`100dvh`):**
+  - Encabezado ejecutivo con 4 KPIs institucionales en superficie neutra (**En Condiciones C.P.**, **Solicitantes C.A.**, **Liberados**, **% Liberación**).
+  - Barra de herramientas con selector de proceso (**Servicio Social** / **Prácticas Profesionales**), selector de periodo escolar y pestañas de sección (**Hoja ESTADÍSTICO**, **Formato 911.10 & Inclusión**, **Vinculación por Empresa**).
+- **Tabla de Resultados por Carrera (`Hoja ESTADÍSTICO`):**
+  - Columnas oficiales: Carrera (clave y nombre), En condiciones (`CP = SI`), Solicitantes (`H`, `M`, `Total`), Liberados (`H`, `M`, `Total`), PNC (`Solic. - Lib.`), `% Liberación` y fila de **TOTAL INSTITUCIONAL** con tokens mate claro/oscuro.
+- **Sección Formato 911.10 & Vinculación (`LinkageMetrics.vue`):**
+  - Distribución por sector (`Educativo`, `Público`, `Privado`, `Social`), indicadores de inclusión y beneficiarios, y tabla de proyectos por empresa con paginación estandarizada de `10` registros por página (`pageSize = 10`).
 
 ---
 
