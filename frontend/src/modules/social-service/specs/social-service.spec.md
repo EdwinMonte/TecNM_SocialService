@@ -78,6 +78,7 @@ Formulario por pasos (`UiCard` o stepper):
   - Si `completed_pending_review`: Botón "Liberar Servicio Social" (genera folio atómico `SSC...`, fija calificación cualitativa "Excelente" y fecha de liberación).
   - Si `released`: Botón "Enviar Acta a Escolares" (genera folio `DGTV...`).
   - Gestión de **Observaciones Generales del Expediente** y **Dictamen / Observaciones de Documentos** mediante modales (`UiDialog` / `DocumentReviewDialog.vue`), sin usar `window.prompt`.
+  - Modal de gestión integral de expediente (`UiDialog` `size="full"`): resumen superior de estatus/folios/avance, barra unificada de formatos y observaciones, pestañas segmentadas (**PDFs Subidos para Dictamen** y **Checklist Normativo TecNM**) y acciones de avance de etapa alineadas en pie de modal.
   - Buscador con autocompletado dinámico y debounce (250 ms) y paginación estandarizada de **10 registros por página**.
   - Botón "Registrar Producto No Conforme (PNC)": Abre modal para registrar incidencia ISO 9001.
   - Botón "Ver Historial de Estados": Abre línea de tiempo de auditoría (`tramite_status_logs`).
