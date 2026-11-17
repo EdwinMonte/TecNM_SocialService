@@ -34,7 +34,7 @@ const layoutClass = computed(() => ({
 }
 
 .layout {
-  --sidebar-width: 256px;
+  --sidebar-width: 264px;
   width: 100%;
   max-width: none;
   margin: 0;
@@ -82,7 +82,7 @@ const layoutClass = computed(() => ({
 
 @media (max-width: 1100px) {
   .layout {
-    --sidebar-width: 236px;
+    --sidebar-width: 252px;
   }
   .ui-main {
     padding: 12px 16px;

@@ -31,7 +31,7 @@ Editar `mainLayoutConfig` en `mainLayout.config.ts`:
 
 Sin sidebar, contenido ocupa ancho disponible. No queda columna vacía.
 Logout aparece en sidebar; sin sidebar, en header; sin ambos, en footer.
-Control de tema aparece en header o, si falta, en sidebar.
+Control de tema en sidebar usa un botón compacto de icono dinámico (luna en modo claro para activar modo oscuro; sol en modo oscuro para volver a modo claro) junto a cierre de sesión; en header o sin ambos conserva switch/botón de tema accesible.
 Footer institucional permanece en las cuatro opciones.
 
 ## Título y logo independientes
@@ -84,7 +84,7 @@ Reemplazar destinos por páginas reales al agregar módulos; no crear vistas fic
 ## Posición de sidebar
 
 En escritorio, sidebar ocupa borde izquierdo de ventana y permanece visible mediante `position: sticky`.
-Menú tiene altura de viewport y scroll propio si desborda. Header permanece en flujo normal.
+Su densidad vertical compacta, etiquetas completas en una línea con iconos semánticos, todos los grupos de módulos visibles/desplegados por defecto (incluyendo `Catálogos Oficiales`) y pie organizado permiten visualizar navegación completa, ficha de usuario y acciones inferiores dentro del viewport de escritorio sin barras de desplazamiento vertical ni horizontal. Header permanece en flujo normal.
 UiShell reserva todo ancho disponible. Cada vista elige ancho mediante UiBasePage; sidebar no depende de ese límite.
 En móvil, navegación mantiene flujo superior y altura natural.
 

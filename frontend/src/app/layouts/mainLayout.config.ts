@@ -90,9 +90,9 @@ export function getSidebarNavigationForRoles(roles: string[]): NavigationItem[] 
   if (isStaff) {
     nav.push({
       label: 'Catálogos Oficiales',
-      open: false,
+      open: true,
       children: [
-        { label: 'Empresas y dependencias', to: '/companies', icon: 'careers' },
+        { label: 'Empresas y dependencias', to: '/companies', icon: 'companies' },
         { label: 'Carreras Oficiales', to: '/catalogs/careers', icon: 'careers' },
       ],
     })
