@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { socialDocumentLabel } from '../../../shared/utils/socialServiceDocuments'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { canReadProcess, hasRole } from '../../../shared/composables/useSession'
 import { useRouter } from 'vue-router'
 import { getRoleDisplayLabel } from '../../../app/layouts/mainLayout.config'
@@ -12,7 +12,10 @@ import type { InternshipDetail, InternshipListItem } from '../../internships/typ
 import { getDashboardMetrics } from '../../reports/api/reportsApi'
 import type { DashboardMetrics } from '../../reports/types/reports'
 import { getMySocialService, getSocialServices } from '../../social-service/api/socialServiceApi'
-import type { SocialServiceDetail, SocialServiceListItem } from '../../social-service/types/socialService'
+import type {
+  SocialServiceDetail,
+  SocialServiceListItem,
+} from '../../social-service/types/socialService'
 import { getMyEligibility, getMyStudentProfile } from '../../students/api/studentsApi'
 import type { StudentDetail, StudentEligibility } from '../../students/types/students'
 import { me } from '../api/authApi'
@@ -34,6 +37,7 @@ const dashboard = ref<DashboardMetrics | null>(null)
 const pendingDocs = ref<ReviewQueueItem[]>([])
 const recentSS = ref<SocialServiceListItem[]>([])
 const recentPP = ref<InternshipListItem[]>([])
+const tramiteTab = ref<'all' | 'social_service' | 'internship'>('all')
 
 const isStudentOnly = computed(() => {
   const roles = user.value?.roles ?? []
@@ -49,13 +53,122 @@ const roleTitle = computed(() => getRoleDisplayLabel(user.value?.roles ?? []))
 
 const totalSSCount = computed(() => {
   if (!dashboard.value?.socialService) return 0
-  return Object.values(dashboard.value.socialService).reduce((acc, n) => acc + Number(n || 0), 0)
+  return Object.values(dashboard.value.socialService).reduce(
+    (acc, n) => acc + Number(n || 0),
+    0,
+  )
 })
 
 const totalPPCount = computed(() => {
   if (!dashboard.value?.internships) return 0
-  return Object.values(dashboard.value.internships).reduce((acc, n) => acc + Number(n || 0), 0)
+  return Object.values(dashboard.value.internships).reduce(
+    (acc, n) => acc + Number(n || 0),
+    0,
+  )
 })
+
+const animatedKpis = reactive({
+  ss: 0,
+  pp: 0,
+  pendingDocs: 0,
+  pnc: 0,
+})
+
+function animateStaffKpis(): void {
+  const targets = {
+    ss: totalSSCount.value,
+    pp: totalPPCount.value,
+    pendingDocs: dashboard.value?.pendingDocumentReviews ?? pendingDocs.value.length,
+    pnc: dashboard.value?.openNonConformances ?? 0,
+  }
+
+  const prefersReduced =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  if (prefersReduced) {
+    Object.assign(animatedKpis, targets)
+    return
+  }
+
+  const duration = 520
+  const start = performance.now()
+  function tick(now: number): void {
+    const progress = Math.min((now - start) / duration, 1)
+    const ease = 1 - Math.pow(1 - progress, 4)
+    animatedKpis.ss = Math.round(targets.ss * ease)
+    animatedKpis.pp = Math.round(targets.pp * ease)
+    animatedKpis.pendingDocs = Math.round(targets.pendingDocs * ease)
+    animatedKpis.pnc = Math.round(targets.pnc * ease)
+    if (progress < 1) requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+}
+
+interface QuickConnector {
+  label: string
+  sub: string
+  to: string
+  visible: boolean
+}
+
+const quickConnectors = computed<QuickConnector[]>(() => [
+  {
+    label: 'Servicio Social',
+    sub: 'Dictámenes y folios',
+    to: '/social-service',
+    visible: canReadProcess('social_service'),
+  },
+  {
+    label: 'Prácticas Prof.',
+    sub: 'Cartas y empresas',
+    to: '/internships',
+    visible: canReadProcess('internship'),
+  },
+  {
+    label: 'Revisión PDF',
+    sub: 'Cola de validación',
+    to: '/expedients/review',
+    visible: hasRole('admin', 'social_service_officer', 'internship_coordinator'),
+  },
+  {
+    label: 'Padrón Alumnos',
+    sub: 'Importación y elegibilidad',
+    to: '/students',
+    visible: true,
+  },
+  {
+    label: 'Matriz Seguimiento',
+    sub: 'Sábana en vivo',
+    to: '/reports/tracking',
+    visible: true,
+  },
+  {
+    label: 'Estadístico & 911',
+    sub: 'Reporte oficial SEP',
+    to: '/reports/stats',
+    visible: true,
+  },
+  {
+    label: 'Calidad (PNC)',
+    sub: 'Desvíos ISO 9001',
+    to: '/quality/pnc',
+    visible: true,
+  },
+  {
+    label: 'Empresas',
+    sub: 'Convenios y enlaces',
+    to: '/companies',
+    visible: true,
+  },
+  {
+    label: 'Carreras',
+    sub: 'Retículas vigentes',
+    to: '/catalogs/careers',
+    visible: true,
+  },
+].filter((item) => item.visible))
 
 const statusLabels: Record<string, string> = {
   requested: 'Solicitud en Revisión',
@@ -81,6 +194,18 @@ function getStatusTone(status?: string | null): 'success' | 'warning' | 'danger'
   return 'info'
 }
 
+const showSSInTracker = computed(
+  () =>
+    canReadProcess('social_service') &&
+    (tramiteTab.value === 'all' || tramiteTab.value === 'social_service'),
+)
+
+const showPPInTracker = computed(
+  () =>
+    canReadProcess('internship') &&
+    (tramiteTab.value === 'all' || tramiteTab.value === 'internship'),
+)
+
 async function loadData(): Promise<void> {
   isLoading.value = true
   errorMessage.value = ''
@@ -100,14 +225,21 @@ async function loadData(): Promise<void> {
     } else {
       const [dash, docs, ssRes, ppRes] = await Promise.all([
         getDashboardMetrics().catch(() => null),
-        hasRole('admin', 'social_service_officer', 'internship_coordinator') ? getReviewQueue('pending', { pageSize: 10 }).catch(() => []) : Promise.resolve([]),
-        canReadProcess('social_service') ? getSocialServices({ pageSize: 6 }).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
-        canReadProcess('internship') ? getInternships({ pageSize: 6 }).catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
+        hasRole('admin', 'social_service_officer', 'internship_coordinator')
+          ? getReviewQueue('pending', { pageSize: 10 }).catch(() => [])
+          : Promise.resolve([]),
+        canReadProcess('social_service')
+          ? getSocialServices({ pageSize: 6 }).catch(() => ({ items: [] }))
+          : Promise.resolve({ items: [] }),
+        canReadProcess('internship')
+          ? getInternships({ pageSize: 6 }).catch(() => ({ items: [] }))
+          : Promise.resolve({ items: [] }),
       ])
       dashboard.value = dash
       pendingDocs.value = docs
       recentSS.value = ssRes.items ?? []
       recentPP.value = ppRes.items ?? []
+      animateStaffKpis()
     }
   } catch (err: any) {
     errorMessage.value = err?.response?.data?.message || 'No se pudo cargar la información del panel.'
@@ -122,50 +254,121 @@ onMounted(() => {
 </script>
 
 <template>
-  <UiBasePage :fluid="true">
-    <!-- Encabezado Institucional con Rol Activo -->
-    <div class="dashboard-header">
-      <div>
-        <div class="role-pill-row">
-          <UiBadge tone="info">{{ roleTitle }}</UiBadge>
-          <span v-if="dashboard?.period" class="period-tag">
-            Periodo Activo: <strong>{{ dashboard.period.code }}</strong>
+  <UiBasePage :fluid="true" class="fullscreen-page">
+    <!-- Encabezado Ejecutivo Compacto -->
+    <header class="exec-header">
+      <div class="exec-header__left">
+        <div class="exec-eyebrow">
+          <span class="exec-badge">{{ roleTitle }}</span>
+          <span v-if="dashboard?.period" class="exec-period">
+            · Periodo Activo: <strong>{{ dashboard.period.code }}</strong>
+          </span>
+          <span v-if="user?.name && !isStudentOnly" class="exec-period">
+            · Sesión: <strong>{{ user.name }}</strong>
           </span>
         </div>
-        <h1 class="page-title">
-          {{ isStudentOnly ? `Bienvenido(a), ${user?.name || 'Estudiante'}` : 'Panel Operativo de Gestión Tecnológica y Vinculación' }}
-        </h1>
-        <p class="page-subtitle">
-          {{
-            isStudentOnly
-              ? 'Consulta tu elegibilidad, genera tus formatos oficiales prellenados y sube tus documentos firmados y sellados.'
-              : 'Seguimiento en tiempo real de Servicio Social, Prácticas Profesionales, Revisión Documental y Estadísticos.'
-          }}
-        </p>
+        <div class="title-row">
+          <h1 class="exec-title">
+            {{
+              isStudentOnly
+                ? `Bienvenido(a), ${user?.name || 'Estudiante'}`
+                : 'Panel de Control de Gestión Tecnológica y Vinculación'
+            }}
+          </h1>
+          <div v-if="!isStudentOnly" class="header-actions">
+            <UiButton variant="secondary" size="sm" :disabled="isLoading" @click="loadData">
+              Actualizar
+            </UiButton>
+            <UiButton
+              v-if="hasRole('admin', 'social_service_officer', 'internship_coordinator')"
+              variant="primary"
+              size="sm"
+              @click="router.push('/expedients/review')"
+            >
+              Cola de Revisión ({{ dashboard?.pendingDocumentReviews ?? pendingDocs.length }})
+            </UiButton>
+          </div>
+        </div>
       </div>
-      <div v-if="!isStudentOnly" class="header-actions">
-        <UiButton variant="secondary" @click="router.push('/students')">Padrón de Alumnos</UiButton>
-        <UiButton variant="primary" @click="router.push('/reports/tracking')">
-          Ver Sábana Seguimiento (Excel)
-        </UiButton>
-      </div>
-    </div>
 
-    <UiAlert v-if="errorMessage" tone="danger" style="margin-bottom: 1rem;">
-      {{ errorMessage }}
+      <!-- 4 KPIs resumen interactivos para Personal (superficie neutra, borde dorado al pasar/activar) -->
+      <div
+        v-if="!isStudentOnly && !isLoading"
+        class="exec-kpis"
+        aria-label="Indicadores generales de vinculación"
+      >
+        <button
+          v-if="canReadProcess('social_service')"
+          type="button"
+          class="mini-kpi mini-kpi--navy"
+          @click="router.push('/social-service')"
+        >
+          <span class="mini-kpi__label">Servicio Social</span>
+          <strong class="mini-kpi__value">{{ animatedKpis.ss }}</strong>
+          <small class="mini-kpi__foot">
+            Lib: {{ dashboard?.socialService?.released || 0 }} · Act:
+            {{ dashboard?.socialService?.active || 0 }}
+          </small>
+        </button>
+
+        <button
+          v-if="canReadProcess('internship')"
+          type="button"
+          class="mini-kpi mini-kpi--emerald"
+          @click="router.push('/internships')"
+        >
+          <span class="mini-kpi__label">Prácticas Prof.</span>
+          <strong class="mini-kpi__value">{{ animatedKpis.pp }}</strong>
+          <small class="mini-kpi__foot">
+            Lib: {{ dashboard?.internships?.released || 0 }} · Act:
+            {{ dashboard?.internships?.active || 0 }}
+          </small>
+        </button>
+
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--gold"
+          @click="router.push('/expedients/review')"
+        >
+          <span class="mini-kpi__label">Docs. Por Revisar</span>
+          <strong class="mini-kpi__value">{{ animatedKpis.pendingDocs }}</strong>
+          <small class="mini-kpi__foot">Validación en cola</small>
+        </button>
+
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--danger"
+          @click="router.push('/quality/pnc')"
+        >
+          <span class="mini-kpi__label">PNC Abiertos</span>
+          <strong class="mini-kpi__value">{{ animatedKpis.pnc }}</strong>
+          <small class="mini-kpi__foot">
+            Conv. por vencer: {{ dashboard?.agreementsExpiringSoon ?? 0 }}
+          </small>
+        </button>
+      </div>
+    </header>
+
+    <UiAlert v-if="errorMessage" tone="danger" class="compact-alert">
+      <div class="error-row">
+        <span>{{ errorMessage }}</span>
+        <UiButton variant="secondary" size="sm" @click="loadData">Reintentar</UiButton>
+      </div>
     </UiAlert>
 
-    <div v-if="isLoading" class="loading-box">Cargando información en tiempo real...</div>
+    <div v-if="isLoading" class="loading-box" role="status">
+      Cargando información en tiempo real...
+    </div>
 
     <!-- ==================================================================== -->
     <!-- VISTA 1: PORTAL DEL ESTUDIANTE (Rol 'student')                       -->
     <!-- ==================================================================== -->
     <div v-else-if="isStudentOnly" class="student-portal-grid">
-      <UiCard v-if="studentProfile" title="Mi Expediente Académico e IMSS">
+      <UiCard v-if="studentProfile" class="student-profile-card">
         <div class="student-summary-grid">
           <div>
             <span class="meta-label">No. de Control</span>
-            <strong class="meta-value">{{ studentProfile.controlNumber }}</strong>
+            <strong class="meta-value mono">{{ studentProfile.controlNumber }}</strong>
           </div>
           <div>
             <span class="meta-label">Carrera</span>
@@ -174,27 +377,44 @@ onMounted(() => {
           <div>
             <span class="meta-label">Semestre / Turno</span>
             <strong class="meta-value">
-              {{ studentProfile.currentSemester }}° Semestre ·
-              {{ studentProfile.shift === 'morning' ? 'Matutino' : studentProfile.shift === 'night' ? 'Nocturno' : 'Vespertino' }}
+              {{ studentProfile.currentSemester }}° ·
+              {{
+                studentProfile.shift === 'morning'
+                  ? 'Matutino'
+                  : studentProfile.shift === 'night'
+                    ? 'Nocturno'
+                    : 'Vespertino'
+              }}
             </strong>
           </div>
           <div>
             <span class="meta-label">Avance Reticular</span>
-            <strong class="meta-value" style="color: #0284c7;">
-              {{ studentProfile.curriculumProgressPercentage }}% ({{ studentProfile.completedCredits }} créditos)
+            <strong class="meta-value accent-info">
+              {{ studentProfile.curriculumProgressPercentage }}% ({{ studentProfile.completedCredits }}
+              créd.)
             </strong>
           </div>
           <div>
-            <span class="meta-label">Vigencia de Derechos IMSS</span>
-            <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem;">
-              <UiBadge :tone="studentProfile.hasImssFile || studentProfile.hasValidImss ? 'success' : 'warning'">
-                {{ studentProfile.hasImssFile ? 'Constancia PDF Cargada' : studentProfile.hasValidImss ? 'IMSS Vigente' : 'Falta Subir PDF IMSS' }}
+            <span class="meta-label">Vigencia IMSS</span>
+            <div class="imss-badge-wrap">
+              <UiBadge
+                :tone="
+                  studentProfile.hasImssFile || studentProfile.hasValidImss ? 'success' : 'warning'
+                "
+              >
+                {{
+                  studentProfile.hasImssFile
+                    ? 'Constancia PDF Cargada'
+                    : studentProfile.hasValidImss
+                      ? 'IMSS Vigente'
+                      : 'Falta Subir PDF IMSS'
+                }}
               </UiBadge>
             </div>
           </div>
-          <div style="display: flex; align-items: center; justify-content: flex-end;">
-            <UiButton variant="secondary" @click="router.push('/students/me')">
-              Actualizar Perfil / Subir IMSS
+          <div class="profile-cta">
+            <UiButton variant="secondary" size="sm" @click="router.push('/students/me')">
+              Mi Perfil / IMSS
             </UiButton>
           </div>
         </div>
@@ -202,14 +422,18 @@ onMounted(() => {
 
       <div class="tramites-cards-row">
         <!-- Tarjeta Servicio Social -->
-        <UiCard title="1. Mi Servicio Social (480 Horas)">
+        <UiCard title="1. Mi Servicio Social (480 Horas)" class="student-tramite-card">
           <div v-if="mySocialService" class="tramite-card-body">
             <div class="tramite-status-line">
               <UiBadge :tone="getStatusTone(mySocialService.status)">
                 {{ formatStatus(mySocialService.status) }}
               </UiBadge>
               <UiBadge :tone="mySocialService.modality === 'internal' ? 'info' : 'purple'">
-                {{ mySocialService.modality === 'internal' ? 'Local en el TecNM' : 'Dependencia Externa' }}
+                {{
+                  mySocialService.modality === 'internal'
+                    ? 'Local en el TecNM'
+                    : 'Dependencia Externa'
+                }}
               </UiBadge>
             </div>
 
@@ -224,41 +448,43 @@ onMounted(() => {
               </div>
               <div>
                 <span class="meta-label">Folio Carta Presentación (CP):</span>
-                <strong>{{ mySocialService.presentationLetterFolio || 'En espera de dictamen' }}</strong>
+                <strong class="mono">
+                  {{ mySocialService.presentationLetterFolio || 'En espera de dictamen' }}
+                </strong>
               </div>
               <div v-if="mySocialService.releaseCertificateFolio">
                 <span class="meta-label">Constancia de Terminación:</span>
-                <strong style="color: #16a34a;">{{ mySocialService.releaseCertificateFolio }}</strong>
+                <strong class="folio-released">{{ mySocialService.releaseCertificateFolio }}</strong>
               </div>
             </div>
 
             <div class="progress-section">
               <div class="progress-label-row">
-                <span>Progreso Documental (Documentos Validados)</span>
+                <span>Progreso Documental (Validados)</span>
                 <strong>{{ mySocialService.documentProgressPercentage }}%</strong>
               </div>
               <div class="progress-track">
                 <div
                   class="progress-fill"
                   :style="{ width: `${mySocialService.documentProgressPercentage}%` }"
-                ></div>
+                />
               </div>
             </div>
 
             <div class="card-footer-actions">
-              <UiButton variant="primary" @click="router.push('/social-service/my')">
-                Gestionar Formatos y Subir Documentos SS
+              <UiButton variant="primary" size="sm" @click="router.push('/social-service/my')">
+                Gestionar Formatos y Documentos SS
               </UiButton>
             </div>
           </div>
 
           <div v-else class="tramite-card-body">
             <p class="empty-text">
-              Aún no has iniciado tu trámite de Servicio Social. Aquí puedes llenar tus datos del
+              Aún no has iniciado tu trámite de Servicio Social. Llena tus datos del
               <strong>Anexo XVIII</strong> adjuntando tu Constancia de Vigencia del IMSS para que el
               sistema genere tu formato automáticamente y lo envíe a Vinculación.
             </p>
-            <div v-if="studentEligibility" style="margin-bottom: 1rem;">
+            <div v-if="studentEligibility">
               <UiBadge :tone="studentEligibility.socialService.eligible ? 'success' : 'warning'">
                 {{
                   studentEligibility.socialService.eligible
@@ -267,14 +493,16 @@ onMounted(() => {
                 }}
               </UiBadge>
             </div>
-            <UiButton variant="primary" @click="router.push('/social-service/my')">
-              Solicitar Apertura de Servicio Social
-            </UiButton>
+            <div class="card-footer-actions">
+              <UiButton variant="primary" size="sm" @click="router.push('/social-service/my')">
+                Solicitar Apertura de Servicio Social
+              </UiButton>
+            </div>
           </div>
         </UiCard>
 
         <!-- Tarjeta Prácticas Profesionales -->
-        <UiCard title="2. Mis Prácticas Profesionales (Productividad Laboral)">
+        <UiCard title="2. Mis Prácticas Profesionales (Productividad Laboral)" class="student-tramite-card">
           <div v-if="myInternship" class="tramite-card-body">
             <div class="tramite-status-line">
               <UiBadge :tone="getStatusTone(myInternship.status)">
@@ -285,15 +513,21 @@ onMounted(() => {
             <div class="info-pairs">
               <div>
                 <span class="meta-label">Empresa Receptora:</span>
-                <strong>{{ myInternship.company?.name || 'Por registrar con Oficio de Aceptación (CA)' }}</strong>
+                <strong>
+                  {{
+                    myInternship.company?.name || 'Por registrar con Oficio de Aceptación (CA)'
+                  }}
+                </strong>
               </div>
               <div>
                 <span class="meta-label">Folio Carta Presentación (CP):</span>
-                <strong>{{ myInternship.presentationLetterFolio || 'En espera de emisión' }}</strong>
+                <strong class="mono">
+                  {{ myInternship.presentationLetterFolio || 'En espera de emisión' }}
+                </strong>
               </div>
               <div v-if="myInternship.releaseCertificateFolio">
                 <span class="meta-label">Constancia de Liberación (CC):</span>
-                <strong style="color: #16a34a;">{{ myInternship.releaseCertificateFolio }}</strong>
+                <strong class="folio-released">{{ myInternship.releaseCertificateFolio }}</strong>
               </div>
             </div>
 
@@ -306,12 +540,12 @@ onMounted(() => {
                 <div
                   class="progress-fill green"
                   :style="{ width: `${myInternship.documentProgressPercentage}%` }"
-                ></div>
+                />
               </div>
             </div>
 
             <div class="card-footer-actions">
-              <UiButton variant="primary" @click="router.push('/internships/my')">
+              <UiButton variant="primary" size="sm" @click="router.push('/internships/my')">
                 Gestionar Carta Presentación y Documentos PP
               </UiButton>
             </div>
@@ -324,117 +558,206 @@ onMounted(() => {
               enviará su oficio de aceptación membretado a
               <code>arturo.martinez@monclova.tecnm.mx</code>.
             </p>
-            <UiButton variant="primary" @click="router.push('/internships/my')">
-              Solicitar Carta de Presentación de Prácticas
-            </UiButton>
+            <div class="card-footer-actions">
+              <UiButton variant="primary" size="sm" @click="router.push('/internships/my')">
+                Solicitar Carta de Presentación de Prácticas
+              </UiButton>
+            </div>
           </div>
         </UiCard>
       </div>
     </div>
 
     <!-- ==================================================================== -->
-    <!-- VISTA 2: PANEL DE PERSONAL Y DIRECTIVOS (Staff / Admin / Jefatura)   -->
+    <!-- VISTA 2: CENTRO DE CONTROL PARA PERSONAL Y DIRECTIVOS                -->
     <!-- ==================================================================== -->
-    <div v-else class="staff-portal-grid">
-      <div class="kpi-row">
-        <UiCard v-if="canReadProcess('social_service')">
-          <div class="kpi-label">TRÁMITES SERVICIO SOCIAL</div>
-          <div class="kpi-number blue">{{ totalSSCount }}</div>
-          <small class="kpi-sub">
-            Liberados: <strong>{{ dashboard?.socialService?.released || 0 }}</strong> ·
-            En curso: <strong>{{ dashboard?.socialService?.active || 0 }}</strong>
-          </small>
-        </UiCard>
+    <div v-else class="staff-portal">
+      <!-- Cinta de Conectores Directos a todos los módulos -->
+      <section class="connectors-strip" aria-label="Accesos rápidos del sistema">
+        <button
+          v-for="item in quickConnectors"
+          :key="item.to"
+          type="button"
+          class="connector-chip"
+          @click="router.push(item.to)"
+        >
+          <div class="connector-chip__text">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.sub }}</span>
+          </div>
+          <span class="connector-chip__arrow" aria-hidden="true">→</span>
+        </button>
+      </section>
 
-        <UiCard v-if="canReadProcess('internship')">
-          <div class="kpi-label">TRÁMITES PRÁCTICAS PROF.</div>
-          <div class="kpi-number green">{{ totalPPCount }}</div>
-          <small class="kpi-sub">
-            Liberados: <strong>{{ dashboard?.internships?.released || 0 }}</strong> ·
-            En curso: <strong>{{ dashboard?.internships?.active || 0 }}</strong>
-          </small>
-        </UiCard>
-
-        <UiCard>
-          <div class="kpi-label">DOCUMENTOS POR REVISAR</div>
-          <div class="kpi-number amber">{{ dashboard?.pendingDocumentReviews ?? pendingDocs.length }}</div>
-          <small class="kpi-sub">PDFs subidos por alumnos pendientes de validación</small>
-        </UiCard>
-
-        <UiCard>
-          <div class="kpi-label">PRODUCTO NO CONFORME (PNC)</div>
-          <div class="kpi-number purple">{{ dashboard?.openNonConformances ?? 0 }}</div>
-          <small class="kpi-sub">
-            Convenios por vencer: <strong>{{ dashboard?.agreementsExpiringSoon ?? 0 }}</strong>
-          </small>
-        </UiCard>
-      </div>
-
+      <!-- Área Principal en 2 Columnas con Scroll Interno -->
       <div class="staff-panels-grid">
-        <!-- Cola de Documentos Pendientes de Revisión -->
-        <UiCard title="Documentos Recientes Pendientes de Validación">
-          <div v-if="pendingDocs.length === 0" class="empty-box">
-            No hay documentos pendientes de dictamen en la cola de revisión.
+        <!-- Panel Izquierdo: Cola de Documentos Pendientes -->
+        <UiCard class="panel-card">
+          <div class="panel-head">
+            <div class="panel-head__left">
+              <h2 class="panel-title">Documentos Pendientes de Validación</h2>
+              <UiBadge tone="warning">{{ pendingDocs.length }} en espera</UiBadge>
+            </div>
+            <UiButton
+              v-if="hasRole('admin', 'social_service_officer', 'internship_coordinator')"
+              variant="secondary"
+              size="sm"
+              @click="router.push('/expedients/review')"
+            >
+              Ver bandeja completa →
+            </UiButton>
           </div>
-          <div v-else class="list-stack">
-            <div v-for="doc in pendingDocs" :key="doc.id" class="list-item-row">
-              <div>
-                <div class="item-title">
-                  <strong>{{ doc.studentControlNumber }}</strong> · {{ doc.studentFullName }}
-                  <UiBadge tone="info">{{ doc.careerCode }}</UiBadge>
+
+          <div class="panel-scroll">
+            <div v-if="pendingDocs.length === 0" class="empty-box">
+              No hay documentos pendientes de dictamen en la cola de revisión.
+            </div>
+            <div v-else class="list-stack">
+              <article v-for="doc in pendingDocs" :key="doc.id" class="list-item-row">
+                <div class="item-main">
+                  <div class="item-title">
+                    <span class="mono-code">{{ doc.studentControlNumber }}</span>
+                    <strong class="student-name">{{ doc.studentFullName }}</strong>
+                    <UiBadge tone="info">{{ doc.careerCode }}</UiBadge>
+                  </div>
+                  <div class="item-sub">
+                    <UiBadge :tone="doc.tramiteType === 'social_service' ? 'info' : 'purple'">
+                      {{ doc.tramiteType === 'social_service' ? 'Servicio Social' : 'Prácticas' }}
+                    </UiBadge>
+                    <span class="doc-file">
+                      <strong>
+                        {{
+                          doc.tramiteType === 'social_service'
+                            ? socialDocumentLabel(doc.documentCode)
+                            : doc.documentCode
+                        }}
+                      </strong>
+                      · {{ doc.originalFileName }}
+                    </span>
+                  </div>
                 </div>
-                <div class="item-sub">
-                  <UiBadge :tone="doc.tramiteType === 'social_service' ? 'info' : 'purple'">
-                    {{ doc.tramiteType === 'social_service' ? 'Servicio Social' : 'Prácticas' }}
-                  </UiBadge>
-                  <span>Clave: <strong>{{ doc.tramiteType === 'social_service' ? socialDocumentLabel(doc.documentCode) : doc.documentCode }}</strong> ({{ doc.originalFileName }})</span>
-                </div>
-              </div>
-              <UiButton variant="primary" size="sm" @click="router.push('/expedients/review')">
-                Revisar PDF
-              </UiButton>
+                <UiButton
+                  variant="primary"
+                  size="sm"
+                  @click="router.push('/expedients/review')"
+                >
+                  Revisar PDF
+                </UiButton>
+              </article>
             </div>
           </div>
         </UiCard>
 
-        <!-- Resumen de Trámites Activos y Solicitudes -->
-        <UiCard title="Trámites en Seguimiento (Servicio Social y Prácticas)">
-          <div class="list-stack">
-            <div v-for="ss in recentSS.slice(0, 4)" :key="`ss-${ss.id}`" class="list-item-row">
-              <div>
-                <div class="item-title">
-                  <UiBadge tone="info">SS</UiBadge>
-                  <strong>{{ ss.studentControlNumber }}</strong> · {{ ss.studentFullName }}
-                </div>
-                <div class="item-sub">
-                  <span>{{ ss.companyName }}</span> ·
-                  <strong>Avance: {{ ss.documentProgressPercentage }}%</strong>
-                </div>
-              </div>
-              <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <UiBadge :tone="getStatusTone(ss.status)">{{ formatStatus(ss.status) }}</UiBadge>
-                <UiButton variant="secondary" size="sm" @click="router.push('/social-service')">
-                  Abrir
-                </UiButton>
-              </div>
+        <!-- Panel Derecho: Trámites Recientes en Seguimiento -->
+        <UiCard class="panel-card">
+          <div class="panel-head">
+            <div class="panel-head__left">
+              <h2 class="panel-title">Trámites Recientes en Seguimiento</h2>
             </div>
 
-            <div v-for="pp in recentPP.slice(0, 4)" :key="`pp-${pp.id}`" class="list-item-row">
-              <div>
-                <div class="item-title">
-                  <UiBadge tone="purple">PP</UiBadge>
-                  <strong>{{ pp.studentControlNumber }}</strong> · {{ pp.studentFullName }}
-                </div>
-                <div class="item-sub">
-                  <span>{{ pp.companyName || 'Carta Presentación solicitada' }}</span> ·
-                  <strong>Avance: {{ pp.documentProgressPercentage }}%</strong>
-                </div>
-              </div>
-              <div style="display: flex; align-items: center; gap: 0.5rem;">
-                <UiBadge :tone="getStatusTone(pp.status)">{{ formatStatus(pp.status) }}</UiBadge>
-                <UiButton variant="secondary" size="sm" @click="router.push('/internships')">
-                  Abrir
-                </UiButton>
+            <div class="segmented-tabs" role="tablist" aria-label="Filtrar trámites recientes">
+              <button
+                type="button"
+                class="seg-tab"
+                :class="{ 'seg-tab--active': tramiteTab === 'all' }"
+                @click="tramiteTab = 'all'"
+              >
+                Todos
+              </button>
+              <button
+                v-if="canReadProcess('social_service')"
+                type="button"
+                class="seg-tab"
+                :class="{ 'seg-tab--active': tramiteTab === 'social_service' }"
+                @click="tramiteTab = 'social_service'"
+              >
+                Servicio Social
+              </button>
+              <button
+                v-if="canReadProcess('internship')"
+                type="button"
+                class="seg-tab"
+                :class="{ 'seg-tab--active': tramiteTab === 'internship' }"
+                @click="tramiteTab = 'internship'"
+              >
+                Prácticas
+              </button>
+            </div>
+          </div>
+
+          <div class="panel-scroll">
+            <div class="list-stack">
+              <template v-if="showSSInTracker">
+                <article
+                  v-for="ss in recentSS.slice(0, 6)"
+                  :key="`ss-${ss.id}`"
+                  class="list-item-row"
+                >
+                  <div class="item-main">
+                    <div class="item-title">
+                      <UiBadge tone="info">SS</UiBadge>
+                      <span class="mono-code">{{ ss.studentControlNumber }}</span>
+                      <strong class="student-name">{{ ss.studentFullName }}</strong>
+                    </div>
+                    <div class="item-sub">
+                      <span>{{ ss.companyName }}</span>
+                      <span>·</span>
+                      <strong>Avance: {{ ss.documentProgressPercentage }}%</strong>
+                    </div>
+                  </div>
+                  <div class="row-right-actions">
+                    <UiBadge :tone="getStatusTone(ss.status)">
+                      {{ formatStatus(ss.status) }}
+                    </UiBadge>
+                    <UiButton
+                      variant="secondary"
+                      size="sm"
+                      @click="router.push('/social-service')"
+                    >
+                      Abrir
+                    </UiButton>
+                  </div>
+                </article>
+              </template>
+
+              <template v-if="showPPInTracker">
+                <article
+                  v-for="pp in recentPP.slice(0, 6)"
+                  :key="`pp-${pp.id}`"
+                  class="list-item-row"
+                >
+                  <div class="item-main">
+                    <div class="item-title">
+                      <UiBadge tone="purple">PP</UiBadge>
+                      <span class="mono-code">{{ pp.studentControlNumber }}</span>
+                      <strong class="student-name">{{ pp.studentFullName }}</strong>
+                    </div>
+                    <div class="item-sub">
+                      <span>{{ pp.companyName || 'Carta Presentación solicitada' }}</span>
+                      <span>·</span>
+                      <strong>Avance: {{ pp.documentProgressPercentage }}%</strong>
+                    </div>
+                  </div>
+                  <div class="row-right-actions">
+                    <UiBadge :tone="getStatusTone(pp.status)">
+                      {{ formatStatus(pp.status) }}
+                    </UiBadge>
+                    <UiButton
+                      variant="secondary"
+                      size="sm"
+                      @click="router.push('/internships')"
+                    >
+                      Abrir
+                    </UiButton>
+                  </div>
+                </article>
+              </template>
+
+              <div
+                v-if="(!showSSInTracker || recentSS.length === 0) && (!showPPInTracker || recentPP.length === 0)"
+                class="empty-box"
+              >
+                No hay trámites recientes registrados en este filtro.
               </div>
             </div>
           </div>
@@ -445,219 +768,543 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.dashboard-header {
+/* Estructura a pantalla completa (100dvh) sin scroll exterior */
+.fullscreen-page {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 22px 10px !important;
 }
 
-.role-pill-row {
+.exec-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.exec-header__left {
+  flex: 1;
+  min-width: 280px;
+}
+
+.exec-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.15rem;
+  flex-wrap: wrap;
+}
+
+.exec-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.14rem 0.5rem;
+  border-radius: 5px;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.exec-period {
+  font-size: 0.74rem;
+  color: var(--color-text-secondary);
+}
+
+.exec-period strong {
+  color: var(--color-text-primary);
+}
+
+.title-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
 }
 
-.period-tag {
-  font-size: 0.85rem;
-  color: var(--color-text-muted, #6b7280);
-}
-
-.page-title {
-  font-size: 1.5rem;
-  font-weight: 700;
+.exec-title {
+  font-size: 1.2rem;
+  font-weight: 800;
   margin: 0;
-}
-
-.page-subtitle {
-  color: var(--color-text-muted, #6b7280);
-  margin: 0.25rem 0 0;
-  font-size: 0.95rem;
+  color: var(--color-text-primary);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .header-actions {
   display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* 4 KPIs interactivos con superficie neutra */
+.exec-kpis {
+  display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.mini-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.4rem 0.8rem;
+  min-width: 122px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-surface-white);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.mini-kpi:hover {
+  background: var(--secondary-hover);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.mini-kpi__label {
+  font-size: 0.63rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.mini-kpi__value {
+  font-size: 1.18rem;
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary);
+}
+
+.mini-kpi--navy .mini-kpi__value {
+  color: var(--color-info);
+}
+
+.mini-kpi--emerald .mini-kpi__value {
+  color: var(--color-success);
+}
+
+.mini-kpi--gold .mini-kpi__value {
+  color: var(--color-warning);
+}
+
+.mini-kpi--danger .mini-kpi__value {
+  color: var(--color-danger-text);
+}
+
+.mini-kpi__foot {
+  font-size: 0.67rem;
+  color: var(--color-text-secondary);
+}
+
+.compact-alert {
+  margin-bottom: 0.55rem;
+  flex-shrink: 0;
+}
+
+.error-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
 }
 
 .loading-box,
 .empty-box {
   padding: 2rem;
   text-align: center;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
 }
 
-.student-portal-grid,
-.staff-portal-grid {
+/* Cinta de Conectores Rápidos (Staff) */
+.staff-portal {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.65rem;
+  flex: 1;
+  min-height: 0;
 }
 
-.student-summary-grid {
+.connectors-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.connector-chip {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
-.meta-label {
-  display: block;
-  font-size: 0.8rem;
-  color: var(--color-text-muted, #6b7280);
-  margin-bottom: 0.15rem;
+.connector-chip:hover {
+  background: var(--secondary-hover);
+  border-color: var(--color-accent);
 }
 
-.meta-value {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.tramites-cards-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 1.5rem;
-}
-
-.tramite-card-body {
+.connector-chip__text {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  min-width: 0;
 }
 
-.tramite-status-line {
+.connector-chip__text strong {
+  font-size: 0.77rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connector-chip__text span {
+  font-size: 0.67rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connector-chip__arrow {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+/* Dos Columnas Principales (con scroll interno) */
+.staff-panels-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel-card {
   display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 16px !important;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.55rem;
+  border-bottom: 1px solid var(--color-border-light);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.panel-head__left {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-.info-pairs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  font-size: 0.92rem;
-}
-
-.progress-section {
-  background: var(--color-surface-subtle, #f8fafc);
-  padding: 0.85rem;
-  border-radius: 8px;
-  border: 1px solid var(--color-border, #e5e7eb);
-}
-
-.progress-label-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  margin-bottom: 0.4rem;
-}
-
-.progress-track {
-  height: 10px;
-  background: #e5e7eb;
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: #0284c7;
-  transition: width 0.3s ease;
-}
-
-.progress-fill.green {
-  background: #16a34a;
-}
-
-.card-footer-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 0.5rem;
-}
-
-.empty-text {
-  font-size: 0.92rem;
-  color: var(--color-text-secondary, #4b5563);
-  line-height: 1.5;
+.panel-title {
   margin: 0;
-}
-
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem;
-}
-
-.kpi-label {
-  font-size: 0.8rem;
+  font-size: 0.92rem;
   font-weight: 700;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-primary);
 }
 
-.kpi-number {
-  font-size: 2rem;
-  font-weight: 800;
-  margin: 0.35rem 0;
+.segmented-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  height: 30px;
+  border-radius: 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
 }
 
-.kpi-number.blue {
-  color: #0284c7;
-}
-.kpi-number.green {
-  color: #16a34a;
-}
-.kpi-number.amber {
-  color: #d97706;
-}
-.kpi-number.purple {
-  color: #7c3aed;
-}
-
-.kpi-sub {
-  font-size: 0.82rem;
-  color: var(--color-text-muted, #6b7280);
+.seg-tab {
+  min-height: 24px !important;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
 }
 
-.staff-panels-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 1.5rem;
+.seg-tab:hover {
+  color: var(--color-text-primary);
+  background: var(--secondary-hover);
+}
+
+.seg-tab--active {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-color: var(--color-accent);
+}
+
+.panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .list-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .list-item-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
-  padding: 0.75rem;
-  border: 1px solid var(--color-border, #e5e7eb);
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
   border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--surface-toolbar);
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.list-item-row:hover {
+  background: var(--color-primary-subtle);
+  border-color: var(--color-border-medium);
+}
+
+.item-main {
+  min-width: 0;
+  flex: 1;
 }
 
 .item-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.92rem;
-  margin-bottom: 0.25rem;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.2rem;
+}
+
+.mono-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-info-text);
+}
+
+.student-name {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .item-sub {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
-  font-size: 0.82rem;
-  color: var(--color-text-muted, #6b7280);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.doc-file {
+  overflow-wrap: anywhere;
+}
+
+.row-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+/* Vista de Estudiante */
+.student-portal-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.student-profile-card {
+  padding: 12px 16px !important;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+  flex-shrink: 0;
+}
+
+.student-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.meta-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 0.12rem;
+}
+
+.meta-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.accent-info {
+  color: var(--color-info-text);
+}
+
+.folio-released {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--color-success-text);
+}
+
+.imss-badge-wrap {
+  margin-top: 0.2rem;
+}
+
+.profile-cta {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tramites-cards-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.student-tramite-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+}
+
+.tramite-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  height: 100%;
+}
+
+.tramite-status-line {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.info-pairs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+}
+
+.progress-section {
+  background: var(--surface-toolbar);
+  padding: 0.7rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.progress-label-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  margin-bottom: 0.35rem;
+  color: var(--color-text-secondary);
+}
+
+.progress-label-row strong {
+  color: var(--color-text-primary);
+}
+
+.progress-track {
+  height: 8px;
+  background: var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-info);
+  transition: width 0.3s ease;
+}
+
+.progress-fill.green {
+  background: var(--color-success);
+}
+
+.card-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 0.4rem;
+}
+
+.empty-text {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 1020px) {
+  .staff-panels-grid,
+  .tramites-cards-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
