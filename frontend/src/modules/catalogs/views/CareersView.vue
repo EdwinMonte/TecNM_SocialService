@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { problemMessage } from '../../../shared/api/problemDetails'
-import { watch as watchValidation } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, watch as watchValidation } from 'vue'
 import { useFormValidation } from '../../../shared/composables/useFormValidation'
 import { validateFields } from '../../../shared/utils/validationRules'
 import UiFormErrors from '../../../shared/components/UiFormErrors.vue'
 import { isAxiosError } from 'axios'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   UiAlert,
+  UiBadge,
   UiBasePage,
   UiButton,
   UiCard,
@@ -83,18 +83,23 @@ const fallbackCareers = ref<Career[]>([
 ])
 
 const careers = ref<Career[]>([])
+const kpiPool = ref<Career[]>([])
 const isOfflinePreview = ref(false)
 const isLoading = ref(true)
 const barsReady = ref(false)
 const toast = ref<InstanceType<typeof UiToast> | null>(null)
 
-// Filtros y paginación
+// Filtros, autocompletado y paginación estandarizada (10 registros por página)
 const searchQuery = ref('')
 const statusFilter = ref<'all' | 'active' | 'inactive'>('all')
 const currentPage = ref(1)
 const totalPages = ref(1)
 const totalItems = ref(0)
 const pageSize = 10
+
+const autocompleteSuggestions = ref<Career[]>([])
+const isAutocompleteOpen = ref(false)
+let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
 // Contadores KPI animados
 const animatedStats = reactive({
@@ -119,7 +124,7 @@ function runKpiAnimation(totalVal: number, activeVal: number): void {
     return
   }
 
-  const duration = 680
+  const duration = 560
   const start = performance.now()
 
   function tick(now: number): void {
@@ -140,28 +145,61 @@ function runKpiAnimation(totalVal: number, activeVal: number): void {
   requestAnimationFrame(tick)
   setTimeout(() => {
     barsReady.value = true
-  }, 80)
+  }, 60)
+}
+
+function normalizeText(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+}
+
+function filterCareersSmart(list: Career[], rawQuery: string): Career[] {
+  const q = normalizeText(rawQuery)
+  if (!q) return list
+
+  const exactCodeMatches = list.filter((item) => normalizeText(item.code) === q)
+  if (exactCodeMatches.length > 0) return exactCodeMatches
+
+  const codePrefixMatches = list.filter((item) => normalizeText(item.code).startsWith(q))
+  const nameMatches = list.filter(
+    (item) =>
+      !normalizeText(item.code).startsWith(q) &&
+      normalizeText(item.name).includes(q),
+  )
+  return [...codePrefixMatches, ...nameMatches]
 }
 
 function applyLocalFilters(): void {
-  const query = searchQuery.value.trim().toLowerCase()
-  const filtered = fallbackCareers.value.filter((item) => {
-    const matchesSearch =
-      !query ||
-      item.code.toLowerCase().includes(query) ||
-      item.name.toLowerCase().includes(query)
-    const matchesStatus =
+  const query = searchQuery.value.trim()
+  const statusFiltered = fallbackCareers.value.filter(
+    (item) =>
       statusFilter.value === 'all' ||
       (statusFilter.value === 'active' && item.isActive) ||
-      (statusFilter.value === 'inactive' && !item.isActive)
-    return matchesSearch && matchesStatus
-  })
+      (statusFilter.value === 'inactive' && !item.isActive),
+  )
+  const filtered = filterCareersSmart(statusFiltered, query)
 
-  careers.value = filtered
   totalItems.value = filtered.length
   totalPages.value = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const start = (currentPage.value - 1) * pageSize
+  careers.value = filtered.slice(start, start + pageSize)
+  kpiPool.value = fallbackCareers.value
   const activeCount = fallbackCareers.value.filter((c) => c.isActive).length
   runKpiAnimation(fallbackCareers.value.length, activeCount)
+}
+
+async function loadKpiPool(): Promise<void> {
+  try {
+    const data = await getCareers({ page: 1, pageSize: 100, sort: 'code' })
+    kpiPool.value = data.items || []
+    const activeCount = kpiPool.value.filter((c) => c.isActive).length
+    runKpiAnimation(data.totalItems, activeCount)
+  } catch {
+    // Fallback handled by loadCareers
+  }
 }
 
 async function loadCareers(): Promise<void> {
@@ -184,11 +222,24 @@ async function loadCareers(): Promise<void> {
     })
 
     isOfflinePreview.value = false
-    careers.value = data.items
-    totalPages.value = data.totalPages
-    totalItems.value = data.totalItems
-    const activeCount = data.items.filter((c) => c.isActive).length
-    runKpiAnimation(data.totalItems, activeCount)
+    const rawItems = data.items || []
+    const refinedItems = filterCareersSmart(rawItems, searchQuery.value)
+    careers.value = refinedItems
+    const exactMatched =
+      searchQuery.value.trim().length > 0 && refinedItems.length < rawItems.length
+    totalItems.value = exactMatched ? refinedItems.length : data.totalItems
+    totalPages.value = Math.max(
+      1,
+      exactMatched
+        ? Math.ceil(refinedItems.length / pageSize)
+        : data.totalPages || Math.ceil((data.totalItems || 0) / pageSize),
+    )
+    if (kpiPool.value.length === 0) {
+      const activeCount = careers.value.filter((c) => c.isActive).length
+      runKpiAnimation(data.totalItems, activeCount)
+    } else {
+      barsReady.value = true
+    }
   } catch {
     isOfflinePreview.value = true
     applyLocalFilters()
@@ -197,14 +248,55 @@ async function loadCareers(): Promise<void> {
   }
 }
 
-let searchDebounce: ReturnType<typeof setTimeout> | null = null
-watch(searchQuery, () => {
+async function fetchSuggestions(query: string): Promise<void> {
+  const q = query.trim()
+  if (!q) {
+    autocompleteSuggestions.value = []
+    isAutocompleteOpen.value = false
+    return
+  }
+
+  const pool = kpiPool.value.length > 0 ? kpiPool.value : careers.value
+  autocompleteSuggestions.value = filterCareersSmart(pool, q).slice(0, 6)
+  isAutocompleteOpen.value = autocompleteSuggestions.value.length > 0
+}
+
+function handleSearchInput(): void {
   if (searchDebounce) clearTimeout(searchDebounce)
   searchDebounce = setTimeout(() => {
     currentPage.value = 1
+    void fetchSuggestions(searchQuery.value)
     void loadCareers()
-  }, 240)
-})
+  }, 280)
+}
+
+function selectSuggestion(item: Career): void {
+  searchQuery.value = item.code
+  isAutocompleteOpen.value = false
+  currentPage.value = 1
+  void loadCareers()
+}
+
+function clearSearch(): void {
+  if (searchDebounce) clearTimeout(searchDebounce)
+  searchQuery.value = ''
+  autocompleteSuggestions.value = []
+  isAutocompleteOpen.value = false
+  currentPage.value = 1
+  void loadCareers()
+}
+
+function handleSearchFocus(): void {
+  if (searchQuery.value.trim().length > 0 && autocompleteSuggestions.value.length > 0) {
+    isAutocompleteOpen.value = true
+  }
+}
+
+function handleSearchBlur(): void {
+  setTimeout(() => {
+    isAutocompleteOpen.value = false
+  }, 180)
+}
 
 watch(statusFilter, () => {
   currentPage.value = 1
@@ -327,7 +419,7 @@ async function handleSave(): Promise<void> {
     }
 
     dialogOpen.value = false
-    await loadCareers()
+    await Promise.all([loadKpiPool(), loadCareers()])
   } catch (error) {
     careerValidation.apply(error, 'No se pudo guardar la carrera.')
     formError.value = problemMessage(error, 'No se pudo guardar la carrera.')
@@ -350,6 +442,8 @@ async function handleToggleStatus(career: Career): Promise<void> {
     career.isActive = nextStatus
     if (isOfflinePreview.value) {
       applyLocalFilters()
+    } else {
+      await loadKpiPool()
     }
     toast.value?.show(
       `Carrera "${career.code}" ${nextStatus ? 'habilitada' : 'desactivada'} correctamente.`,
@@ -389,7 +483,7 @@ async function handleConfirmDelete(): Promise<void> {
     }
     toast.value?.show(`Carrera "${careerToDelete.value.code}" dada de baja.`)
     deleteDialogOpen.value = false
-    await loadCareers()
+    await Promise.all([loadKpiPool(), loadCareers()])
   } catch (error) {
     if (isAxiosError(error) && error.response?.status === 409) {
       deleteError.value =
@@ -402,211 +496,200 @@ async function handleConfirmDelete(): Promise<void> {
   }
 }
 
-onMounted(loadCareers)
-const careerValidation = useFormValidation(() => validateFields({code:formCode.value.trim().toUpperCase(),name:formName.value,totalCredits:formCredits.value},{code:{required:true,max:16,pattern:/^[A-Z0-9_-]+$/},name:{required:true,max:150},totalCredits:{required:true,integer:true,min:1}}))
+const quickCodeList = computed(() => (kpiPool.value.length > 0 ? kpiPool.value : careers.value))
+
+const careerValidation = useFormValidation(() =>
+  validateFields(
+    {
+      code: formCode.value.trim().toUpperCase(),
+      name: formName.value,
+      totalCredits: formCredits.value,
+    },
+    {
+      code: { required: true, max: 16, pattern: /^[A-Z0-9_-]+$/ },
+      name: { required: true, max: 150 },
+      totalCredits: { required: true, integer: true, min: 1 },
+    },
+  ),
+)
 watchValidation(dialogOpen, () => careerValidation.reset())
+
+onBeforeUnmount(() => {
+  if (searchDebounce) clearTimeout(searchDebounce)
+})
+
+onMounted(async () => {
+  await Promise.all([loadKpiPool(), loadCareers()])
+})
 </script>
 
 <template>
-  <UiBasePage fluid>
-    <!-- Encabezado Ejecutivo Compacto -->
-    <template #header>
-      <header class="ctrl-header reveal-step reveal-1">
-        <div class="ctrl-header__left">
-          <div class="ctrl-eyebrow">
-            <span class="ctrl-badge">CATÁLOGO OFICIAL DE PROGRAMAS EDUCATIVOS</span>
-            <span class="ctrl-period">· Retículas TecNM AD26</span>
-            <span class="ctrl-status-pill">
-              <span class="ctrl-live-dot" aria-hidden="true" />
-              Plantel <code>05DIT0001V</code>
-            </span>
+  <UiBasePage :fluid="true" class="fullscreen-page">
+    <!-- Encabezado Ejecutivo Compacto con 4 KPIs (solo borde dorado activo) -->
+    <header class="exec-header">
+      <div class="exec-header__left">
+        <div class="exec-eyebrow">
+          <span class="exec-badge">CATÁLOGO OFICIAL DE PROGRAMAS EDUCATIVOS</span>
+          <span class="exec-period">· Retículas TecNM · Plantel 05DIT0001V</span>
+        </div>
+        <div class="title-row">
+          <h1 class="exec-title">Catálogo de Carreras Académicas</h1>
+          <div class="header-actions">
+            <UiButton variant="secondary" size="sm" @click="loadCareers">
+              Sincronizar
+            </UiButton>
+            <UiButton variant="primary" size="sm" @click="openCreateModal">
+              + Nueva Carrera
+            </UiButton>
           </div>
-          <h1 class="ctrl-title">Catálogo de Carreras Académicas</h1>
+        </div>
+      </div>
+
+      <!-- 4 KPIs con superficie neutra y borde dorado únicamente cuando está activo -->
+      <div class="exec-kpis" aria-label="Indicadores del catálogo">
+        <button
+          type="button"
+          class="mini-kpi"
+          :class="{ 'mini-kpi--active': statusFilter === 'all' }"
+          @click="statusFilter = 'all'"
+        >
+          <span class="mini-kpi__label">Programas</span>
+          <strong class="mini-kpi__value">{{ animatedStats.total }}</strong>
+        </button>
+
+        <button
+          type="button"
+          class="mini-kpi mini-kpi--emerald"
+          :class="{ 'mini-kpi--active': statusFilter === 'active' }"
+          @click="statusFilter = statusFilter === 'active' ? 'all' : 'active'"
+        >
+          <span class="mini-kpi__label">Habilitadas</span>
+          <strong class="mini-kpi__value">{{ animatedStats.active }}</strong>
+        </button>
+
+        <div class="mini-kpi mini-kpi--gold mini-kpi--static">
+          <span class="mini-kpi__label">Retícula Base</span>
+          <strong class="mini-kpi__value">{{ animatedStats.baseCredits }}</strong>
         </div>
 
-        <div class="ctrl-header__actions">
-          <UiButton variant="secondary" class="ctrl-btn" @click="loadCareers">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="ctrl-btn__icon">
-              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-              <path d="M16 16h5v5" />
-            </svg>
-            Sincronizar
-          </UiButton>
-
-          <UiButton variant="primary" class="ctrl-btn" @click="openCreateModal">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="ctrl-btn__icon">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Nueva Carrera
-          </UiButton>
+        <div class="mini-kpi mini-kpi--navy mini-kpi--static">
+          <span class="mini-kpi__label">Mín. SS (70%)</span>
+          <strong class="mini-kpi__value">{{ animatedStats.minSocialCredits }}</strong>
         </div>
-      </header>
-    </template>
+      </div>
+    </header>
 
-    <!-- 1. Fila de 4 Recuadros KPI Compactos -->
-    <section class="compact-kpis reveal-step reveal-2" aria-label="Indicadores del catálogo">
-      <!-- KPI 1: Total de Programas -->
-      <article
-        class="kpi-tile"
-        :class="{ 'kpi-tile--selected': statusFilter === 'all' }"
-        @click="statusFilter = 'all'"
-      >
-        <div class="kpi-tile__top">
-          <span class="kpi-tile__label">
-            <span class="kpi-dot kpi-dot--navy" aria-hidden="true" />
-            Programas Educativos
-          </span>
-          <span class="kpi-meta kpi-meta--sky">Oferta Vigente</span>
-        </div>
-
-        <div class="kpi-tile__main">
-          <strong class="kpi-tile__value">{{ animatedStats.total }}</strong>
-          <span class="kpi-tile__unit">carreras registradas</span>
-        </div>
-
-        <div class="kpi-tile__foot">
-          <span><strong>Nivel</strong> Licenciatura</span>
-          <span>Modalidad Escolarizada</span>
-        </div>
-      </article>
-
-      <!-- KPI 2: Carreras Activas -->
-      <article
-        class="kpi-tile"
-        :class="{ 'kpi-tile--selected': statusFilter === 'active' }"
-        @click="statusFilter = statusFilter === 'active' ? 'all' : 'active'"
-      >
-        <div class="kpi-tile__top">
-          <span class="kpi-tile__label">
-            <span class="kpi-dot kpi-dot--emerald" aria-hidden="true" />
-            Carreras Habilitadas
-          </span>
-          <span class="kpi-meta kpi-meta--emerald">• En Operación</span>
-        </div>
-
-        <div class="kpi-tile__main">
-          <strong class="kpi-tile__value">{{ animatedStats.active }}</strong>
-          <span class="kpi-tile__unit">programas activos</span>
-        </div>
-
-        <div class="kpi-tile__foot">
-          <span>Vinculación abierta</span>
-          <span class="kpi-highlight--emerald">100% acreditadas</span>
-        </div>
-      </article>
-
-      <!-- KPI 3: Créditos Oficiales -->
-      <article class="kpi-tile kpi-tile--gold">
-        <div class="kpi-tile__top">
-          <span class="kpi-tile__label">
-            <span class="kpi-dot kpi-dot--gold" aria-hidden="true" />
-            Estándar Reticular
-          </span>
-          <span class="kpi-tag-gold">DGEST / TecNM</span>
-        </div>
-
-        <div class="kpi-tile__main">
-          <strong class="kpi-tile__value kpi-tile__value--gold">
-            {{ animatedStats.baseCredits }}
-          </strong>
-          <span class="kpi-tile__unit">créditos totales</span>
-        </div>
-
-        <div class="kpi-tile__foot">
-          <span>10 Créd. Servicio Social</span>
-          <span class="kpi-highlight--gold">Planes homologados</span>
-        </div>
-      </article>
-
-      <!-- KPI 4: Umbral Servicio Social -->
-      <article class="kpi-tile">
-        <div class="kpi-tile__top">
-          <span class="kpi-tile__label">
-            <span class="kpi-dot kpi-dot--sky" aria-hidden="true" />
-            Requisito Apertura SS
-          </span>
-          <span class="kpi-meta kpi-meta--sky">70% Avance</span>
-        </div>
-
-        <div class="kpi-tile__main">
-          <strong class="kpi-tile__value">{{ animatedStats.minSocialCredits }}</strong>
-          <span class="kpi-tile__unit">créditos mínimos</span>
-        </div>
-
-        <div class="kpi-tile__foot">
-          <span><strong>208 créd.</strong> para Prácticas</span>
-          <span>Validación Kárdex</span>
-        </div>
-      </article>
-    </section>
-
-    <!-- 2. Área Principal en 2 Columnas: Tabla del Catálogo + Panel Normativo Lateral -->
-    <div class="workspace-grid reveal-step reveal-3">
+    <!-- Área Principal en 2 Columnas a Pantalla Completa -->
+    <div class="workspace-grid">
       <!-- Columna Izquierda: Tabla Interactiva de Carreras -->
       <UiCard class="tray-card">
-        <!-- Barra Superior de Búsqueda y Filtros -->
-        <div class="tray-toolbar">
+        <!-- Barra Superior de Búsqueda Autocomplete y Filtros -->
+        <div class="filters-bar">
           <div class="search-box">
-            <svg viewBox="0 0 24 24" aria-hidden="true" class="search-box__icon">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              v-model="searchQuery"
-              type="search"
-              class="search-box__input"
-              placeholder="Buscar carrera por clave (ej. IIND, IINF) o nombre..."
-              aria-label="Buscar por clave o nombre de carrera"
-            />
-            <button
-              v-if="searchQuery"
-              type="button"
-              class="search-box__clear"
-              aria-label="Limpiar búsqueda"
-              @click="searchQuery = ''"
-            >
-              ✕
-            </button>
+            <label class="filter-label" for="careers-search-input">
+              Buscar por Clave Oficial o Nombre de Carrera
+            </label>
+            <div class="autocomplete-container">
+              <div class="input-wrapper">
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  class="search-icon"
+                  width="15"
+                  height="15"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  id="careers-search-input"
+                  v-model="searchQuery"
+                  type="search"
+                  class="modern-input"
+                  placeholder="Ej. IIND, IINF o Ingeniería Industrial..."
+                  aria-label="Buscar por clave o nombre de carrera"
+                  autocomplete="off"
+                  @input="handleSearchInput"
+                  @focus="handleSearchFocus"
+                  @blur="handleSearchBlur"
+                  @keyup.enter="isAutocompleteOpen = false; currentPage = 1; loadCareers()"
+                />
+                <button
+                  v-if="searchQuery"
+                  type="button"
+                  class="clear-search-btn"
+                  aria-label="Limpiar búsqueda"
+                  @click="clearSearch"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <!-- Lista desplegable de sugerencias (Autocomplete) -->
+              <div
+                v-if="isAutocompleteOpen && autocompleteSuggestions.length > 0"
+                class="suggestions-dropdown"
+                role="listbox"
+              >
+                <div
+                  v-for="suggestion in autocompleteSuggestions"
+                  :key="suggestion.id"
+                  class="suggestion-item"
+                  role="option"
+                  @mousedown.prevent="selectSuggestion(suggestion)"
+                >
+                  <div class="suggestion-left">
+                    <span class="suggestion-code">{{ suggestion.code }}</span>
+                    <span class="suggestion-name">{{ suggestion.name }}</span>
+                  </div>
+                  <div class="suggestion-right">
+                    <span class="suggestion-credits">{{ suggestion.totalCredits }} créd.</span>
+                    <UiBadge :tone="suggestion.isActive ? 'success' : 'danger'">
+                      {{ suggestion.isActive ? 'Activa' : 'Inactiva' }}
+                    </UiBadge>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="toolbar-right">
-            <div class="status-tabs" role="tablist" aria-label="Filtrar carreras por estado">
-              <button
-                type="button"
-                class="status-tab"
-                :class="{ 'status-tab--active': statusFilter === 'all' }"
-                @click="statusFilter = 'all'"
-              >
-                Todas
-              </button>
-              <button
-                type="button"
-                class="status-tab"
-                :class="{ 'status-tab--active': statusFilter === 'active' }"
-                @click="statusFilter = 'active'"
-              >
-                Activas
-              </button>
-              <button
-                type="button"
-                class="status-tab"
-                :class="{ 'status-tab--active': statusFilter === 'inactive' }"
-                @click="statusFilter = 'inactive'"
-              >
-                Inactivas
-              </button>
+            <span class="filter-label">Estatus</span>
+            <div class="status-tabs-row">
+              <div class="status-tabs" role="tablist" aria-label="Filtrar carreras por estado">
+                <button
+                  type="button"
+                  class="status-tab"
+                  :class="{ 'status-tab--active': statusFilter === 'all' }"
+                  @click="statusFilter = 'all'"
+                >
+                  Todas
+                </button>
+                <button
+                  type="button"
+                  class="status-tab"
+                  :class="{ 'status-tab--active': statusFilter === 'active' }"
+                  @click="statusFilter = 'active'"
+                >
+                  Activas
+                </button>
+                <button
+                  type="button"
+                  class="status-tab"
+                  :class="{ 'status-tab--active': statusFilter === 'inactive' }"
+                  @click="statusFilter = 'inactive'"
+                >
+                  Inactivas
+                </button>
+              </div>
             </div>
-
-            <span class="tray-count">
-              Total: <strong>{{ totalItems }}</strong>
-            </span>
           </div>
         </div>
 
-        <!-- Tabla con Transición de Filas -->
+        <!-- Tabla con scroll interno y encabezados fijos -->
         <div class="tray-table-wrap" role="region" aria-label="Catálogo de Carreras">
           <table class="tray-table">
             <thead>
@@ -615,27 +698,41 @@ watchValidation(dialogOpen, () => careerValidation.reset())
                 <th scope="col">PROGRAMA EDUCATIVO &amp; REQUISITOS</th>
                 <th scope="col">RETÍCULA / CRÉDITOS</th>
                 <th scope="col">ESTADO</th>
-                <th scope="col" class="th-right">ACCIONES</th>
+                <th scope="col" class="th-actions">ACCIONES</th>
               </tr>
             </thead>
             <TransitionGroup name="tray-row" tag="tbody">
+              <tr v-if="isLoading" key="loading">
+                <td colspan="5" class="empty-cell">Cargando catálogo de carreras…</td>
+              </tr>
+              <tr v-else-if="careers.length === 0" key="empty">
+                <td colspan="5" class="empty-cell">
+                  <div class="empty-catalog">
+                    <p>No se encontraron carreras con los criterios seleccionados.</p>
+                    <UiButton
+                      variant="secondary"
+                      size="sm"
+                      @click="
+                        searchQuery = '';
+                        statusFilter = 'all'
+                      "
+                    >
+                      Restablecer filtros
+                    </UiButton>
+                  </div>
+                </td>
+              </tr>
               <tr v-for="row in careers" :key="row.id" class="tray-tr">
                 <td>
-                  <span class="code-pill">
-                    <span
-                      class="code-pill__dot"
-                      :class="row.isActive ? 'code-pill__dot--active' : 'code-pill__dot--inactive'"
-                      aria-hidden="true"
-                    />
-                    {{ row.code }}
-                  </span>
+                  <span class="code-pill">{{ row.code }}</span>
                 </td>
 
                 <td>
                   <div class="cell-program">
                     <strong>{{ row.name }}</strong>
                     <span>
-                      Req. Servicio Social: {{ socialServiceCredits(row.totalCredits) }} créd. (70%) · Prácticas: {{ internshipCredits(row.totalCredits) }} créd. (80%)
+                      Req. SS: {{ socialServiceCredits(row.totalCredits) }} créd. (70%) · Prácticas:
+                      {{ internshipCredits(row.totalCredits) }} créd. (80%)
                     </span>
                   </div>
                 </td>
@@ -657,92 +754,66 @@ watchValidation(dialogOpen, () => careerValidation.reset())
                 </td>
 
                 <td>
-                  <span
-                    class="status-box"
-                    :class="row.isActive ? 'status-box--success' : 'status-box--danger'"
-                  >
-                    <span class="status-box__dot" aria-hidden="true" />
+                  <UiBadge :tone="row.isActive ? 'success' : 'danger'">
                     {{ row.isActive ? 'Activa' : 'Inactiva' }}
-                  </span>
+                  </UiBadge>
                 </td>
 
-                <td class="td-right">
+                <td class="td-actions">
                   <div class="row-actions">
-                    <button
-                      type="button"
-                      class="row-btn row-btn--outline"
-                      @click="openEditModal(row)"
-                    >
+                    <UiButton variant="secondary" size="sm" @click="openEditModal(row)">
                       Editar
-                    </button>
-                    <button
-                      type="button"
-                      class="row-btn row-btn--outline"
+                    </UiButton>
+                    <UiButton
+                      variant="secondary"
+                      size="sm"
                       :disabled="togglingId === row.id"
                       @click="handleToggleStatus(row)"
                     >
                       {{ row.isActive ? 'Desactivar' : 'Activar' }}
-                    </button>
-                    <button
-                      type="button"
-                      class="row-btn row-btn--danger"
-                      @click="openDeleteModal(row)"
-                    >
+                    </UiButton>
+                    <UiButton variant="danger" size="sm" @click="openDeleteModal(row)">
                       Baja
-                    </button>
+                    </UiButton>
                   </div>
                 </td>
               </tr>
             </TransitionGroup>
           </table>
-
-          <div v-if="!isLoading && careers.length === 0" class="empty-catalog">
-            <p>No se encontraron carreras con los criterios seleccionados.</p>
-            <UiButton
-              variant="secondary"
-              @click="
-                searchQuery = '';
-                statusFilter = 'all'
-              "
-            >
-              Restablecer filtros
-            </UiButton>
-          </div>
         </div>
 
-        <!-- Pie de Tabla y Paginación -->
-        <footer class="tray-footer">
-          <span>
-            Catálogo oficial TecNM Campus Monclova ·
-            {{ isOfflinePreview ? 'Vista operativa local activa' : 'Sincronizado con PostgreSQL' }}
+        <!-- Barra de Paginación Estandarizada (10 registros por página) -->
+        <footer class="pagination-bar">
+          <span class="pagination-info">
+            Mostrando <strong>{{ careers.length }}</strong> de
+            <strong>{{ totalItems }}</strong> carreras · Página
+            <strong>{{ currentPage }}</strong> de <strong>{{ totalPages }}</strong>
+            <template v-if="isOfflinePreview"> · Vista operativa local</template>
           </span>
 
-          <div v-if="totalPages > 1" class="pagination-inline">
-            <span>Página {{ currentPage }} de {{ totalPages }}</span>
-            <button
-              type="button"
-              class="row-btn row-btn--outline"
-              :disabled="currentPage <= 1"
+          <div class="pagination-controls">
+            <UiButton
+              variant="secondary"
+              size="sm"
+              :disabled="currentPage <= 1 || isLoading"
               @click="currentPage--"
             >
-              ← Anterior
-            </button>
-            <button
-              type="button"
-              class="row-btn row-btn--outline"
-              :disabled="currentPage >= totalPages"
+              Anterior
+            </UiButton>
+            <UiButton
+              variant="secondary"
+              size="sm"
+              :disabled="currentPage >= totalPages || isLoading"
               @click="currentPage++"
             >
-              Siguiente →
-            </button>
+              Siguiente
+            </UiButton>
           </div>
-          <span v-else class="footer-iso-tag">SGC ISO 9001:2015</span>
         </footer>
       </UiCard>
 
-      <!-- Columna Derecha: Reglas de Créditos y Resumen Reticular -->
+      <!-- Columna Derecha: Reglas de Créditos y Claves Oficiales -->
       <aside class="right-stack">
-        <!-- Tarjeta Superior: Criterios Normativos de Créditos -->
         <UiCard class="side-card">
           <div class="side-card__head">
             <div class="side-card__title-group">
@@ -756,32 +827,33 @@ watchValidation(dialogOpen, () => careerValidation.reset())
           </div>
 
           <div class="rules-stack">
-            <article class="rule-card rule-card--navy">
+            <article class="rule-card">
               <div class="rule-card__top">
                 <span class="rule-badge rule-badge--navy">SERVICIO SOCIAL</span>
                 <strong class="rule-pct">≥ 70% Créditos</strong>
               </div>
               <h3 class="rule-title">182 de 260 créditos aprobados</h3>
               <p class="rule-desc">
-                Requisito obligatorio en kárdex para autorizar solicitud Anexo XVIII y Carta de Presentación (480 horas).
+                Requisito obligatorio en kárdex para autorizar solicitud Anexo XVIII y Carta de
+                Presentación (480 horas).
               </p>
             </article>
 
-            <article class="rule-card rule-card--gold">
+            <article class="rule-card">
               <div class="rule-card__top">
                 <span class="rule-badge rule-badge--gold">PRÁCTICAS PROF.</span>
                 <strong class="rule-pct rule-pct--gold">≥ 80% Créditos</strong>
               </div>
               <h3 class="rule-title">208 de 260 créditos aprobados</h3>
               <p class="rule-desc">
-                Requerido para vinculación en empresas con convenio activo y asignación de asesor interno.
+                Requerido para vinculación en empresas con convenio activo y asignación de asesor
+                interno.
               </p>
             </article>
           </div>
         </UiCard>
 
-        <!-- Tarjeta Inferior: Distribución Rápida por Clave -->
-        <UiCard class="side-card">
+        <UiCard class="side-card side-card--codes">
           <div class="side-card__head">
             <h2 class="side-card__title">CLAVES OFICIALES VIGENTES</h2>
             <span class="side-card__meta">Filtro rápido</span>
@@ -789,14 +861,15 @@ watchValidation(dialogOpen, () => careerValidation.reset())
 
           <div class="quick-codes">
             <button
-              v-for="item in careers"
+              v-for="item in quickCodeList"
               :key="item.id"
               type="button"
               class="code-chip-btn"
               :class="{ 'code-chip-btn--selected': searchQuery.toUpperCase() === item.code }"
               @click="
-                searchQuery =
-                  searchQuery.toUpperCase() === item.code ? '' : item.code
+                searchQuery = searchQuery.toUpperCase() === item.code ? '' : item.code;
+                currentPage = 1;
+                loadCareers()
               "
             >
               <span class="code-chip-btn__sigla">{{ item.code }}</span>
@@ -809,20 +882,39 @@ watchValidation(dialogOpen, () => careerValidation.reset())
     </div>
 
     <!-- Modal de Creación / Edición -->
-    <UiDialog v-model="dialogOpen" :title="dialogTitle">
+    <UiDialog v-model="dialogOpen" :title="dialogTitle" size="lg">
       <form novalidate class="dialog-form" @submit.prevent="handleSave">
-        <UiAlert v-if="formError && !(careerValidation.hasErrors.value)" tone="danger" title="Revisa los datos ingresados" class="mb-3">
+        <UiAlert
+          v-if="formError && !careerValidation.hasErrors.value"
+          tone="danger"
+          title="Revisa los datos ingresados"
+        >
           {{ formError }}
         </UiAlert>
 
         <UiFormErrors :validation="careerValidation" />
-        <UiField
-          v-model="formCode"
-          label="Clave Oficial (Siglas)"
-          hint="Entre 1 y 16 caracteres alfanuméricos en mayúsculas. Ej. IIND, IINF, IGEM"
-          placeholder="Ej. IIND"
-          required
-         v-bind="careerValidation.field('code', 'Clave Oficial (Siglas)')" />
+
+        <div class="dialog-grid-2">
+          <UiField
+            v-model="formCode"
+            label="Clave Oficial (Siglas)"
+            hint="1 a 16 caracteres en mayúsculas. Ej. IIND, IINF, GE"
+            placeholder="Ej. IIND"
+            required
+            v-bind="careerValidation.field('code', 'Clave Oficial (Siglas)')"
+          />
+
+          <UiField
+            v-model="formCredits"
+            label="Créditos Totales de Retícula"
+            type="number"
+            min="1"
+            max="500"
+            hint="Estándar TecNM: 260 créditos totales"
+            required
+            v-bind="careerValidation.field('totalCredits', 'Créditos Totales de Retícula')"
+          />
+        </div>
 
         <UiField
           v-model="formName"
@@ -830,46 +922,58 @@ watchValidation(dialogOpen, () => careerValidation.reset())
           hint="Nombre completo conforme al plan de estudios autorizado por el TecNM"
           placeholder="Ej. Ingeniería Industrial"
           required
-         v-bind="careerValidation.field('name', 'Nombre Oficial de la Carrera')" />
+          v-bind="careerValidation.field('name', 'Nombre Oficial de la Carrera')"
+        />
 
-        <UiField
-          v-model="formCredits"
-          label="Créditos Totales de Retícula"
-          type="number"
-          min="1"
-          max="500"
-          hint="Estándar TecNM: 260 créditos totales (182 para Servicio Social)"
-          required
-         v-bind="careerValidation.field('totalCredits', 'Créditos Totales de Retícula')" />
+        <div class="credits-preview-strip">
+          <span>
+            Mínimo Servicio Social (70%):
+            <strong>{{ socialServiceCredits(Number(formCredits) || 0) }} créd.</strong>
+          </span>
+          <span>
+            Mínimo Prácticas Prof. (80%):
+            <strong>{{ internshipCredits(Number(formCredits) || 0) }} créd.</strong>
+          </span>
+        </div>
       </form>
 
       <template #actions>
-        <UiButton variant="secondary" :disabled="isSaving" @click="dialogOpen = false">
+        <UiButton variant="secondary" size="sm" :disabled="isSaving" @click="dialogOpen = false">
           Cancelar
         </UiButton>
-        <UiButton variant="primary" :loading="isSaving" @click="handleSave">
+        <UiButton variant="primary" size="sm" :loading="isSaving" @click="handleSave">
           {{ isEditing ? 'Guardar Cambios' : 'Registrar Carrera' }}
         </UiButton>
       </template>
     </UiDialog>
 
     <!-- Modal de Confirmación de Baja -->
-    <UiDialog v-model="deleteDialogOpen" title="Confirmar Baja de Carrera">
-      <UiAlert v-if="deleteError" tone="danger" title="Operación restringida" class="mb-3">
+    <UiDialog v-model="deleteDialogOpen" title="Confirmar Baja de Carrera" size="sm">
+      <UiAlert v-if="deleteError" tone="danger" title="Operación restringida">
         {{ deleteError }}
       </UiAlert>
 
       <p v-if="careerToDelete" class="delete-confirm-copy">
         ¿Confirmas dar de baja del catálogo institucional la carrera
-        <strong>{{ careerToDelete.name }} ({{ careerToDelete.code }})</strong>?
-        Los expedientes históricos asociados conservarán su trazabilidad.
+        <strong>{{ careerToDelete.name }} ({{ careerToDelete.code }})</strong>? Los expedientes
+        históricos asociados conservarán su trazabilidad.
       </p>
 
       <template #actions>
-        <UiButton variant="secondary" :disabled="isDeleting" @click="deleteDialogOpen = false">
+        <UiButton
+          variant="secondary"
+          size="sm"
+          :disabled="isDeleting"
+          @click="deleteDialogOpen = false"
+        >
           Cancelar
         </UiButton>
-        <UiButton variant="danger" :loading="isDeleting" @click="handleConfirmDelete">
+        <UiButton
+          variant="danger"
+          size="sm"
+          :loading="isDeleting"
+          @click="handleConfirmDelete"
+        >
           Confirmar Baja
         </UiButton>
       </template>
@@ -880,39 +984,783 @@ watchValidation(dialogOpen, () => careerValidation.reset())
 </template>
 
 <style scoped>
-/* ==========================================================================
-   Animaciones Escalonadas y Transición de Tabla
-   ========================================================================== */
-@keyframes slideInPanel {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Estructura a pantalla completa (100dvh) sin scroll exterior */
+.fullscreen-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 22px 10px !important;
 }
 
-.reveal-step {
-  animation: slideInPanel 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+.exec-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
-.reveal-1 {
-  animation-delay: 15ms;
+.exec-header__left {
+  flex: 1;
+  min-width: 280px;
 }
-.reveal-2 {
-  animation-delay: 55ms;
+
+.exec-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.15rem;
+  flex-wrap: wrap;
 }
-.reveal-3 {
-  animation-delay: 95ms;
+
+.exec-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.14rem 0.5rem;
+  border-radius: 5px;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.exec-period {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.exec-title {
+  font-size: 1.22rem;
+  font-weight: 800;
+  margin: 0;
+  color: var(--color-text-primary);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* 4 KPIs con superficie neutra y borde dorado únicamente al estar activo */
+.exec-kpis {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.mini-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0.42rem 0.85rem;
+  min-width: 108px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-medium);
+  background: var(--color-surface-white);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.mini-kpi--static {
+  cursor: default;
+}
+
+.mini-kpi:not(.mini-kpi--static):hover {
+  background: var(--secondary-hover);
+  border-color: color-mix(in srgb, var(--color-accent) 70%, var(--color-border-medium));
+}
+
+.mini-kpi__label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.mini-kpi__value {
+  font-size: 1.18rem;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.mini-kpi--emerald .mini-kpi__value {
+  color: var(--color-success);
+}
+
+.mini-kpi--gold .mini-kpi__value {
+  color: var(--color-warning);
+}
+
+.mini-kpi--navy .mini-kpi__value {
+  color: var(--color-info);
+}
+
+.mini-kpi--active {
+  background: var(--kpi-active-bg);
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-accent) !important;
+}
+
+/* Grid Principal de 2 Columnas a Pantalla Completa */
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 295px;
+  gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.tray-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px !important;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+}
+
+/* Barra de filtros con superficie institucional contrastada */
+.filters-bar {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-toolbar);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.search-box {
+  flex: 1.5;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.toolbar-right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.status-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.filter-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: var(--color-text-secondary);
+  pointer-events: none;
+  z-index: 2;
+}
+
+input.modern-input {
+  width: 100%;
+  min-height: 34px;
+  height: 34px;
+  border-radius: 7px;
+  border: 1px solid var(--input-border) !important;
+  background: var(--input-bg) !important;
+  padding: 0 2rem 0 2.35rem !important;
+  font-size: 0.81rem;
+  color: var(--color-text-primary) !important;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+input.modern-input::-webkit-search-cancel-button,
+input.modern-input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+input.modern-input:hover {
+  border-color: var(--color-gray-400) !important;
+}
+
+input.modern-input:focus {
+  border-color: var(--color-border-focus) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-focus) 22%, transparent);
+}
+
+.autocomplete-container {
+  position: relative;
+  width: 100%;
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 0.55rem;
+  background: transparent;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 0.2rem 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.clear-search-btn:hover {
+  color: var(--color-primary-hover);
+  background: var(--color-primary-subtle);
+}
+
+.suggestions-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--floating-bg);
+  border: 1px solid var(--floating-border);
+  border-radius: 8px;
+  box-shadow: var(--floating-shadow);
+  z-index: 999;
+  max-height: 220px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background-color 140ms ease;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover {
+  background: var(--color-primary-subtle);
+}
+
+.suggestion-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.suggestion-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--color-info-text);
+}
+
+.suggestion-name {
+  font-size: 0.8rem;
+  color: var(--color-text-primary);
+}
+
+.suggestion-right {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.suggestion-credits {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+/* Pestañas de Estatus */
+.status-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  height: 34px;
+  border-radius: 7px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+}
+
+.status-tab {
+  min-height: 26px !important;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.status-tab:hover {
+  color: var(--color-text-primary);
+  background: var(--secondary-hover);
+}
+
+.status-tab--active {
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-color: var(--color-accent);
+}
+
+/* Tabla con scroll interno y encabezados fijos */
+.tray-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 -16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.tray-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: normal;
+}
+
+.tray-table th {
+  padding: 7px 14px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: var(--surface-table-head);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-medium);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tray-table td {
+  padding: 7px 14px;
+  font-size: 0.8rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.tray-tr {
+  transition: background-color 150ms ease;
+}
+
+.tray-tr:hover {
+  background: var(--color-primary-subtle);
+}
+
+.code-pill {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 0.14rem 0.5rem;
+  border-radius: 5px;
+  background: var(--color-info-badge);
+  color: var(--color-info-text);
+  border: 1px solid var(--color-info-border);
+}
+
+.cell-program {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.cell-program strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.cell-program span {
+  font-size: 0.73rem;
+  color: var(--color-text-secondary);
+}
+
+.cell-credits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  min-width: 110px;
+}
+
+.credits-number {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.credits-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 4px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.credits-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-info);
+  border-radius: 4px;
+  transition: width 360ms ease;
+}
+
+.th-actions,
+.td-actions {
+  width: 210px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.empty-cell {
+  padding: 2rem 1rem !important;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.empty-catalog {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.6rem;
+  margin-top: auto;
+  border-top: 1px solid var(--color-border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.pagination-info {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.pagination-controls {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Columna Derecha Compacta */
+.right-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.side-card {
+  padding: 10px 12px !important;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-white);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.side-card--codes {
+  flex: 1;
+}
+
+.side-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.45rem;
+  margin-bottom: 0.45rem;
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+}
+
+.side-card__title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.side-card__icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2;
+}
+
+.side-card__title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--color-text-primary);
+}
+
+.side-card__meta,
+.official-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.rules-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.rule-card {
+  padding: 0.5rem 0.65rem;
+  border-radius: 7px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-light);
+}
+
+.rule-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+
+.rule-badge {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 0.08rem 0.38rem;
+  border-radius: 4px;
+}
+
+.rule-badge--navy {
+  background: var(--color-info-badge);
+  color: var(--color-info-text);
+  border: 1px solid var(--color-info-border);
+}
+
+.rule-badge--gold {
+  background: var(--color-warning-badge);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning-border);
+}
+
+.rule-pct {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-info-text);
+}
+
+.rule-pct--gold {
+  color: var(--color-warning-text);
+}
+
+.rule-title {
+  margin: 0 0 0.15rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.rule-desc {
+  margin: 0;
+  font-size: 0.71rem;
+  line-height: 1.3;
+  color: var(--color-text-secondary);
+}
+
+.quick-codes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.code-chip-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 30px !important;
+  padding: 0.28rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-light);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.code-chip-btn:hover {
+  background: var(--secondary-hover);
+  border-color: var(--color-accent);
+}
+
+.code-chip-btn--selected {
+  background: var(--kpi-active-bg);
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.code-chip-btn__sigla {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.08rem 0.35rem;
+  border-radius: 4px;
+  background: var(--color-info-badge);
+  color: var(--color-info-text);
+  border: 1px solid var(--color-info-border);
+  flex-shrink: 0;
+}
+
+.code-chip-btn__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-chip-btn__cr {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+/* Modales compactos */
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.dialog-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.dialog-form :deep(.field) {
+  margin-bottom: 0;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.dialog-form :deep(input) {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.dialog-form :deep(input:focus) {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-border-focus) 22%, transparent);
+}
+
+.credits-preview-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 7px;
+  background: var(--surface-toolbar);
+  border: 1px solid var(--color-border);
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+}
+
+.credits-preview-strip strong {
+  color: var(--color-text-primary);
+}
+
+.delete-confirm-copy {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--color-text-primary);
 }
 
 .tray-row-enter-active,
 .tray-row-leave-active {
-  transition:
-    opacity 200ms ease,
-    transform 200ms ease;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .tray-row-enter-from,
@@ -921,804 +1769,12 @@ watchValidation(dialogOpen, () => careerValidation.reset())
   transform: translateY(4px);
 }
 
-/* ==========================================================================
-   Encabezado Compacto Institucional
-   ========================================================================== */
-.ctrl-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-
-.ctrl-eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  flex-wrap: wrap;
-}
-
-.ctrl-badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.ctrl-period {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.ctrl-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  background: var(--color-surface-white);
-  border: 1px solid var(--color-border);
-  padding: 2px 8px;
-  border-radius: 99px;
-}
-
-.ctrl-status-pill code {
-  color: var(--color-accent);
-  font-weight: 700;
-}
-
-.ctrl-live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-success);
-}
-
-.ctrl-title {
-  font-size: clamp(20px, 2vw, 25px);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--color-text-primary);
-  line-height: 1.15;
-}
-
-.ctrl-header__actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ctrl-btn {
-  min-height: 36px !important;
-  padding: 6px 14px !important;
-  font-size: 12.5px !important;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.ctrl-btn__icon {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-/* ==========================================================================
-   1. Fila de 4 KPIs Compactos
-   ========================================================================== */
-.compact-kpis {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 14px;
-}
-
-.kpi-tile {
-  padding: 13px 16px;
-  border-radius: 10px;
-  background: var(--color-surface-white);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--card-shadow);
-  cursor: pointer;
-  transition:
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.kpi-tile:hover {
-  transform: translateY(-2px);
-  border-color: var(--color-primary);
-  box-shadow: var(--floating-shadow);
-}
-
-.kpi-tile--selected {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 22%, transparent);
-}
-
-.kpi-tile--gold:hover {
-  border-color: var(--color-accent);
-}
-
-.kpi-tile__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.kpi-tile__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.kpi-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.kpi-dot--navy {
-  background: var(--color-primary);
-}
-.kpi-dot--sky {
-  background: var(--color-info);
-}
-.kpi-dot--gold {
-  background: var(--color-accent);
-}
-.kpi-dot--emerald {
-  background: var(--color-success);
-}
-
-.kpi-meta {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.kpi-meta--emerald {
-  color: var(--color-success);
-}
-.kpi-meta--sky {
-  color: var(--color-info);
-}
-
-.kpi-tag-gold {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.kpi-tile__main {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  margin: 8px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.kpi-tile__value {
-  font-size: 27px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  color: var(--color-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.kpi-tile__value--gold {
-  color: var(--color-accent);
-}
-
-.kpi-tile__unit {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.kpi-tile__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.kpi-tile__foot strong {
-  color: var(--color-text-primary);
-}
-
-.kpi-highlight--gold {
-  color: var(--color-accent);
-  font-weight: 600;
-}
-
-.kpi-highlight--emerald {
-  color: var(--color-success);
-  font-weight: 600;
-}
-
-/* ==========================================================================
-   2. Área Principal en 2 Columnas
-   ========================================================================== */
-.workspace-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.95fr) minmax(0, 1fr);
-  gap: 14px;
-  align-items: stretch;
-}
-
-.tray-card {
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  overflow: hidden;
-}
-
-.tray-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--color-border);
-  flex-wrap: wrap;
-}
-
-.search-box {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 240px;
-}
-
-.search-box__icon {
-  position: absolute;
-  left: 11px;
-  width: 15px;
-  height: 15px;
-  stroke: var(--color-text-muted);
-  fill: none;
-  stroke-width: 2;
-  pointer-events: none;
-}
-
-.search-box__input {
-  width: 100%;
-  min-height: 36px !important;
-  padding: 6px 32px 6px 34px !important;
-  font-size: 12.5px !important;
-  border-radius: 8px !important;
-  background: var(--color-bg-light) !important;
-  border: 1px solid var(--color-border-medium) !important;
-}
-
-.search-box__clear {
-  position: absolute;
-  right: 8px;
-  background: transparent;
-  border: 0;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  padding: 4px;
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.status-tabs {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: 8px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-}
-
-.status-tab {
-  border: 0;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 6px;
-  transition:
-    background 150ms ease,
-    color 150ms ease;
-}
-
-.status-tab--active {
-  background: var(--color-primary);
-  color: var(--color-white);
-}
-
-.tray-count {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  color: var(--color-text-secondary);
-}
-
-.tray-count strong {
-  color: var(--color-text-primary);
-}
-
-/* Tabla del Catálogo */
-.tray-table-wrap {
-  margin: 0;
-  overflow-x: auto;
-  flex: 1;
-}
-
-.tray-table {
-  width: 100%;
-  border-collapse: collapse;
-  white-space: normal;
-}
-
-.tray-table th {
-  padding: 9px 18px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
-  background: var(--color-bg-light);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.th-right,
-.td-right {
-  text-align: right;
-}
-
-.tray-tr {
-  transition: background 150ms ease;
-}
-
-.tray-tr:hover {
-  background: var(--color-primary-subtle);
-}
-
-.tray-tr td {
-  padding: 10px 18px;
-  vertical-align: middle;
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.tray-tr:last-child td {
-  border-bottom: 0;
-}
-
-.code-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-primary);
-  background: var(--color-primary-subtle);
-  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
-  padding: 3px 9px;
-  border-radius: 6px;
-}
-
-[data-theme="dark"] .code-pill {
-  color: var(--color-white);
-}
-
-.code-pill__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.code-pill__dot--active {
-  background: var(--color-accent);
-}
-.code-pill__dot--inactive {
-  background: var(--color-danger);
-}
-
-.cell-program {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.cell-program strong {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.cell-program span {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.cell-credits {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 115px;
-}
-
-.credits-number {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.credits-track {
-  width: 96px;
-  height: 4px;
-  background: var(--color-gray-100);
-  border-radius: 99px;
-  overflow: hidden;
-}
-
-.credits-fill {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-  border-radius: 99px;
-  transition: width 680ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.status-box {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.status-box__dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.status-box--success {
-  background: var(--color-success-badge);
-  color: var(--color-success-text);
-  border: 1px solid var(--color-success-border);
-}
-
-.status-box--danger {
-  background: var(--color-danger-badge);
-  color: var(--color-danger-text);
-  border: 1px solid var(--color-danger-border);
-}
-
-.row-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.row-btn {
-  min-height: 28px;
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  transition:
-    transform 140ms ease,
-    background 160ms ease,
-    border-color 160ms ease;
-}
-
-.row-btn:active {
-  transform: scale(0.97);
-}
-
-.row-btn--outline {
-  background: var(--color-bg-light);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border-medium);
-}
-
-.row-btn--outline:hover {
-  background: var(--secondary-hover);
-  border-color: var(--color-accent);
-}
-
-.row-btn--danger {
-  background: transparent;
-  color: var(--destructive-text);
-  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
-}
-
-.row-btn--danger:hover {
-  background: var(--color-danger-bg);
-}
-
-.empty-catalog {
-  padding: 28px;
-  text-align: center;
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-}
-
-.tray-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 18px;
-  background: var(--color-bg-light);
-  border-top: 1px solid var(--color-border);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-
-.pagination-inline {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.footer-iso-tag {
-  color: var(--color-accent);
-  font-weight: 700;
-}
-
-/* ==========================================================================
-   Columna Derecha: Criterios Normativos + Filtro Rápido por Clave
-   ========================================================================== */
-.right-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.side-card {
-  padding: 14px 16px;
-}
-
-.side-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.side-card__title-group {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.side-card__icon {
-  width: 14px;
-  height: 14px;
-  stroke: var(--color-accent);
-  fill: none;
-  stroke-width: 1.9;
-}
-
-.side-card__title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-primary);
-}
-
-.side-card__meta {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  color: var(--color-text-secondary);
-}
-
-.official-tag {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-accent);
-  background: var(--color-accent-light);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.rules-stack {
-  display: grid;
-  gap: 9px;
-}
-
-.rule-card {
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-  border-left-width: 3px;
-}
-
-.rule-card--navy {
-  border-left-color: var(--color-primary);
-}
-
-.rule-card--gold {
-  border-left-color: var(--color-accent);
-}
-
-.rule-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.rule-badge {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.rule-badge--navy {
-  color: var(--color-info);
-}
-
-.rule-badge--gold {
-  color: var(--color-accent);
-}
-
-.rule-pct {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  color: var(--color-text-primary);
-}
-
-.rule-pct--gold {
-  color: var(--color-accent);
-}
-
-.rule-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.rule-desc {
-  font-size: 11px;
-  line-height: 1.38;
-  color: var(--color-text-secondary);
-  margin-top: 2px;
-}
-
-/* Chips Rápidos de Claves */
-.quick-codes {
-  display: grid;
-  gap: 6px;
-}
-
-.code-chip-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: 7px;
-  background: var(--color-bg-light);
-  border: 1px solid var(--color-border);
-  text-align: left;
-  transition:
-    background 150ms ease,
-    border-color 150ms ease,
-    transform 150ms ease;
-}
-
-.code-chip-btn:hover {
-  background: var(--color-primary-subtle);
-  border-color: var(--color-primary);
-  transform: translateX(2px);
-}
-
-.code-chip-btn--selected {
-  background: var(--color-primary-subtle);
-  border-color: var(--color-accent);
-}
-
-.code-chip-btn__sigla {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-accent);
-  min-width: 38px;
-}
-
-.code-chip-btn__name {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.code-chip-btn__cr {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10.5px;
-  color: var(--color-text-muted);
-}
-
-.dialog-form {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.delete-confirm-copy {
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
-.mb-3 {
-  margin-bottom: 12px;
-}
-
-@media (max-width: 1150px) {
-  .compact-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+@media (max-width: 1100px) {
   .workspace-grid {
     grid-template-columns: 1fr;
   }
-}
-
-@media (max-width: 640px) {
-  .compact-kpis {
-    grid-template-columns: 1fr;
-  }
-  .ctrl-header__actions {
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
+  .right-stack {
+    display: none;
   }
 }
 </style>
