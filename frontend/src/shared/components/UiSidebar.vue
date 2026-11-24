@@ -4,21 +4,36 @@ import UiNavigation from './UiNavigation.vue'
 import type { BrandOptions, NavigationItem } from './navigation'
 
 withDefaults(
-  defineProps<BrandOptions & { items: NavigationItem[]; note?: string }>(),
-  { showTitle: true, showLogo: true },
+  defineProps<BrandOptions & { items: NavigationItem[]; note?: string; mobileOpen?: boolean }>(),
+  { showTitle: true, showLogo: true, mobileOpen: false },
 )
+
+const emit = defineEmits<{ close: [] }>()
 </script>
 
 <template>
-  <aside class="ui-sidebar">
+  <aside id="app-mobile-sidebar" class="ui-sidebar" :class="{ 'is-mobile-open': mobileOpen }">
     <div class="sidebar-top">
-      <UiBrand
-        :title="title"
-        :subtitle="subtitle"
-        :logo="logo"
-        :show-title="showTitle"
-        :show-logo="showLogo"
-      />
+      <div class="sidebar-brand-row">
+        <UiBrand
+          :title="title"
+          :subtitle="subtitle"
+          :logo="logo"
+          :show-title="showTitle"
+          :show-logo="showLogo"
+        />
+        <button
+          type="button"
+          class="sidebar-mobile-close"
+          aria-label="Cerrar menú de navegación"
+          @click="emit('close')"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
 
       <div class="sidebar-section-bar">
         <span class="sidebar-section-label">MÓDULOS OFICIALES</span>
@@ -185,11 +200,76 @@ withDefaults(
   gap: 6px;
 }
 
-@media (max-width: 640px) {
+.sidebar-mobile-close {
+  display: none;
+}
+
+@media (max-width: 900px) {
   .ui-sidebar {
-    position: static;
-    height: auto;
-    overflow-y: visible;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(290px, 85vw);
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    z-index: 70;
+    padding: 12px 12px 16px;
+    box-shadow: 0 20px 45px rgba(2, 6, 23, 0.45);
+    transform: translateX(-105%);
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 220ms ease;
+  }
+
+  .ui-sidebar.is-mobile-open {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .sidebar-brand-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .ui-sidebar :deep(.brand) {
+    padding: 2px 4px;
+    margin-bottom: 0;
+    border-bottom: 0;
+    flex: 1;
+  }
+
+  .sidebar-mobile-close {
+    display: inline-grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-white);
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  .ui-sidebar :deep(.sidenav a) {
+    min-height: 38px !important;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .ui-sidebar :deep(.navigation-group summary) {
+    min-height: 32px;
+    padding: 5px 8px;
+    font-size: 10.5px;
   }
 }
 </style>

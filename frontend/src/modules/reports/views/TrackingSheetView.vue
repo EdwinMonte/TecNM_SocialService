@@ -1288,4 +1288,143 @@ select.modern-select {
   display: flex;
   gap: 0.4rem;
 }
+
+@media (max-width: 900px) {
+  .fullscreen-page {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 4px 0 12px !important;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .matrix-card {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 10px 12px !important;
+  }
+
+  .matrix-table-wrap {
+    margin: 0 -12px;
+    max-width: calc(100% + 24px);
+    max-height: 68dvh;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 640px) {
+  .exec-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+
+  .exec-header__left {
+    min-width: 0;
+  }
+
+  .title-row {
+    justify-content: space-between;
+  }
+
+  .exec-title {
+    font-size: 1.05rem;
+    overflow-wrap: anywhere;
+  }
+
+  .exec-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 0.45rem;
+  }
+
+  .mini-kpi {
+    min-width: 0;
+    padding: 0.45rem 0.65rem;
+  }
+
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    padding: 0.6rem;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .sheet-tabs-box,
+  .search-box,
+  .select-box,
+  .toolbar-actions {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .sheet-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 38px;
+    padding: 3px;
+    gap: 3px;
+    box-sizing: border-box;
+  }
+
+  .sheet-tab {
+    min-width: 0;
+    width: 100%;
+    min-height: 32px !important;
+    height: auto !important;
+    padding: 5px 6px;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    white-space: normal;
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  .toolbar-actions :deep(.btn) {
+    flex: 1;
+    min-height: 38px;
+  }
+
+  input.modern-input,
+  select.modern-select {
+    min-height: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .expedient-button {
+    width: 32px;
+    min-height: 32px !important;
+    height: 32px;
+  }
+
+  .pagination-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .pagination-info {
+    text-align: center;
+  }
+
+  .pagination-controls {
+    width: 100%;
+  }
+
+  .pagination-controls :deep(.btn) {
+    flex: 1;
+  }
+}
 </style>

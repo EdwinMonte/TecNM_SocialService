@@ -96,5 +96,8 @@ async function submit(status: 'approved' | 'rejected') {
 .review-content { display: grid; gap: 1rem; }
 .review-pdf { width: 100%; height: min(62dvh, 42rem); border: 1px solid var(--color-border); border-radius: 8px; }
 .review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .75rem; width: 100%; }
-@media (max-width: 600px) { .review-actions { flex-direction: column; align-items: stretch; } }
+@media (max-width: 600px) {
+  .review-pdf { height: min(48dvh, 360px); }
+  .review-actions { flex-direction: column-reverse; align-items: stretch; gap: .5rem; }
+}
 </style>

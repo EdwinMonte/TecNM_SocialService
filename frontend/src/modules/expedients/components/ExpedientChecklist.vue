@@ -400,4 +400,22 @@ async function confirmUpload(): Promise<void> {
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 640px) {
+  .doc-card {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .doc-actions {
+    gap: 0.45rem;
+  }
+
+  .doc-actions :deep(.btn),
+  .upload-pill {
+    flex: 1 1 auto;
+    min-height: 36px;
+    justify-content: center;
+    text-align: center;
+  }
+}
 </style>

@@ -86,7 +86,7 @@ Reemplazar destinos por páginas reales al agregar módulos; no crear vistas fic
 En escritorio, sidebar ocupa borde izquierdo de ventana y permanece visible mediante `position: sticky`.
 Su densidad vertical compacta, etiquetas completas en una línea con iconos semánticos, todos los grupos de módulos visibles/desplegados por defecto (incluyendo `Catálogos Oficiales`) y pie organizado permiten visualizar navegación completa, ficha de usuario y acciones inferiores dentro del viewport de escritorio sin barras de desplazamiento vertical ni horizontal. Header permanece en flujo normal.
 UiShell reserva todo ancho disponible. Cada vista elige ancho mediante UiBasePage; sidebar no depende de ese límite.
-En móvil, navegación mantiene flujo superior y altura natural.
+En móvil (`<= 900px`), `MainLayout` presenta una barra superior compacta fija con marca institucional, botón rápido de tema (luna/sol) y disparador de menú (`☰`) que despliega `UiSidebar` como cajón lateral deslizable (`drawer`) con fondo semitransparente, cierre al navegar, tocar fuera o pulsar `Escape`, manteniendo intacto el diseño de escritorio (`>= 901px`).
 
 ## Ancho por página
 

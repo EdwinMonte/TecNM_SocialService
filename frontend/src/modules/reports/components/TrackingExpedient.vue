@@ -173,4 +173,8 @@ dd { margin: 0.25rem 0 0; overflow-wrap: anywhere; }
 .expedient-documents li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid var(--color-border); }
 .expedient-documents li > div { min-width: 0; flex: 1 1 220px; overflow-wrap: anywhere; }
 .expedient-documents p { margin: 0.4rem 0; }
+@media (max-width: 640px) {
+  .expedient-documents li { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+  .expedient-documents li > div { flex: 1 1 auto; }
+}
 </style>

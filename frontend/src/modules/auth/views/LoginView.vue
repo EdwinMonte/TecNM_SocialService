@@ -48,7 +48,22 @@ const { dark } = useTheme()
 .login-footer { padding: 24px 16px; text-align: center; background: var(--color-footer-bg); }
 .login-footer p { margin: auto; color: var(--color-white); }
 @media (max-width: 640px) {
-  .login-header { padding: 16px; }
-  .login-main { padding: 32px 16px; }
+  .login-header {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  .login-brand {
+    font-size: 18px;
+  }
+  .login-brand small {
+    font-size: 11px;
+  }
+  .login-main {
+    padding: 20px 12px;
+  }
+  .login-footer {
+    padding: 14px 12px;
+    font-size: 12px;
+  }
 }
 </style>

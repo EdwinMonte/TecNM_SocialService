@@ -113,7 +113,7 @@ const name = ref('')
 
 - Sidebar queda al borde izquierdo de ventana.
 - Usa `position: sticky`, altura de viewport y desplazamiento propio cuando navegación desborda.
-- En móvil vuelve al flujo normal y usa altura natural.
+- En móvil (`<= 900px`), `UiShell` colapsa a una sola columna y `MainLayout` despliega `UiSidebar` como cajón deslizable (`drawer`) activado desde una barra superior compacta; `UiDialog` aprovecha el ancho móvil (`calc(100vw - 16px)`) y los controles de entrada evitan auto-zoom en iOS (`font-size: 16px` en `<= 640px`).
 - `UiShell` no limita ancho de página. Cada vista decide mediante `UiBasePage`.
 
 ## Integración actual

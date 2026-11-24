@@ -58,7 +58,7 @@ onMounted(() => {
         </UiCard>
       </div>
 
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
+      <div class="dashboard-status-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem;">
         <UiCard title="Servicio Social por Estatus">
           <div style="display: flex; flex-direction: column; gap: 0.5rem;">
             <div v-for="(count, status) in data.socialService" :key="status" style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6;">
@@ -80,4 +80,13 @@ onMounted(() => {
     </div>
   </UiBasePage>
 </template>
+
+<style scoped>
+@media (max-width: 640px) {
+  .dashboard-status-grid {
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+}
+</style>
 

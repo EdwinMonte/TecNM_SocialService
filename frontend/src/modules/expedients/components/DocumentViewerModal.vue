@@ -16,7 +16,7 @@ onBeforeUnmount(release)
       v-if="url"
       :src="url"
       :title="title"
-      style="width: 100%; height: min(72dvh, 720px); border: 1px solid var(--color-border-medium); border-radius: 8px"
+      class="viewer-pdf-frame"
     />
     <UiAlert v-else tone="warning">No se pudo abrir el PDF.</UiAlert>
     <template #footer>
@@ -24,8 +24,7 @@ onBeforeUnmount(release)
         v-if="url && !confirmUpload"
         :href="url"
         :download="`${title}.pdf`"
-        class="btn secondary btn--sm"
-        style="margin-right: auto"
+        class="btn secondary btn--sm viewer-download-btn"
       >
         Descargar PDF
       </a>
@@ -38,3 +37,26 @@ onBeforeUnmount(release)
     </template>
   </UiDialog>
 </template>
+
+<style scoped>
+.viewer-pdf-frame {
+  width: 100%;
+  height: min(72dvh, 720px);
+  border: 1px solid var(--color-border-medium);
+  border-radius: 8px;
+}
+
+.viewer-download-btn {
+  margin-right: auto;
+}
+
+@media (max-width: 640px) {
+  .viewer-pdf-frame {
+    height: min(58dvh, 460px);
+  }
+  .viewer-download-btn {
+    margin-right: 0;
+    flex: 1 1 100%;
+  }
+}
+</style>

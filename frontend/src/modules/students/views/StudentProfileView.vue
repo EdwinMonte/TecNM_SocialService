@@ -237,11 +237,13 @@ const contactValidation = useFormValidation(() => validateFields(contactForm, {p
         </div>
 
         <div
-          style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1rem; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px;"
+          class="imss-dropzone"
+          style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1rem; background: var(--surface-toolbar, #f8fafc); border: 1px dashed var(--color-border-medium, #cbd5e1); border-radius: 8px;"
         >
-          <input type="file" accept="application/pdf" @change="handleFileChange" />
+          <input type="file" accept="application/pdf" class="imss-file-input" @change="handleFileChange" />
           <UiButton
             variant="primary"
+            class="imss-upload-btn"
             :disabled="!selectedImssFile || isUploadingImss"
             @click="imssPreviewOpen = true"
           >
@@ -280,7 +282,7 @@ const contactValidation = useFormValidation(() => validateFields(contactForm, {p
           </UiField>
         </div>
 
-        <div style="margin-top: 1rem; display: flex; justify-content: flex-end;">
+        <div class="contact-save-row" style="margin-top: 1rem; display: flex; justify-content: flex-end;">
           <UiButton variant="primary" :disabled="isSavingContact" @click="handleSaveContact">
             {{ isSavingContact ? 'Guardando...' : 'Guardar Datos de Contacto' }}
           </UiButton>
@@ -290,3 +292,24 @@ const contactValidation = useFormValidation(() => validateFields(contactForm, {p
   </UiBasePage>
   <DocumentViewerModal v-model="imssPreviewOpen" title="Verifica tu constancia IMSS" :blob="selectedImssFile" confirm-upload :busy="isUploadingImss" :error="errorMessage" @confirm="handleUploadImss" />
 </template>
+
+<style scoped>
+@media (max-width: 640px) {
+  .imss-dropzone {
+    flex-direction: column;
+    align-items: stretch !important;
+    padding: 0.85rem !important;
+    gap: 0.75rem !important;
+  }
+
+  .imss-file-input {
+    max-width: 100%;
+    font-size: 0.85rem;
+  }
+
+  .imss-upload-btn,
+  .contact-save-row :deep(.btn) {
+    width: 100%;
+  }
+}
+</style>

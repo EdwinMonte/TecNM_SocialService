@@ -1771,10 +1771,138 @@ input.modern-input:focus {
 
 @media (max-width: 1100px) {
   .workspace-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .right-stack {
     display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .fullscreen-page {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 4px 0 12px !important;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .workspace-grid {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .tray-card {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 10px 12px !important;
+  }
+
+  .tray-table-wrap {
+    margin: 0 -12px;
+    max-width: calc(100% + 24px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tray-table {
+    min-width: 600px;
+  }
+}
+
+@media (max-width: 640px) {
+  .exec-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+
+  .exec-header__left {
+    min-width: 0;
+  }
+
+  .title-row {
+    justify-content: space-between;
+  }
+
+  .exec-title {
+    font-size: 1.05rem;
+  }
+
+  .exec-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 0.45rem;
+  }
+
+  .mini-kpi {
+    min-width: 0;
+    padding: 0.45rem 0.65rem;
+  }
+
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    padding: 0.6rem;
+  }
+
+  .search-box,
+  .toolbar-right {
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .status-tabs-row {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .status-tabs {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: auto;
+    min-height: 36px;
+  }
+
+  .status-tab {
+    flex: 1;
+    min-height: 30px !important;
+    height: 30px;
+    text-align: center;
+  }
+
+  input.modern-input,
+  .dialog-form :deep(input) {
+    min-height: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .dialog-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .pagination-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .pagination-info {
+    text-align: center;
+  }
+
+  .pagination-controls {
+    width: 100%;
+  }
+
+  .pagination-controls :deep(.btn) {
+    flex: 1;
   }
 }
 </style>

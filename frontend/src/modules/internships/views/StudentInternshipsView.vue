@@ -464,7 +464,7 @@ watchValidation(isEvalModalOpen, () => evaluationValidation.reset())
           </select>
         </UiField>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="modal-dates-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
           <UiField label="Fecha de Inicio *" v-bind="acceptanceValidation.field('startDate', 'Fecha de Inicio *')" v-slot="{ controlAttrs }">
             <input v-bind="controlAttrs" v-model="acceptanceForm.startDate" type="date" />
           </UiField>
@@ -496,7 +496,7 @@ watchValidation(isEvalModalOpen, () => evaluationValidation.reset())
       title="Prellenar e Imprimir Anexo XVII — Evaluación de Productividad Laboral"
     >
       <div style="display: flex; flex-direction: column; gap: 0.85rem;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="modal-dates-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
           <UiFormErrors :validation="evaluationValidation" />
           <UiField label="Fecha Inicio Evaluación *" v-bind="evaluationValidation.field('evaluationStartDate', 'Fecha Inicio Evaluación *')" v-slot="{ controlAttrs }">
             <input v-bind="controlAttrs" v-model="evalForm.evaluationStartDate" type="date" />
@@ -622,5 +622,33 @@ watchValidation(isEvalModalOpen, () => evaluationValidation.reset())
 
 .upload-label:hover {
   background: #15803d;
+}
+
+@media (max-width: 640px) {
+  .form-grid,
+  .summary-grid,
+  .modal-dates-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem;
+  }
+
+  .imss-banner {
+    padding: 0.85rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .imss-banner input[type='file'] {
+    max-width: 100%;
+    font-size: 0.84rem;
+  }
+
+  .imss-banner :deep(.btn),
+  .toolbar :deep(.btn) {
+    flex: 1 1 100%;
+    white-space: normal;
+    text-align: center;
+  }
 }
 </style>

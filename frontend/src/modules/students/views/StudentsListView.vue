@@ -2456,16 +2456,132 @@ select.modern-select:focus {
 }
 
 @media (max-width: 900px) {
+  .fullscreen-page {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 4px 0 12px !important;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .workspace-card {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 10px 12px !important;
+  }
+
   .roster-filters,
   .extra-filter-fields {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact-table {
+    margin: 0 -12px !important;
+    max-width: calc(100% + 24px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .compact-table :deep(table) {
+    table-layout: auto;
+    min-width: 680px;
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
+  .exec-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+
+  .exec-header__left {
+    min-width: 0;
+  }
+
+  .exec-title {
+    font-size: 1.05rem;
+  }
+
+  .actions-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 0.4rem;
+  }
+
+  .actions-group :deep(.btn) {
+    width: 100%;
+    min-height: 38px;
+    white-space: normal;
+    text-align: center;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+
+  input.modern-input,
+  select.modern-select,
+  .modal-input,
+  .modal-select {
+    min-height: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .roster-filter-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .pagination-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .pagination-info {
+    text-align: center;
+  }
+
+  .pagination-controls {
+    width: 100%;
+  }
+
+  .pagination-controls :deep(.btn) {
+    flex: 1;
+  }
+
   .modal-form-grid,
   .detail-fields {
     grid-template-columns: 1fr;
+  }
+
+  .detail-actions :deep(.btn) {
+    flex: 1 1 auto;
+  }
+
+  .imss-box-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .file-input {
+    max-width: 100%;
+  }
+
+  .import-modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .footer-actions {
+    width: 100%;
+  }
+
+  .footer-actions :deep(.btn) {
+    flex: 1;
   }
 }
 </style>

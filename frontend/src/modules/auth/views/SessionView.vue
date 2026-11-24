@@ -1307,4 +1307,127 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 900px) {
+  .fullscreen-page {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 4px 0 12px !important;
+  }
+
+  .student-portal-grid,
+  .panel-scroll {
+    overflow: visible;
+  }
+
+  .panel-card,
+  .student-profile-card {
+    padding: 10px 12px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .exec-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+
+  .exec-header__left {
+    min-width: 0;
+  }
+
+  .title-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .exec-title {
+    font-size: 1.06rem;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .header-actions :deep(.btn) {
+    flex: 1;
+    min-height: 36px;
+  }
+
+  .exec-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 0.45rem;
+  }
+
+  .mini-kpi {
+    min-width: 0;
+    padding: 0.45rem 0.65rem;
+  }
+
+  .connectors-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+
+  .panel-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .panel-head > :deep(.btn) {
+    width: 100%;
+  }
+
+  .segmented-tabs {
+    display: flex;
+    width: 100%;
+    height: auto;
+    min-height: 34px;
+  }
+
+  .seg-tab {
+    flex: 1;
+    min-height: 28px !important;
+    height: 28px;
+    text-align: center;
+  }
+
+  .list-item-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.55rem;
+    padding: 0.65rem 0.7rem;
+  }
+
+  .list-item-row > :deep(.btn) {
+    width: 100%;
+  }
+
+  .row-right-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .student-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .profile-cta {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .profile-cta :deep(.btn),
+  .card-footer-actions :deep(.btn) {
+    width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
+}
 </style>

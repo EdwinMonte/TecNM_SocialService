@@ -759,4 +759,25 @@ watchValidation(
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 640px) {
+  .actions-row :deep(.btn),
+  .upload-pill {
+    flex: 1 1 auto;
+    min-height: 34px;
+    justify-content: center;
+  }
+
+  .submodal-form :deep(input:not([type='checkbox']):not([type='radio'])),
+  .submodal-form :deep(select),
+  .submodal-form :deep(textarea) {
+    min-height: 40px;
+    font-size: 16px;
+  }
+
+  .submodal-actions :deep(.btn) {
+    flex: 1;
+    min-height: 38px;
+  }
+}
 </style>
