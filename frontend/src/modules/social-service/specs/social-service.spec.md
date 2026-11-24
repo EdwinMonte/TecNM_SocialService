@@ -79,6 +79,7 @@ Formulario por pasos (`UiCard` o stepper):
   - Si `released`: Botón "Enviar Acta a Escolares" (genera folio `DGTV...`).
   - Gestión de **Observaciones Generales del Expediente** y **Dictamen / Observaciones de Documentos** mediante modales (`UiDialog` / `DocumentReviewDialog.vue`), sin usar `window.prompt`.
   - Modal de gestión integral de expediente (`UiDialog` `size="full"`): resumen superior de estatus/folios/avance, barra unificada de formatos y observaciones, pestañas segmentadas (**PDFs Subidos para Dictamen** y **Checklist Normativo TecNM**) y acciones de avance de etapa alineadas en pie de modal.
+  - En móvil (`<= 900px`), tanto la bandeja administrativa como el portal estudiantil adaptan KPIs (`2×2`), filtros, formularios de solicitud/reportes, pestañas y modales a pantalla móvil sin alterar escritorio.
   - Buscador con autocompletado dinámico y debounce (250 ms) y paginación estandarizada de **10 registros por página**.
   - Botón "Registrar Producto No Conforme (PNC)": Abre modal para registrar incidencia ISO 9001.
   - Botón "Ver Historial de Estados": Abre línea de tiempo de auditoría (`tramite_status_logs`).

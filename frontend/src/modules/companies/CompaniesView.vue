@@ -1377,4 +1377,120 @@ select.modern-select {
   opacity: 0;
   transform: translateY(4px);
 }
+
+@media (max-width: 900px) {
+  .fullscreen-page {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 4px 0 12px !important;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .companies-card {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 10px 12px !important;
+  }
+
+  .companies-table-wrap {
+    margin: 0 -12px;
+    max-width: calc(100% + 24px);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .companies-table {
+    min-width: 640px;
+  }
+}
+
+@media (max-width: 640px) {
+  .exec-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+
+  .exec-header__left {
+    min-width: 0;
+  }
+
+  .title-row {
+    justify-content: space-between;
+  }
+
+  .exec-title {
+    font-size: 1.05rem;
+  }
+
+  .exec-kpis {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 0.45rem;
+  }
+
+  .mini-kpi {
+    min-width: 0;
+    padding: 0.45rem 0.65rem;
+  }
+
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    padding: 0.6rem;
+  }
+
+  .search-box,
+  .select-box,
+  .filter-reset {
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .filter-reset :deep(.btn) {
+    width: 100%;
+  }
+
+  input.modern-input,
+  select.modern-select,
+  .company-form :deep(input:not([type='checkbox']):not([type='radio'])),
+  .company-form :deep(select) {
+    min-height: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .form-grid-2,
+  .form-grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions :deep(.btn) {
+    flex: 1;
+    min-height: 38px;
+  }
+
+  .pagination-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .pagination-info {
+    text-align: center;
+  }
+
+  .pagination-controls {
+    width: 100%;
+  }
+
+  .pagination-controls :deep(.btn) {
+    flex: 1;
+  }
+}
 </style>

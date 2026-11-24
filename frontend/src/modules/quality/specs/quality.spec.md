@@ -35,6 +35,7 @@
   - Columnas: Código de Incidencia, Periodo, Trámite, Alumno (nombre y matrícula), Categoría (etiqueta legible), Estado (`UiBadge`), Fecha de Registro, Acciones (centrada).
   - Botón "Registrar PNC" en encabezado (para `admin`, `social_service_officer` e `internship_coordinator`) que abre modal de alta.
   - Acción de fila: Botón "Gestionar" / "Ver detalle" -> abre modal de seguimiento con plan de acción y transiciones según rol y proceso.
+  - En móvil (`<= 900px`), KPIs en cuadrícula `2×2`, selectores apilados a ancho completo, tabla con desplazamiento táctil horizontal y acciones de pie de modal responsivas sin afectar escritorio.
 
 ---
 

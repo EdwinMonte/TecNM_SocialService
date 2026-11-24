@@ -41,7 +41,7 @@ Este archivo añade responsabilidades frontend. Contratos HTTP, DTOs, cookies y 
 - Mantener labels visibles, `autocomplete="username"` y `autocomplete="current-password"`; permitir pegado y administradores de contraseñas.
 - Comunicar validación, carga y errores mediante texto claro y una región `aria-live`.
 - Todos los controles interactivos miden al menos 44 px y muestran foco visible de 2 px.
-- La composición funciona desde 375 px y respeta `prefers-reduced-motion`.
+- La composición funciona desde 375 px y respeta `prefers-reduced-motion`: en móvil (`<= 900px`) `SessionView` libera `fullscreen-page` a altura natural, organiza los 4 KPIs en cuadrícula `2×2`, conectores rápidos en 2 columnas y apila bandejas/tarjetas en una columna sin afectar el diseño de escritorio (`>= 901px`).
 - Vite sirve desarrollo por HTTPS en `https://localhost:5173` para aceptar cookies `Secure`.
 
 ## Integración con layout

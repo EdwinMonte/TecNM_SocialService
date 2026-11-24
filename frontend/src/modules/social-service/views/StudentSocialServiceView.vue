@@ -560,7 +560,7 @@ watchValidation(isCommitmentModalOpen, () => commitmentValidation.reset())
       :title="socialDocumentLabel(`R${activeReportNumber}`)"
     >
       <div style="display: flex; flex-direction: column; gap: 0.85rem;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+        <div class="modal-dates-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
           <UiFormErrors :validation="reportValidation" />
           <UiField label="Fecha Inicio del Bimestre *" v-bind="reportValidation.field('periodStartDate', 'Fecha Inicio del Bimestre *')" v-slot="{ controlAttrs }">
             <input v-bind="controlAttrs" v-model="reportForm.periodStartDate" type="date" />
@@ -697,5 +697,33 @@ watchValidation(isCommitmentModalOpen, () => commitmentValidation.reset())
 
 .upload-label:hover {
   background: #0369a1;
+}
+
+@media (max-width: 640px) {
+  .form-grid,
+  .summary-grid,
+  .modal-dates-grid {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem;
+  }
+
+  .imss-upload-banner {
+    padding: 0.85rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    background: var(--surface-toolbar, #f8fafc);
+  }
+
+  .imss-upload-banner input[type='file'] {
+    max-width: 100%;
+    font-size: 0.84rem;
+  }
+
+  .templates-toolbar :deep(.btn) {
+    flex: 1 1 100%;
+    white-space: normal;
+    text-align: center;
+  }
 }
 </style>

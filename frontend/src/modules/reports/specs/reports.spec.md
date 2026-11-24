@@ -76,6 +76,7 @@ Reemplaza las hojas `ESTADÍSTICO`, `PNC` y `911.10` de `SEGUIMIENTO VINCULACIÓ
   - Columnas oficiales: Carrera (clave y nombre), En condiciones (`CP = SI`), Solicitantes (`H`, `M`, `Total`), Liberados (`H`, `M`, `Total`), PNC (`Solic. - Lib.`), `% Liberación` y fila de **TOTAL INSTITUCIONAL** con tokens mate claro/oscuro.
 - **Sección Formato 911.10 & Vinculación (`LinkageMetrics.vue`):**
   - Distribución por sector (`Educativo`, `Público`, `Privado`, `Social`), indicadores de inclusión y beneficiarios, y tabla de proyectos por empresa con paginación estandarizada de `10` registros por página (`pageSize = 10`).
+  - En móvil (`<= 900px`), Matriz de Seguimiento, Estadístico 911 y Tablero liberan `fullscreen-page` a altura natural, agrupan KPIs en `2×2`, permiten deslizar pestañas horizontalmente y adaptan paneles/tablas sin desbordamiento de pantalla ni cambios en escritorio.
 
 ---
 

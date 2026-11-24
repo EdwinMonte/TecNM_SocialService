@@ -228,4 +228,48 @@ onMounted(syncDialog)
   align-items: center;
   flex-shrink: 0;
 }
+
+@media (max-width: 640px) {
+  .size-sm,
+  .size-md,
+  .size-lg,
+  .size-xl,
+  .size-full {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    border-radius: 12px;
+  }
+
+  .dialog-inner,
+  .size-full .dialog-inner {
+    max-height: 92dvh;
+    padding: 0.9rem 1rem;
+  }
+
+  .dialog-header {
+    gap: 0.65rem;
+    padding-bottom: 0.65rem;
+  }
+
+  .dialog-title {
+    font-size: 0.98rem;
+  }
+
+  .dialog-body {
+    padding: 0.75rem 0.05rem;
+  }
+
+  .dialog-footer {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+  }
+
+  .dialog-footer :deep(.btn) {
+    flex: 1 1 auto;
+    min-height: 38px;
+    white-space: normal;
+    text-align: center;
+  }
+}
 </style>

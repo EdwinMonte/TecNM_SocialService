@@ -15,6 +15,7 @@ const layoutClass = computed(() => ({
 
 <template>
   <div class="app-shell">
+    <slot name="mobile-bar" />
     <header v-if="showHeader && $slots.header" class="ui-header-slot">
       <slot name="header" />
     </header>
@@ -86,6 +87,38 @@ const layoutClass = computed(() => ({
   }
   .ui-main {
     padding: 12px 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: clip;
+  }
+  .layout {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ui-main {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    padding: 10px 12px 18px;
+  }
+  .ui-footer {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    font-size: 11px;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 4px;
   }
 }
 

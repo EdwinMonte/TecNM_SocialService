@@ -47,3 +47,4 @@ Basado en `docs/specs/catalogs.spec.md`:
 6. **Feedback al usuario:**
    - Avisos mediante `UiToast` en operaciones exitosas (creación, actualización, cambio de estado, eliminación).
    - Estado de carga y mensajes de error con `UiAlert`.
+   - En móvil (`<= 900px`), la vista pasa a flujo vertical natural con KPIs en cuadrícula `2×2`, filtros apilados de ancho completo, tabla con desplazamiento horizontal táctil y modales adaptados a una columna sin alterar escritorio.
